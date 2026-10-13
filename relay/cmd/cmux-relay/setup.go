@@ -144,7 +144,7 @@ func runInstall(args []string) error {
 	if err != nil {
 		return err
 	}
-	executable, err := os.Executable()
+	executable, err := stableExecutablePath()
 	if err != nil {
 		return err
 	}
@@ -171,6 +171,31 @@ func runInstall(args []string) error {
 	fmt.Println("  2. Check the setup:                        cmux-relay doctor")
 	fmt.Println("  3. Pair your phone:                        cmux-relay pair")
 	return nil
+}
+
+func stableExecutablePath() (string, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	onPath, _ := exec.LookPath("cmux-relay")
+	return preferStableLink(executable, onPath), nil
+}
+
+func preferStableLink(executable, onPath string) string {
+	running, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return executable
+	}
+	if onPath == "" {
+		return running
+	}
+	if target, err := filepath.EvalSymlinks(onPath); err == nil && target == running {
+		if absolute, err := filepath.Abs(onPath); err == nil {
+			return absolute
+		}
+	}
+	return running
 }
 
 func runUninstall() error {

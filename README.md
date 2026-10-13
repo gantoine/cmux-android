@@ -22,13 +22,21 @@ The phone only reaches the relay through `tailscale serve`, which gives it HTTPS
 
 ## Set up your Mac
 
-You need cmux 0.65 or later, Go 1.26 or later (until release binaries are published), and Tailscale signed in on the Mac and on the phone.
+You need cmux 0.65 or later and Tailscale signed in on the Mac and on the phone.
 
-1. **Install the relay.**
+1. **Install the relay** with [Homebrew](https://brew.sh):
 
    ```sh
-   go install github.com/gantoine/cmux-android/relay/cmd/cmux-relay@latest
+   brew install gantoine/tap/cmux-relay
    ```
+
+   <details>
+   <summary>Other ways to install it</summary>
+
+   - **Download:** get `cmux-relay-<version>-darwin-arm64.tar.gz` (Apple silicon) or `-darwin-amd64.tar.gz` (Intel) from the [releases page](../../releases), check it against `SHA256SUMS`, extract it, and move `cmux-relay` into a folder on your `PATH`. The binary is not notarized by Apple. If you downloaded it with a browser, run `xattr -d com.apple.quarantine cmux-relay` before the first run.
+   - **From source** (Go 1.26 or later): `go install github.com/gantoine/cmux-android/relay/cmd/cmux-relay@latest`
+
+   </details>
 
 2. **Let the relay talk to cmux.** By default cmux only accepts programs started inside cmux terminals. The relay runs in the background, so switch the socket mode to **password** (recommended) or **automation**:
    - In cmux, open **Settings › Automation** and set socket access to **Password**, then set a password. The relay reads it from `~/.local/state/cmux/socket-control-password`, the same file the cmux CLI uses.
@@ -78,6 +86,15 @@ Pair as many Macs as you like. Each one shows up in the app's Mac list.
 - **Fit to phone:** the fit icon resizes the Mac terminal to the phone's screen while you watch. cmux gives the size back when you leave the terminal.
 - **Background notifications:** turn on **Notify me in the background** on the Mac list. The app then keeps a connection open in a foreground service, so cmux notifications reach you while the app is closed. Reading a notification on the Mac removes it from the phone.
 
+## Updating the relay
+
+```sh
+brew upgrade cmux-relay
+cmux-relay install
+```
+
+Running `cmux-relay install` again restarts the background relay on the new version. Paired phones stay paired.
+
 ## Managing phones
 
 ```sh
@@ -126,6 +143,8 @@ On the Android emulator the Mac is `http://10.0.2.2:18765`. Debug builds allow p
 Publish a GitHub release whose tag is a semantic version such as `0.2.0` or `0.2.0-beta.1`, with no `v` prefix. The release workflow tests everything, then attaches the relay for Apple silicon and Intel Macs, the signed APK, and `SHA256SUMS` to that release. The app's version name is the tag, and its version code is `major × 1,000,000 + minor × 1,000 + patch`.
 
 Signing uses the `SIGNING_KEYSTORE_BASE64`, `SIGNING_KEYSTORE_PASSWORD` and `SIGNING_KEY_PASSWORD` secrets and the `SIGNING_KEY_ALIAS` variable.
+
+For releases that are not marked as pre-releases, the workflow also updates the `cmux-relay` formula in [gantoine/homebrew-tap](https://github.com/gantoine/homebrew-tap). It renders the formula with `packaging/homebrew/render-formula.sh` and pushes with the deploy key in the `HOMEBREW_TAP_DEPLOY_KEY` secret.
 
 ### Relay protocol
 
