@@ -1,17 +1,36 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      VERSION: ${{ github.event.release.tag_name }}
     steps:
+      - name: Check the tag is a semantic version
+        run: |
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tags must be semantic versions like 1.2.3 or 1.2.3-beta.1, got '$VERSION'." >&2
+            exit 1
+          fi
+          major=${BASH_REMATCH[1]} minor=${BASH_REMATCH[2]} patch=${BASH_REMATCH[3]}
+          if (( minor > 999 || patch > 999 )); then
+            echo "Minor and patch must be below 1000 to fit the Android version code." >&2
+            exit 1
+          fi
+          echo "VERSION_CODE=$(( major * 1000000 + minor * 1000 + patch ))" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
@@ -34,9 +53,9 @@ jobs:
           mkdir -p dist
           for arch in arm64 amd64; do
             GOOS=darwin GOARCH=$arch go build -trimpath \
-              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -ldflags "-s -w -X main.version=${VERSION}" \
               -o dist/cmux-relay ./cmd/cmux-relay
-            tar -C dist -czf dist/cmux-relay-${GITHUB_REF_NAME}-darwin-${arch}.tar.gz cmux-relay
+            tar -C dist -czf "dist/cmux-relay-${VERSION}-darwin-${arch}.tar.gz" cmux-relay
             rm dist/cmux-relay
           done
 
@@ -44,22 +63,24 @@ jobs:
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
           SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ vars.SIGNING_KEY_ALIAS }}
         run: |
-          if [ -z "$SIGNING_KEYSTORE_BASE64" ]; then
-            echo "Add the SIGNING_* secrets to publish a signed APK." >&2
+          if [ -z "$SIGNING_KEYSTORE_BASE64" ] || [ -z "$SIGNING_KEY_ALIAS" ]; then
+            echo "Set the SIGNING_* secrets and the SIGNING_KEY_ALIAS variable to publish a signed APK." >&2
             exit 1
           fi
           echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          SIGNING_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" ./gradlew :app:assembleRelease
-          cp app/build/outputs/apk/release/app-release.apk "relay/dist/cmux-android-${GITHUB_REF_NAME}.apk"
+          SIGNING_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" ./gradlew :app:assembleRelease \
+            -PversionName="$VERSION" -PversionCode="$VERSION_CODE"
+          rm "$RUNNER_TEMP/release.jks"
+          cp app/build/outputs/apk/release/app-release.apk "relay/dist/cmux-android-${VERSION}.apk"
 
       - name: Checksums
         working-directory: relay/dist
         run: shasum -a 256 * > SHA256SUMS
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: relay/dist/*
-          generate_release_notes: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$VERSION" relay/dist/* --repo "$GITHUB_REPOSITORY" --clobber

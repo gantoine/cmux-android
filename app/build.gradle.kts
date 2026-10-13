@@ -12,8 +12,8 @@ android {
         applicationId = "dev.cmuxandroid"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("versionName") as String?) ?: "0.0.0-dev"
     }
 
     val releaseKeystore = System.getenv("SIGNING_KEYSTORE_PATH")

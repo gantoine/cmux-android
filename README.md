@@ -54,7 +54,13 @@ You need cmux 0.65 or later, Go 1.26 or later (until release binaries are publis
 
 ## Pair your phone
 
-Install the APK from the [releases page](../../releases), then run this on your Mac:
+Install the APK from the [releases page](../../releases). To check it first, run `apksigner verify --print-certs cmux-android-<version>.apk` and compare the SHA-256 certificate fingerprint with this one:
+
+```
+B7:33:F8:8D:CD:BE:D3:93:F7:1B:FA:A3:75:5D:AD:E3:DB:C4:0B:F6:D6:B2:39:29:BB:6E:CB:BA:56:FB:AD:2D
+```
+
+Then run this on your Mac:
 
 ```sh
 cmux-relay pair
@@ -114,6 +120,12 @@ CMUX_RELAY_STATE_DIR=/tmp/relay-dev go run ./relay/cmd/cmux-relay serve --listen
 ```
 
 On the Android emulator the Mac is `http://10.0.2.2:18765`. Debug builds allow plain HTTP to that address only.
+
+### Releasing
+
+Publish a GitHub release whose tag is a semantic version such as `0.2.0` or `0.2.0-beta.1`, with no `v` prefix. The release workflow tests everything, then attaches the relay for Apple silicon and Intel Macs, the signed APK, and `SHA256SUMS` to that release. The app's version name is the tag, and its version code is `major × 1,000,000 + minor × 1,000 + patch`.
+
+Signing uses the `SIGNING_KEYSTORE_BASE64`, `SIGNING_KEYSTORE_PASSWORD` and `SIGNING_KEY_PASSWORD` secrets and the `SIGNING_KEY_ALIAS` variable.
 
 ### Relay protocol
 
