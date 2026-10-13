@@ -144,7 +144,7 @@ Publish a GitHub release whose tag is a semantic version such as `0.2.0` or `0.2
 
 Signing uses the `SIGNING_KEYSTORE_BASE64`, `SIGNING_KEYSTORE_PASSWORD` and `SIGNING_KEY_PASSWORD` secrets and the `SIGNING_KEY_ALIAS` variable.
 
-For releases that are not marked as pre-releases, the workflow also updates the `cmux-relay` formula in [gantoine/homebrew-tap](https://github.com/gantoine/homebrew-tap). It renders the formula with `packaging/homebrew/render-formula.sh` and pushes with the deploy key in the `HOMEBREW_TAP_DEPLOY_KEY` secret.
+For releases that are not marked as pre-releases, the workflow also updates the `cmux-relay` formula in [gantoine/homebrew-tap](https://github.com/gantoine/homebrew-tap). It renders the formula with `packaging/homebrew/render-formula.sh` and pushes as a GitHub App that is installed only on the tap with contents write access. The workflow reads the app's ID from the `HOMEBREW_TAP_APP_ID` variable and its private key from the `HOMEBREW_TAP_APP_PRIVATE_KEY` secret, and each token it creates lasts one hour.
 
 ### Relay protocol
 

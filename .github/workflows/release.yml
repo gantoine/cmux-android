@@ -85,20 +85,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$VERSION" relay/dist/* --repo "$GITHUB_REPOSITORY" --clobber
 
+      - name: Get a token for the Homebrew tap
+        id: tap-token
+        if: ${{ !github.event.release.prerelease }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.HOMEBREW_TAP_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          owner: gantoine
+          repositories: homebrew-tap
+          permission-contents: write
+
       - name: Update the Homebrew tap
         if: ${{ !github.event.release.prerelease }}
         env:
-          TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
+          APP_SLUG: ${{ steps.tap-token.outputs.app-slug }}
         run: |
-          if [ -z "$TAP_DEPLOY_KEY" ]; then
-            echo "Set the HOMEBREW_TAP_DEPLOY_KEY secret to update gantoine/homebrew-tap." >&2
-            exit 1
-          fi
-          key="$RUNNER_TEMP/tap_key"
-          install -m 600 /dev/null "$key"
-          printf '%s\n' "$TAP_DEPLOY_KEY" > "$key"
-          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-          git clone --depth 1 git@github.com:gantoine/homebrew-tap.git "$RUNNER_TEMP/tap"
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/gantoine/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          bot_id=$(GH_TOKEN="$TAP_TOKEN" gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
 
           arm64_sha=$(shasum -a 256 "relay/dist/cmux-relay-${VERSION}-darwin-arm64.tar.gz" | cut -d' ' -f1)
           amd64_sha=$(shasum -a 256 "relay/dist/cmux-relay-${VERSION}-darwin-amd64.tar.gz" | cut -d' ' -f1)
@@ -106,8 +111,8 @@ jobs:
           packaging/homebrew/render-formula.sh "$VERSION" "$arm64_sha" "$amd64_sha" > "$RUNNER_TEMP/tap/Formula/cmux-relay.rb"
 
           cd "$RUNNER_TEMP/tap"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
           git add Formula/cmux-relay.rb
           if git diff --cached --quiet; then
             echo "The formula is already at ${VERSION}."
@@ -115,4 +120,3 @@ jobs:
             git commit -m "cmux-relay ${VERSION}"
             git push origin HEAD:main
           fi
-          rm -f "$key"
