@@ -91,6 +91,13 @@ data class ScreenFrame(
 )
 
 @Serializable
+data class HistoryResponse(
+    val styles: List<CellStyle> = emptyList(),
+    val lines: List<List<Span>> = emptyList(),
+    val total: Int = 0,
+)
+
+@Serializable
 data class DetachedMessage(val surfaceId: String, val reason: String = "")
 
 @Serializable

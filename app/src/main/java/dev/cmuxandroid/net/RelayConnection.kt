@@ -1,6 +1,7 @@
 package dev.cmuxandroid.net
 
 import dev.cmuxandroid.protocol.DetachedMessage
+import dev.cmuxandroid.protocol.HistoryResponse
 import dev.cmuxandroid.protocol.NotificationMessage
 import dev.cmuxandroid.protocol.RelayJson
 import dev.cmuxandroid.protocol.RelayNotification
@@ -279,6 +280,11 @@ class RelayConnection(
 
     fun resync() = send("resync")
 
+    suspend fun history(lines: Int = HISTORY_LINES): Result<HistoryResponse> =
+        request("history", buildJsonObject { put("lines", lines) }).mapCatching { data ->
+            data?.let { RelayJson.decodeFromJsonElement(HistoryResponse.serializer(), it) } ?: HistoryResponse()
+        }
+
     private fun sendAttach(target: Attachment) {
         send("attach", buildJsonObject {
             put("workspace_id", target.workspaceId)
@@ -294,5 +300,6 @@ class RelayConnection(
 
     private companion object {
         const val REQUEST_TIMEOUT_MS = 20_000L
+        const val HISTORY_LINES = 2_000
     }
 }

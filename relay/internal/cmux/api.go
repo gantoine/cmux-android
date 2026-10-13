@@ -1,6 +1,7 @@
 package cmux
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 )
@@ -78,6 +79,9 @@ type RenderGrid struct {
 	ActiveScreen       string  `json:"active_screen"`
 	TerminalForeground string  `json:"terminal_foreground"`
 	TerminalBackground string  `json:"terminal_background"`
+	ScrollbackRows     int     `json:"scrollback_rows"`
+	ScrollbackSpans    []Span  `json:"scrollback_spans"`
+	HistoryRows        int     `json:"history_rows"`
 }
 
 type Replay struct {
@@ -135,6 +139,17 @@ func (c *Client) Replay(ctx context.Context, workspaceID, surfaceID string) (Rep
 	err := c.Call(ctx, "mobile.terminal.replay", map[string]any{
 		"workspace_id": workspaceID,
 		"surface_id":   surfaceID,
+	}, &replay)
+	return replay, err
+}
+
+func (c *Client) History(ctx context.Context, workspaceID, surfaceID string, maxRows int) (Replay, error) {
+	var replay Replay
+	err := c.Call(ctx, "mobile.terminal.replay", map[string]any{
+		"workspace_id":        workspaceID,
+		"surface_id":          surfaceID,
+		"anchor":              "screen",
+		"max_scrollback_rows": maxRows,
 	}, &replay)
 	return replay, err
 }
@@ -250,6 +265,10 @@ func (c *Client) Events(ctx context.Context, afterSeq *int64, categories []strin
 		params["after_seq"] = *afterSeq
 	}
 	return c.Stream(ctx, params, func(line json.RawMessage) error {
+		if bytes.HasPrefix(line, []byte("ERROR:")) {
+			_, err := decodeResponse(line)
+			return err
+		}
 		var event Event
 		if err := json.Unmarshal(line, &event); err != nil {
 			return err

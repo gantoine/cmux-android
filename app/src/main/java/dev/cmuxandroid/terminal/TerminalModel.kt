@@ -14,6 +14,7 @@ data class TerminalScreen(
     val cursor: CursorInfo?,
     val styles: Map<Int, CellStyle>,
     val lines: List<List<Span>>,
+    val altScreen: Boolean = false,
 ) {
     fun text(row: Int): String {
         val builder = StringBuilder()
@@ -49,6 +50,8 @@ object TerminalModel {
         for (update in frame.changed) {
             if (update.row in lines.indices) lines[update.row] = update.spans
         }
-        return base.copy(lines = lines, cursor = frame.cursor ?: base.cursor)
+        return base.copy(lines = lines, cursor = frame.cursor ?: base.cursor, altScreen = frame.altScreen)
     }
 }
+
+data class TerminalHistory(val styles: Map<Int, CellStyle>, val lines: List<List<Span>>)

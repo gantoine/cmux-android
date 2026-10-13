@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -22,10 +23,11 @@ import (
 )
 
 type fakeCmux struct {
-	mu        sync.Mutex
-	inputs    []string
-	keys      []string
-	viewports []string
+	mu              sync.Mutex
+	inputs          []string
+	keys            []string
+	viewports       []string
+	historyRequests []string
 }
 
 func (f *fakeCmux) Identify(context.Context) (cmux.Identity, error) {
@@ -44,6 +46,24 @@ func (f *fakeCmux) Replay(_ context.Context, workspaceID, surfaceID string) (cmu
 		Columns: 80, Rows: 2,
 		Styles:   []cmux.Style{{ID: 0, Foreground: "#FFFFFF", Background: "#000000"}},
 		RowSpans: []cmux.Span{{Row: 0, Column: 0, StyleID: 0, Text: "$ "}},
+	}}, nil
+}
+
+func (f *fakeCmux) History(_ context.Context, workspaceID, surfaceID string, maxRows int) (cmux.Replay, error) {
+	f.mu.Lock()
+	f.historyRequests = append(f.historyRequests, fmt.Sprintf("%s:%d", surfaceID, maxRows))
+	f.mu.Unlock()
+	return cmux.Replay{WorkspaceID: workspaceID, SurfaceID: surfaceID, RenderGrid: &cmux.RenderGrid{
+		Columns: 80, Rows: 2, ScrollbackRows: 3, HistoryRows: 120,
+		Styles: []cmux.Style{
+			{ID: 4, Foreground: "#00FF00", Background: "#000000"},
+			{ID: 9, Foreground: "#FFFFFF", Background: "#000000"},
+		},
+		ScrollbackSpans: []cmux.Span{
+			{Row: 0, Column: 0, StyleID: 9, Text: "oldest"},
+			{Row: 2, Column: 0, StyleID: 9, Text: "ok "},
+			{Row: 2, Column: 3, StyleID: 4, Text: "passed"},
+		},
 	}}, nil
 }
 
@@ -230,6 +250,64 @@ func TestRelayRejectsUnknownTokensAndInputBeforeAttach(t *testing.T) {
 	}
 	if inputs, _, _ := relay.cmux.snapshot(); len(inputs) != 0 {
 		t.Fatalf("no input should reach cmux, got %v", inputs)
+	}
+}
+
+func TestHistoryReturnsScrollbackOldestFirstForTheAttachedTerminal(t *testing.T) {
+	relay := startRelay(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := relay.dial(t, ctx, relay.pair(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "history", "id": "early"})
+	if early := readUntil(t, ctx, conn, "result"); early["ok"] != false {
+		t.Fatalf("history before attach must fail, got %v", early)
+	}
+
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1"})
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "history", "id": "h", "lines": 999999})
+	result := readUntil(t, ctx, conn, "result")
+	if result["ok"] != true {
+		t.Fatalf("history failed: %v", result)
+	}
+	var history struct {
+		Styles []struct {
+			ID int    `json:"id"`
+			Fg string `json:"fg"`
+		} `json:"styles"`
+		Lines [][]struct {
+			Column int    `json:"column"`
+			Style  int    `json:"style"`
+			Text   string `json:"text"`
+		} `json:"lines"`
+		Total int `json:"total"`
+	}
+	encoded, _ := json.Marshal(result["data"])
+	if err := json.Unmarshal(encoded, &history); err != nil {
+		t.Fatal(err)
+	}
+	if history.Total != 120 || len(history.Lines) != 3 {
+		t.Fatalf("want 3 lines out of 120, got %d lines, total %d", len(history.Lines), history.Total)
+	}
+	if history.Lines[0][0].Text != "oldest" || len(history.Lines[1]) != 0 || history.Lines[2][1].Text != "passed" {
+		t.Fatalf("lines must keep cmux's order, with blank lines kept: %+v", history.Lines)
+	}
+	colors := map[int]string{}
+	for _, style := range history.Styles {
+		colors[style.ID] = style.Fg
+	}
+	if colors[history.Lines[2][1].Style] != "#00FF00" || colors[history.Lines[0][0].Style] != "#FFFFFF" {
+		t.Fatalf("each span's style must resolve within the response: %+v %+v", history.Styles, history.Lines)
+	}
+
+	relay.cmux.mu.Lock()
+	defer relay.cmux.mu.Unlock()
+	if len(relay.cmux.historyRequests) != 1 || relay.cmux.historyRequests[0] != fmt.Sprintf("t1:%d", maxHistoryLines) {
+		t.Fatalf("history must target the attached terminal and cap the size, got %v", relay.cmux.historyRequests)
 	}
 }
 

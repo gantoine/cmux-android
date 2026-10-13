@@ -43,6 +43,8 @@ const (
 	revocationCheck       = 10 * time.Second
 	maxConsecutiveErrors  = 10
 	maxInputBytes         = 64 * 1024
+	defaultHistoryLines   = 2000
+	maxHistoryLines       = 5000
 	maxQueuedMessages     = 64
 	callTimeout           = 15 * time.Second
 	terminalGoneErrorCode = "not_found"
@@ -289,6 +291,31 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		return nil, s.withTerminal(func(current *attachment) error {
 			return s.server.cmux.Scroll(ctx, current.workspaceID, current.surfaceID, request.Lines)
 		})
+	case "history":
+		var request struct {
+			Lines int `json:"lines"`
+		}
+		_ = json.Unmarshal(raw, &request)
+		if request.Lines <= 0 {
+			request.Lines = defaultHistoryLines
+		}
+		request.Lines = min(request.Lines, maxHistoryLines)
+		var history screen.History
+		err := s.withTerminal(func(current *attachment) error {
+			replay, err := s.server.cmux.History(ctx, current.workspaceID, current.surfaceID, request.Lines)
+			if err != nil {
+				return err
+			}
+			if replay.RenderGrid == nil {
+				return &requestError{Code: "no_render_grid", Message: "cmux returned no history for this terminal."}
+			}
+			history = screen.HistoryFrom(replay.RenderGrid)
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return history, nil
 	case "fit":
 		var request struct {
 			Columns int `json:"columns"`

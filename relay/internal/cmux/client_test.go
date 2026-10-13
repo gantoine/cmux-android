@@ -132,6 +132,10 @@ func TestClientToleratesUnconfiguredPasswordAndReportsAccessDenied(t *testing.T)
 	if _, err := deniedClient.Identify(context.Background()); !errors.Is(err, ErrAccessDenied) {
 		t.Fatalf("want ErrAccessDenied, got %v", err)
 	}
+	streamErr := deniedClient.Events(context.Background(), nil, []string{"notification"}, func(Event) error { return nil })
+	if !errors.Is(streamErr, ErrAccessDenied) {
+		t.Fatalf("a refused event stream must report ErrAccessDenied, got %v", streamErr)
+	}
 }
 
 func TestClientRecoversFromConnectionsCmuxClosedWhileIdle(t *testing.T) {

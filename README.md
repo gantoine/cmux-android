@@ -85,8 +85,10 @@ Pair as many Macs as you like. Each one shows up in the app's Mac list.
 ## Using the app
 
 - **Workspaces:** tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace.
-- **Terminal:** pinch to zoom, drag sideways to pan, drag up and down to scroll the Mac's scrollback. Tap the terminal to bring up the keyboard.
-- **Typing:** by default you type a line and press send. Turn on **live typing** (keyboard icon) to send every key as you type, which works better in full-screen programs. The key bar has Esc, Tab, a sticky Ctrl, arrows, ^C, ^D, backspace, Enter, and paste.
+- **Terminal:** pinch to zoom and drag sideways to pan.
+- **Scrolling back:** swipe down to read earlier output. The phone loads up to 2,000 lines of history and scrolls it locally, so the view on your Mac does not move. Tap **Live** or scroll to the bottom to follow the terminal again. In full-screen programs such as vim or Claude Code, swiping scrolls inside the program on the Mac instead.
+- **Copying:** long-press a word to select it, drag to extend the selection, then tap **Copy**. Selections can span history and the live screen.
+- **Typing:** tap the terminal and type. Every key goes straight to the Mac, with autocorrect and suggestions turned off. A hardware keyboard works too, including Ctrl and Alt shortcuts. The key bar has Esc, Tab, a sticky Ctrl, arrows, ^C, ^D, backspace, Enter, and paste.
 - **Fit to phone:** the fit icon resizes the Mac terminal to the phone's screen while you watch. cmux gives the size back when you leave the terminal.
 - **Background notifications:** turn on **Notify me in the background** on the Mac list. The app then keeps a connection open in a foreground service, so cmux notifications reach you while the app is closed. Reading a notification on the Mac removes it from the phone.
 
@@ -122,6 +124,7 @@ The relay logs to `~/Library/Logs/cmux-relay.log`.
 
 - The relay uses cmux's `mobile.*` socket methods, which power the official iOS app. cmux does not document them, so a cmux update can break the relay. `cmux-relay doctor` and the relay log show what failed.
 - cmux has no way to push terminal output over its local socket, so the relay polls the terminal you are viewing: about 12 times a second while it changes, slowing to once a second when idle. It polls only while a phone has a terminal open.
+- History you scroll back through is loaded once. While you read it, the live screen keeps updating, but lines that scroll off the screen meanwhile are not added. Tap **Live** and scroll up again to reload it.
 - Background notifications need the foreground service. Without it, notifications that arrive while the app is closed are delivered the next time you open it.
 
 ## Development
@@ -159,6 +162,7 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 | `hello {notifications_after}` | Start the session. The answer carries the Mac name and cmux version. |
 | `attach {workspace_id, surface_id, fit?}` / `detach` / `resync` | Choose the terminal to stream. |
 | `input {text}` / `key {key}` / `paste {text, submit}` / `scroll {lines}` | Send input to the attached terminal. |
+| `history {lines?}` | Get up to 5,000 lines above the attached terminal's screen, oldest first, with their own style table. The default is 2,000. |
 | `fit {columns, rows}` / `unfit` | Ask cmux to size the terminal for the phone. |
 | `create_workspace`, `rename_workspace`, `close_workspace`, `create_terminal` | Manage workspaces. |
 

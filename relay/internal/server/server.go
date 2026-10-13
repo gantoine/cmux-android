@@ -24,6 +24,7 @@ type Cmux interface {
 	Identify(ctx context.Context) (cmux.Identity, error)
 	Workspaces(ctx context.Context) ([]cmux.Workspace, error)
 	Replay(ctx context.Context, workspaceID, surfaceID string) (cmux.Replay, error)
+	History(ctx context.Context, workspaceID, surfaceID string, maxRows int) (cmux.Replay, error)
 	Input(ctx context.Context, workspaceID, surfaceID, text string) error
 	SendKey(ctx context.Context, workspaceID, surfaceID, key string) error
 	Paste(ctx context.Context, workspaceID, surfaceID, text string, submit bool) error
