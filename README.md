@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" width="128" height="128" alt="cmux for Android logo: a blue gradient chevron and a green cursor">
+  <img src="assets/logo.svg" width="128" height="128" alt="cmux for Android logo: a green gradient chevron and a light cursor">
 </p>
 
 # cmux for Android
