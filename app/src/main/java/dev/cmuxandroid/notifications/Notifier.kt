@@ -39,7 +39,7 @@ class Notifier(private val context: Context) {
         val context = listOfNotNull(mac.name, notification.tabTitle?.takeIf { it != title }).joinToString(" · ")
         val body = listOfNotNull(notification.subtitle?.takeIf { it.isNotBlank() }, notification.body).joinToString("\n")
         val built = NotificationCompat.Builder(this.context, AGENT_CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setSubText(context)
             .setContentText(body)

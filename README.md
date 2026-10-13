@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" width="128" height="128" alt="cmux for Android logo: a blue gradient chevron and a green cursor">
+</p>
+
 # cmux for Android
 
 Watch and drive your [cmux](https://github.com/manaflow-ai/cmux) terminals from an Android phone. See every workspace, open a live terminal, type into it, and get notified when a coding agent needs you.
@@ -163,3 +167,5 @@ The relay sends `workspaces`, `screen` (row diffs with a style table), `detached
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+The logo remixes the chevron from the cmux icon. cmux and its logo belong to Manaflow, Inc. Using them here does not mean Manaflow made, endorses, or supports this project. If you are from Manaflow and want the logo changed, open an issue.

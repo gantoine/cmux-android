@@ -58,7 +58,7 @@ class ConnectionService : LifecycleService() {
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, Notifier.CONNECTION_CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Watching for terminal notifications")
             .setContentText(text)
             .setOngoing(true)

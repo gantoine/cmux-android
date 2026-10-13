@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="chevron" x1="35.4" y1="54" x2="61.8" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#12C7F5"/>
+      <stop offset="0.52" stop-color="#2D8CFF"/>
+      <stop offset="1" stop-color="#6C5CFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="#1E1F29"/>
+  <g transform="translate(110 150) scale(3.4) translate(-12 -12)">
+    <rect x="12" y="12" width="84" height="84" rx="20" fill="#2A2C3B"/>
+    <path d="M35.4 35.1 L61.8 54 L35.4 72.9 L35.4 60.9 L49.8 54 L35.4 47.1 Z" fill="url(#chevron)"/>
+    <rect x="53.1" y="66.3" width="19.5" height="6.6" rx="3.3" fill="#3DDC84"/>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <text x="470" y="290" font-size="84" font-weight="700" fill="#C6D0F5">cmux for Android</text>
+    <text x="472" y="360" font-size="36" fill="#A5ADCE">Your Mac's cmux terminals, on your phone.</text>
+    <text x="472" y="410" font-size="36" fill="#A5ADCE">Any plan, no cloud, over Tailscale.</text>
+    <text x="472" y="500" font-size="24" fill="#737994">Unofficial. Not affiliated with Manaflow or the cmux team.</text>
+  </g>
+</svg>
