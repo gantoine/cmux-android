@@ -1,0 +1,218 @@
+package devices
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	pairingCodeAlphabet  = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+	pairingCodeLength    = 8
+	PairingCodeLifetime  = 10 * time.Minute
+	maxFailedPairingRuns = 10
+)
+
+var (
+	ErrInvalidPairingCode = errors.New("invalid or expired pairing code")
+	ErrUnknownDevice      = errors.New("unknown device")
+)
+
+type Device struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	TokenHash string    `json:"token_hash"`
+	PairedAt  time.Time `json:"paired_at"`
+	LastSeen  time.Time `json:"last_seen"`
+}
+
+type pendingCode struct {
+	code      string
+	expiresAt time.Time
+}
+
+type Store struct {
+	path string
+	now  func() time.Time
+
+	mu             sync.Mutex
+	devices        []Device
+	pending        *pendingCode
+	failedAttempts int
+}
+
+func Open(path string) (*Store, error) {
+	store := &Store{path: path, now: time.Now}
+	contents, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return store, nil
+	case err != nil:
+		return nil, err
+	}
+	if err := json.Unmarshal(contents, &store.devices); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func (s *Store) NewPairingCode() (string, time.Time, error) {
+	code, err := randomCode()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	expiresAt := s.now().Add(PairingCodeLifetime)
+	s.pending = &pendingCode{code: code, expiresAt: expiresAt}
+	s.failedAttempts = 0
+	return code, expiresAt, nil
+}
+
+func (s *Store) Pair(code, deviceName string) (Device, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), "-", ""))
+	if s.pending == nil || s.now().After(s.pending.expiresAt) {
+		s.pending = nil
+		return Device{}, "", ErrInvalidPairingCode
+	}
+	if subtle.ConstantTimeCompare([]byte(normalized), []byte(s.pending.code)) != 1 {
+		s.failedAttempts++
+		if s.failedAttempts >= maxFailedPairingRuns {
+			s.pending = nil
+		}
+		return Device{}, "", ErrInvalidPairingCode
+	}
+	s.pending = nil
+
+	token, err := randomToken()
+	if err != nil {
+		return Device{}, "", err
+	}
+	id, err := randomHex(8)
+	if err != nil {
+		return Device{}, "", err
+	}
+	name := strings.TrimSpace(deviceName)
+	if name == "" {
+		name = "Android device"
+	}
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	now := s.now()
+	device := Device{ID: id, Name: name, TokenHash: hashToken(token), PairedAt: now, LastSeen: now}
+	s.devices = append(s.devices, device)
+	if err := s.saveLocked(); err != nil {
+		s.devices = s.devices[:len(s.devices)-1]
+		return Device{}, "", err
+	}
+	return device, token, nil
+}
+
+func (s *Store) Authenticate(token string) (Device, bool) {
+	if token == "" {
+		return Device{}, false
+	}
+	hash := hashToken(token)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.devices {
+		if subtle.ConstantTimeCompare([]byte(s.devices[index].TokenHash), []byte(hash)) == 1 {
+			s.devices[index].LastSeen = s.now()
+			return s.devices[index], true
+		}
+	}
+	return Device{}, false
+}
+
+func (s *Store) List() []Device {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Device(nil), s.devices...)
+}
+
+func (s *Store) Revoke(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, device := range s.devices {
+		if device.ID == id {
+			s.devices = append(s.devices[:index], s.devices[index+1:]...)
+			return s.saveLocked()
+		}
+	}
+	return ErrUnknownDevice
+}
+
+func (s *Store) IsRevoked(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, device := range s.devices {
+		if device.ID == id {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Store) saveLocked() error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return err
+	}
+	contents, err := json.MarshalIndent(s.devices, "", "  ")
+	if err != nil {
+		return err
+	}
+	temporary := s.path + ".tmp"
+	if err := os.WriteFile(temporary, contents, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temporary, s.path)
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func randomToken() (string, error) {
+	buffer := make([]byte, 32)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buffer), nil
+}
+
+func randomHex(size int) (string, error) {
+	buffer := make([]byte, size)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buffer), nil
+}
+
+func randomCode() (string, error) {
+	unbiasedLimit := byte(256 - 256%len(pairingCodeAlphabet))
+	code := make([]byte, 0, pairingCodeLength)
+	buffer := make([]byte, 1)
+	for len(code) < pairingCodeLength {
+		if _, err := rand.Read(buffer); err != nil {
+			return "", err
+		}
+		if buffer[0] >= unbiasedLimit {
+			continue
+		}
+		code = append(code, pairingCodeAlphabet[int(buffer[0])%len(pairingCodeAlphabet)])
+	}
+	return string(code), nil
+}

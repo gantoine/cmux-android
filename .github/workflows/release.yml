@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Test
+        run: |
+          (cd relay && go test ./...)
+          ./gradlew :app:testDebugUnitTest
+
+      - name: Build relay
+        working-directory: relay
+        run: |
+          mkdir -p dist
+          for arch in arm64 amd64; do
+            GOOS=darwin GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o dist/cmux-relay ./cmd/cmux-relay
+            tar -C dist -czf dist/cmux-relay-${GITHUB_REF_NAME}-darwin-${arch}.tar.gz cmux-relay
+            rm dist/cmux-relay
+          done
+
+      - name: Build signed APK
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "Add the SIGNING_* secrets to publish a signed APK." >&2
+            exit 1
+          fi
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          SIGNING_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" ./gradlew :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "relay/dist/cmux-android-${GITHUB_REF_NAME}.apk"
+
+      - name: Checksums
+        working-directory: relay/dist
+        run: shasum -a 256 * > SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: relay/dist/*
+          generate_release_notes: true

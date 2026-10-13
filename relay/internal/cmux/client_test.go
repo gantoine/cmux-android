@@ -1,0 +1,220 @@
+package cmux
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+)
+
+type fakeSocket struct {
+	path    string
+	mu      sync.Mutex
+	methods []string
+}
+
+func startFakeSocket(t *testing.T, respond func(method string, params map[string]any, authenticated bool) string) *fakeSocket {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "cmux-relay-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	fake := &fakeSocket{path: filepath.Join(dir, "cmux.sock")}
+	listener, err := net.Listen("unix", fake.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				authenticated := false
+				scanner := bufio.NewScanner(conn)
+				for scanner.Scan() {
+					var request struct {
+						ID     string         `json:"id"`
+						Method string         `json:"method"`
+						Params map[string]any `json:"params"`
+					}
+					_ = json.Unmarshal(scanner.Bytes(), &request)
+					fake.mu.Lock()
+					fake.methods = append(fake.methods, request.Method)
+					fake.mu.Unlock()
+					if request.Method == "auth.login" && request.Params["password"] == "secret" {
+						authenticated = true
+					}
+					reply := respond(request.Method, request.Params, authenticated)
+					if reply[0] == '{' {
+						var decoded map[string]any
+						_ = json.Unmarshal([]byte(reply), &decoded)
+						decoded["id"] = request.ID
+						encoded, _ := json.Marshal(decoded)
+						reply = string(encoded)
+					}
+					_, _ = conn.Write([]byte(reply + "\n"))
+				}
+			}()
+		}
+	}()
+	return fake
+}
+
+func (f *fakeSocket) calls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.methods...)
+}
+
+func TestClientLogsInWithPasswordBeforeCalling(t *testing.T) {
+	fake := startFakeSocket(t, func(method string, _ map[string]any, authenticated bool) string {
+		switch {
+		case method == "auth.login" && authenticated:
+			return `{"ok":true,"result":{"authenticated":true}}`
+		case method == "auth.login":
+			return `{"ok":false,"error":{"code":"auth_failed","message":"bad"}}`
+		case !authenticated:
+			return `{"ok":false,"error":{"code":"auth_required","message":"login first"}}`
+		default:
+			return `{"ok":true,"result":{"version":"0.65.1"}}`
+		}
+	})
+
+	client := NewClient(fake.path, func() (string, error) { return "secret", nil })
+	defer client.Close()
+	identity, err := client.Identify(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Version != "0.65.1" {
+		t.Fatalf("version = %q", identity.Version)
+	}
+
+	wrong := NewClient(fake.path, func() (string, error) { return "nope", nil })
+	defer wrong.Close()
+	if _, err := wrong.Identify(context.Background()); err == nil {
+		t.Fatal("a wrong password must fail")
+	}
+}
+
+func TestClientToleratesUnconfiguredPasswordAndReportsAccessDenied(t *testing.T) {
+	fake := startFakeSocket(t, func(method string, _ map[string]any, _ bool) string {
+		if method == "auth.login" {
+			return `{"ok":false,"error":{"code":"auth_unconfigured","message":"not password mode"}}`
+		}
+		return `{"ok":true,"result":{"workspaces":[{"id":"w1","title":"api","terminals":[{"id":"t1","title":"zsh"}]}]}}`
+	})
+	client := NewClient(fake.path, func() (string, error) { return "stale", nil })
+	defer client.Close()
+	workspaces, err := client.Workspaces(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 1 || workspaces[0].Terminals[0].ID != "t1" {
+		t.Fatalf("workspaces = %+v", workspaces)
+	}
+
+	denied := startFakeSocket(t, func(string, map[string]any, bool) string {
+		return "ERROR: Access denied - only processes started inside cmux can connect"
+	})
+	deniedClient := NewClient(denied.path, nil)
+	defer deniedClient.Close()
+	if _, err := deniedClient.Identify(context.Background()); !errors.Is(err, ErrAccessDenied) {
+		t.Fatalf("want ErrAccessDenied, got %v", err)
+	}
+}
+
+func TestClientRecoversFromConnectionsCmuxClosedWhileIdle(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "cmux-relay-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "cmux.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	var mu sync.Mutex
+	connections, inputs := 0, 0
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			connections++
+			mu.Unlock()
+			go func() {
+				defer conn.Close()
+				scanner := bufio.NewScanner(conn)
+				if !scanner.Scan() {
+					return
+				}
+				var request struct {
+					ID     string `json:"id"`
+					Method string `json:"method"`
+				}
+				_ = json.Unmarshal(scanner.Bytes(), &request)
+				if request.Method == "mobile.terminal.input" {
+					mu.Lock()
+					inputs++
+					mu.Unlock()
+				}
+				_, _ = conn.Write([]byte(`{"id":"` + request.ID + `","ok":true,"result":{"version":"1"}}` + "\n"))
+			}()
+		}
+	}()
+
+	client := NewClient(path, nil)
+	defer client.Close()
+	for range 3 {
+		if _, err := client.Identify(context.Background()); err != nil {
+			t.Fatalf("a read must survive a connection cmux closed while it sat idle: %v", err)
+		}
+	}
+	_ = client.Input(context.Background(), "w", "s", "ls\r")
+	mu.Lock()
+	defer mu.Unlock()
+	if inputs > 1 {
+		t.Fatalf("input must never be sent twice, got %d", inputs)
+	}
+	if connections < 3 {
+		t.Fatalf("expected fresh connections after each close, got %d", connections)
+	}
+}
+
+func TestClientRetriesRateLimitedCalls(t *testing.T) {
+	var mu sync.Mutex
+	attempts := 0
+	fake := startFakeSocket(t, func(method string, _ map[string]any, _ bool) string {
+		mu.Lock()
+		defer mu.Unlock()
+		attempts++
+		if attempts == 1 {
+			return `{"ok":false,"error":{"code":"rate_limited","message":"slow down","data":{"retry_after_ms":5}}}`
+		}
+		return `{"ok":true,"result":{"version":"1"}}`
+	})
+	client := NewClient(fake.path, nil)
+	defer client.Close()
+	if _, err := client.Identify(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.calls(); len(got) != 2 {
+		t.Fatalf("expected one retry, calls = %v", got)
+	}
+}

@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  relay:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+      - run: go vet ./...
+        working-directory: relay
+      - run: go test -race ./...
+        working-directory: relay
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v5
+      - run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
+      - uses: actions/upload-artifact@v5
+        with:
+          name: cmux-android-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
