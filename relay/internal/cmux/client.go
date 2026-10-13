@@ -244,11 +244,19 @@ func (cn *conn) roundTrip(ctx context.Context, id uint64, method string, params 
 		_ = cn.netConn.SetDeadline(deadline)
 		defer func() { _ = cn.netConn.SetDeadline(time.Time{}) }()
 	}
+	interrupt := context.AfterFunc(ctx, func() { _ = cn.netConn.SetDeadline(time.Unix(1, 0)) })
+	defer interrupt()
 	if _, err := cn.netConn.Write(request); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("%w: %w", errNotSent, err)
 	}
 	line, err := cn.readLine()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, err
 	}
 	return decodeResponse(line)

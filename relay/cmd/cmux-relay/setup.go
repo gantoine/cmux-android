@@ -109,7 +109,7 @@ func listenPort(listen string) string {
 	return port
 }
 
-func tailscaleRelayURL() (string, error) {
+func tailscaleRelayURL(listen string) (string, error) {
 	binary, err := tailscaleBinary()
 	if err != nil {
 		return "", err
@@ -127,7 +127,7 @@ func tailscaleRelayURL() (string, error) {
 		return "", errors.New("could not find this Mac's Tailscale name")
 	}
 	host := strings.TrimSuffix(status.Self.DNSName, ".")
-	return "https://" + host + ":" + listenPort(defaultListenAddress), nil
+	return "https://" + host + ":" + listenPort(listen), nil
 }
 
 func tailscaleServeCommand(listen string) string {

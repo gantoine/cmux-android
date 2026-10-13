@@ -43,6 +43,7 @@ const (
 	revocationCheck       = 10 * time.Second
 	maxConsecutiveErrors  = 10
 	maxInputBytes         = 64 * 1024
+	maxQueuedMessages     = 64
 	callTimeout           = 15 * time.Second
 	terminalGoneErrorCode = "not_found"
 )
@@ -74,11 +75,10 @@ type session struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu                 sync.Mutex
-	attached           *attachment
-	viewportGeneration int
-	started            bool
-	workspacesWake     chan struct{}
+	mu             sync.Mutex
+	attached       *attachment
+	started        bool
+	workspacesWake chan struct{}
 }
 
 func newSession(server *Server, conn *websocket.Conn, device devices.Device) *session {
@@ -91,21 +91,39 @@ func newSession(server *Server, conn *websocket.Conn, device devices.Device) *se
 	}
 }
 
-func (s *session) run(parent context.Context) {
-	s.ctx, s.cancel = context.WithCancel(context.WithoutCancel(parent))
+func (s *session) run() {
+	s.ctx, s.cancel = context.WithCancel(s.server.ctx)
 	defer s.cancel()
 	defer s.conn.CloseNow()
 	go s.keepAlive()
 	go s.watchRevocation()
 
-	for {
-		var raw json.RawMessage
-		if err := wsjson.Read(s.ctx, s.conn, &raw); err != nil {
+	for raw := range s.readMessages() {
+		if s.ctx.Err() != nil {
 			break
 		}
 		s.handle(raw)
 	}
 	s.detach()
+}
+
+func (s *session) readMessages() <-chan json.RawMessage {
+	messages := make(chan json.RawMessage, maxQueuedMessages)
+	go func() {
+		defer close(messages)
+		for {
+			var raw json.RawMessage
+			if err := wsjson.Read(s.ctx, s.conn, &raw); err != nil {
+				return
+			}
+			select {
+			case messages <- raw:
+			case <-s.ctx.Done():
+				return
+			}
+		}
+	}()
+	return messages
 }
 
 func (s *session) keepAlive() {
@@ -466,16 +484,12 @@ func (s *session) fit(ctx context.Context, columns, rows int) error {
 	if columns < 20 || columns > 300 || rows < 5 || rows > 120 {
 		return &requestError{Code: "invalid_params", Message: "fit needs 20-300 columns and 5-120 rows."}
 	}
-	s.mu.Lock()
-	current := s.attached
-	s.viewportGeneration++
-	generation := s.viewportGeneration
-	s.mu.Unlock()
+	current := s.current()
 	if current == nil {
 		return &requestError{Code: "not_attached", Message: "Open a terminal first."}
 	}
 	err := s.server.cmux.SetViewport(ctx, current.workspaceID, current.surfaceID, cmux.Viewport{
-		ClientID: s.clientID, Columns: columns, Rows: rows, Generation: generation,
+		ClientID: s.clientID, Columns: columns, Rows: rows, Generation: s.server.nextViewportGeneration(),
 	})
 	if err == nil {
 		s.mu.Lock()
@@ -507,11 +521,7 @@ func (s *session) clearViewport(current *attachment) {
 }
 
 func (s *session) clearViewportWith(ctx context.Context, current *attachment) error {
-	s.mu.Lock()
-	s.viewportGeneration++
-	generation := s.viewportGeneration
-	s.mu.Unlock()
-	err := s.server.cmux.ClearViewport(ctx, current.workspaceID, current.surfaceID, s.clientID, generation)
+	err := s.server.cmux.ClearViewport(ctx, current.workspaceID, current.surfaceID, s.clientID, s.server.nextViewportGeneration())
 	s.wakeTerminal(current)
 	return err
 }

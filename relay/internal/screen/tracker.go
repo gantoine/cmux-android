@@ -145,8 +145,8 @@ func (t *Tracker) Update(replay cmux.Replay) (Frame, bool) {
 	cursor := Cursor{Row: -1, Column: -1}
 	if grid.Cursor != nil {
 		cursor = Cursor{Row: grid.Cursor.Row, Column: grid.Cursor.Column, Visible: grid.Cursor.Visible, Shape: grid.Cursor.Style}
-		frame.Cursor = &cursor
 	}
+	frame.Cursor = &cursor
 	altScreen := grid.ActiveScreen == "alternate"
 	changed := full || len(frame.Changed) > 0 || len(frame.Styles) > 0 || cursor != t.cursor || altScreen != t.altScreen
 	t.cursor = cursor

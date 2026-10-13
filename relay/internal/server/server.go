@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -46,13 +48,55 @@ type Server struct {
 	hub     *notify.Hub
 	options Options
 	logger  *slog.Logger
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	mu       sync.Mutex
+	closed   bool
+	sessions sync.WaitGroup
+
+	viewportGeneration atomic.Int64
 }
 
 func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, logger *slog.Logger) *Server {
 	if options.PollInterval == (Intervals{}) {
 		options.PollInterval = DefaultIntervals
 	}
-	return &Server{cmux: cmuxAPI, devices: store, hub: hub, options: options, logger: logger}
+	ctx, cancel := context.WithCancel(context.Background())
+	server := &Server{cmux: cmuxAPI, devices: store, hub: hub, options: options, logger: logger, ctx: ctx, cancel: cancel}
+	server.viewportGeneration.Store(time.Now().UnixMilli())
+	return server
+}
+
+func (s *Server) nextViewportGeneration() int {
+	return int(s.viewportGeneration.Add(1))
+}
+
+func (s *Server) Close(ctx context.Context) {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	s.cancel()
+	drained := make(chan struct{})
+	go func() {
+		s.sessions.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-ctx.Done():
+	}
+}
+
+func (s *Server) trackSession() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
+	}
+	s.sessions.Add(1)
+	return true
 }
 
 func (s *Server) Handler() http.Handler {
@@ -111,13 +155,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, errorBody("unauthorized", "This device is not paired with the Mac, or it was removed."))
 		return
 	}
+	if !s.trackSession() {
+		writeJSON(w, http.StatusServiceUnavailable, errorBody("shutting_down", "The relay is restarting. Try again in a moment."))
+		return
+	}
+	defer s.sessions.Done()
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		return
 	}
 	conn.SetReadLimit(1 << 20)
 	session := newSession(s, conn, device)
-	session.run(r.Context())
+	session.run()
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

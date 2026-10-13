@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import dev.cmuxandroid.CmuxApplication
 import dev.cmuxandroid.net.PairingClient
 import dev.cmuxandroid.net.PairingException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +58,10 @@ fun PairScreen(app: CmuxApplication, initialUrl: String, initialCode: String, on
                 onPaired(response.deviceId)
             } catch (failure: PairingException) {
                 error = failure.message
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                error = "Pairing failed on this phone: ${failure.message ?: failure::class.simpleName}"
             } finally {
                 working = false
             }

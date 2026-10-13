@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import dev.cmuxandroid.CmuxApplication
+import dev.cmuxandroid.data.MacStore
 import dev.cmuxandroid.net.ConnectionState
 import dev.cmuxandroid.net.RelayConnection
 import dev.cmuxandroid.net.VisibleTerminal
@@ -86,21 +87,27 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    var fontSize by remember { mutableFloatStateOf(11f) }
+    var fontSize by remember { mutableFloatStateOf(MacStore.DEFAULT_FONT_SIZE) }
+    var fontSizeLoaded by remember { mutableStateOf(false) }
     var fitToPhone by remember { mutableStateOf(false) }
     var liveTyping by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { fontSize = app.store.settings.first().fontSize }
-    LaunchedEffect(fontSize) {
+    LaunchedEffect(Unit) {
+        fontSize = app.store.settings.first().fontSize
+        fontSizeLoaded = true
+    }
+    LaunchedEffect(fontSize, fontSizeLoaded) {
+        if (!fontSizeLoaded) return@LaunchedEffect
         delay(500)
         app.store.setFontSize(fontSize)
     }
 
     DisposableEffect(connection, workspaceId, surfaceId) {
-        connection.attach(workspaceId, surfaceId)
-        app.connections.visibleTerminal.value = VisibleTerminal(macId, surfaceId)
+        val attachment = connection.attach(workspaceId, surfaceId)
+        val visible = VisibleTerminal(macId, surfaceId)
+        app.connections.visibleTerminal.value = visible
         onDispose {
-            connection.detach()
-            app.connections.visibleTerminal.value = null
+            connection.detach(attachment)
+            if (app.connections.visibleTerminal.value === visible) app.connections.visibleTerminal.value = null
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { connection.resync() }
@@ -167,6 +174,7 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
                 val metrics = rememberCellMetrics(measurer, fontSize.sp)
                 val grid = fittingGrid(constraints.maxWidth, constraints.maxHeight, metrics)
                 LaunchedEffect(fitToPhone, grid) {
+                    if (fitToPhone) delay(FIT_SETTLE_MS)
                     connection.setFit(if (fitToPhone) grid else null)
                 }
                 val current = screen
@@ -195,6 +203,8 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
         }
     }
 }
+
+private const val FIT_SETTLE_MS = 300L
 
 private val KEYS = listOf(
     "Esc" to "escape",

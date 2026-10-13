@@ -35,7 +35,10 @@ class PairingClient(private val client: OkHttpClient) {
                         val error = runCatching { RelayJson.decodeFromString<ErrorResponse>(text).error.message }.getOrNull()
                         throw PairingException(error ?: "The Mac answered with HTTP ${response.code}.")
                     }
-                    base.toString().trimEnd('/') to RelayJson.decodeFromString<PairResponse>(text)
+                    val paired = runCatching { RelayJson.decodeFromString<PairResponse>(text) }.getOrElse {
+                        throw PairingException("${base.host} answered, but not like cmux-relay. Check the address.")
+                    }
+                    base.toString().trimEnd('/') to paired
                 }
             } catch (error: IOException) {
                 throw PairingException(

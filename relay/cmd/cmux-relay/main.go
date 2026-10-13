@@ -30,7 +30,7 @@ const usage = `cmux-relay connects the cmux Android app to cmux on this Mac.
 Usage:
   cmux-relay install [--listen ADDR] [--name NAME]   Run the relay at login (launchd) and start it now
   cmux-relay uninstall                               Stop the relay and remove it from login items
-  cmux-relay pair [--url URL]                        Show a QR code and pairing code for a new phone
+  cmux-relay pair [--url URL] [--listen ADDR]        Show a QR code and pairing code for a new phone
   cmux-relay devices                                 List paired phones
   cmux-relay revoke DEVICE_ID                        Remove a paired phone
   cmux-relay doctor                                  Check cmux, socket access, and Tailscale setup
@@ -103,6 +103,11 @@ func runServe(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return err
+	}
+
 	client := cmux.NewClient(cmux.DefaultSocketPath(), cmux.DefaultPasswordSource())
 	defer client.Close()
 	hub := notify.NewHub(client, logger)
@@ -121,10 +126,6 @@ func runServe(args []string) error {
 		Handler:           relay.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	listener, err := net.Listen("tcp", listen)
-	if err != nil {
-		return err
-	}
 	logger.Info("relay listening", "address", listener.Addr().String(), "cmux_socket", client.SocketPath(), "version", version)
 	go func() {
 		<-ctx.Done()
@@ -132,8 +133,12 @@ func runServe(args []string) error {
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
-	if err := httpServer.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
-		return err
+	serveErr := httpServer.Serve(listener)
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), 5*time.Second)
+	relay.Close(closeCtx)
+	cancelClose()
+	if !errors.Is(serveErr, http.ErrServerClosed) {
+		return serveErr
 	}
 	select {
 	case err := <-adminErr:
@@ -146,6 +151,7 @@ func runServe(args []string) error {
 func runPair(args []string) error {
 	flags := flag.NewFlagSet("pair", flag.ContinueOnError)
 	relayURL := flags.String("url", "", "HTTPS address the phone uses to reach this relay (default: this Mac's Tailscale name)")
+	listen := flags.String("listen", defaultListenAddress, "address the relay listens on, if you changed it with install or serve")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -154,7 +160,7 @@ func runPair(args []string) error {
 		return err
 	}
 	if *relayURL == "" {
-		*relayURL, err = tailscaleRelayURL()
+		*relayURL, err = tailscaleRelayURL(*listen)
 		if err != nil {
 			return fmt.Errorf("%w\nPass the address yourself with --url", err)
 		}

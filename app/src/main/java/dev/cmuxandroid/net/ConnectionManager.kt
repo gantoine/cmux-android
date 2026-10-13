@@ -3,6 +3,7 @@ package dev.cmuxandroid.net
 import dev.cmuxandroid.data.Mac
 import dev.cmuxandroid.data.MacStore
 import dev.cmuxandroid.protocol.RelayNotification
+import dev.cmuxandroid.protocol.Welcome
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,6 +59,7 @@ class ConnectionManager(
                         scope = scope,
                         notificationsAfter = { store.current().firstOrNull { it.id == mac.id }?.lastNotificationSeq ?: 0 },
                         onNotification = ::handleNotification,
+                        onWelcome = ::handleWelcome,
                     )
                 }
             }
@@ -66,6 +68,11 @@ class ConnectionManager(
             }
             _connectionsFlow.value = connections.toMap()
         }
+    }
+
+    private suspend fun handleWelcome(macId: String, welcome: Welcome) {
+        val mac = store.current().firstOrNull { it.id == macId } ?: return
+        if (mac.lastNotificationSeq == 0L) store.recordNotificationSeq(macId, welcome.notificationSeq)
     }
 
     private suspend fun handleNotification(macId: String, notification: RelayNotification) {

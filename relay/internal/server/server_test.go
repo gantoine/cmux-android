@@ -94,9 +94,10 @@ func (f *fakeCmux) snapshot() (inputs, keys, viewports []string) {
 }
 
 type testRelay struct {
-	url   string
-	cmux  *fakeCmux
-	store *devices.Store
+	url    string
+	cmux   *fakeCmux
+	store  *devices.Store
+	server *Server
 }
 
 func startRelay(t *testing.T) testRelay {
@@ -112,7 +113,7 @@ func startRelay(t *testing.T) testRelay {
 	relay := New(fake, store, nil, Options{MacName: "Test Mac", RelayVersion: "test", PollInterval: intervals}, logger)
 	server := httptest.NewServer(relay.Handler())
 	t.Cleanup(server.Close)
-	return testRelay{url: server.URL, cmux: fake, store: store}
+	return testRelay{url: server.URL, cmux: fake, store: store, server: relay}
 }
 
 func (r testRelay) pair(t *testing.T) string {
@@ -245,5 +246,27 @@ func TestDetachedMessageWhenTerminalDisappears(t *testing.T) {
 	detached := readUntil(t, ctx, conn, "detached")
 	if detached["surface_id"] != "gone" {
 		t.Fatalf("unexpected detached message: %v", detached)
+	}
+}
+
+func TestClosingTheRelayGivesFittedTerminalsTheirSizeBack(t *testing.T) {
+	relay := startRelay(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := relay.dial(t, ctx, relay.pair(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "id": "1", "workspace_id": "w1", "surface_id": "t1", "fit": map[string]int{"columns": 40, "rows": 20}})
+	if result := readUntil(t, ctx, conn, "result"); result["ok"] != true {
+		t.Fatalf("attach failed: %v", result)
+	}
+
+	relay.server.Close(ctx)
+
+	if _, _, viewports := relay.cmux.snapshot(); strings.Join(viewports, ",") != "set,clear" {
+		t.Fatalf("closing the relay must give the Mac its size back, viewports = %v", viewports)
 	}
 }

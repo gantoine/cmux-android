@@ -21,6 +21,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -88,7 +89,7 @@ class RelayConnectionTest {
         val workspaces = withTimeout(5_000) { connection.workspaces.first { it != null } }!!
         assertEquals("Running", workspaces.single().terminals.single().agentState)
 
-        connection.attach("w1", "t1")
+        val attachment = connection.attach("w1", "t1")
         val screen = withTimeout(5_000) { connection.screen.first { it != null } }!!
         assertEquals("$", screen.text(0))
 
@@ -96,7 +97,10 @@ class RelayConnectionTest {
         assertEquals("Waiting for input", notifications.single().body)
         assertTrue(received.first().contains("\"notifications_after\":3"))
 
-        connection.detach()
+        val reopened = connection.attach("w1", "t1")
+        connection.detach(attachment)
+        assertNotNull(connection.screen.value)
+        connection.detach(reopened)
         assertNull(connection.screen.value)
         connection.stop()
     }

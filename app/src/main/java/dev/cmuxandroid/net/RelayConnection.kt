@@ -14,6 +14,7 @@ import dev.cmuxandroid.terminal.TerminalScreen
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,7 +51,7 @@ sealed interface ConnectionState {
 
 class RelayException(val code: String, message: String) : Exception(message)
 
-data class Attachment(val workspaceId: String, val surfaceId: String, val fit: Pair<Int, Int>?)
+data class Attachment(val id: Long, val workspaceId: String, val surfaceId: String, val fit: Pair<Int, Int>?)
 
 class RelayConnection(
     private val macId: String,
@@ -60,6 +61,7 @@ class RelayConnection(
     private val scope: CoroutineScope,
     private val notificationsAfter: suspend () -> Long,
     private val onNotification: suspend (String, RelayNotification) -> Unit,
+    private val onWelcome: suspend (String, Welcome) -> Unit = { _, _ -> },
 ) {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Stopped)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -75,13 +77,22 @@ class RelayConnection(
 
     private val pending = ConcurrentHashMap<String, CompletableDeferred<Result<JsonElement?>>>()
     private val nextId = AtomicLong()
-    private var socket: WebSocket? = null
+    private val nextAttachmentId = AtomicLong()
+    private val notifications = Channel<RelayNotification>(Channel.UNLIMITED)
+    @Volatile private var socket: WebSocket? = null
     private var loop: Job? = null
     @Volatile private var attachment: Attachment? = null
 
     fun start() {
         if (loop?.isActive == true) return
-        loop = scope.launch { runLoop() }
+        loop = scope.launch {
+            val delivery = launch { for (notification in notifications) onNotification(macId, notification) }
+            try {
+                runLoop()
+            } finally {
+                delivery.cancel()
+            }
+        }
     }
 
     fun stop() {
@@ -108,8 +119,10 @@ class RelayConnection(
                 closed.await()
             } finally {
                 webSocket.cancel()
-                socket = null
-                failPending("The connection to the Mac dropped.")
+                if (socket === webSocket) {
+                    socket = null
+                    failPending("The connection to the Mac dropped.")
+                }
             }
             if (reason.unauthorized) {
                 _state.value = ConnectionState.Unauthorized
@@ -129,7 +142,7 @@ class RelayConnection(
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             opened = true
-            scope.launch { onOpened() }
+            scope.launch { onOpened(webSocket) }
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -154,15 +167,17 @@ class RelayConnection(
         }
     }
 
-    private suspend fun onOpened() {
+    private suspend fun onOpened(webSocket: WebSocket) {
         val hello = request("hello", buildJsonObject { put("notifications_after", notificationsAfter()) })
+        if (socket !== webSocket) return
         hello.onSuccess { data ->
             val welcome = data?.let { RelayJson.decodeFromJsonElement(Welcome.serializer(), it) } ?: return
             _state.value = ConnectionState.Connected(welcome)
             attachment?.let { sendAttach(it) }
+            onWelcome(macId, welcome)
         }.onFailure {
             _state.value = ConnectionState.Disconnected(it.message ?: "The Mac rejected the connection.")
-            socket?.close(1000, "hello failed")
+            webSocket.close(1000, "hello failed")
         }
     }
 
@@ -186,8 +201,7 @@ class RelayConnection(
                 _detached.tryEmit(detached)
             }
             "notification" -> {
-                val notification = RelayJson.decodeFromJsonElement(NotificationMessage.serializer(), message).notification
-                scope.launch { onNotification(macId, notification) }
+                notifications.trySend(RelayJson.decodeFromJsonElement(NotificationMessage.serializer(), message).notification)
             }
         }
     }
@@ -235,11 +249,12 @@ class RelayConnection(
         },
     )
 
-    fun attach(workspaceId: String, surfaceId: String, fit: Pair<Int, Int>? = null) {
-        val next = Attachment(workspaceId, surfaceId, fit)
+    fun attach(workspaceId: String, surfaceId: String, fit: Pair<Int, Int>? = null): Long {
+        val next = Attachment(nextAttachmentId.incrementAndGet(), workspaceId, surfaceId, fit)
         if (attachment?.surfaceId != surfaceId) _screen.value = null
         attachment = next
         sendAttach(next)
+        return next.id
     }
 
     fun setFit(fit: Pair<Int, Int>?) {
@@ -255,7 +270,8 @@ class RelayConnection(
         }
     }
 
-    fun detach() {
+    fun detach(attachmentId: Long) {
+        if (attachment?.id != attachmentId) return
         attachment = null
         _screen.value = null
         send("detach")

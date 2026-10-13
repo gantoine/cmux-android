@@ -73,7 +73,7 @@ fun TerminalCanvas(
 
     BoxWithConstraints(
         modifier = modifier
-            .background(colors[screen.background])
+            .background(colors[screen.background] ?: Color.Black)
             .clipToBounds(),
     ) {
         val viewportHeight = constraints.maxHeight.toFloat()
@@ -155,8 +155,8 @@ private fun DrawScope.drawTerminal(
     colors: ColorCache,
     fontSize: TextUnit,
 ) {
-    val defaultBackground = colors[screen.background]
-    val defaultForeground = colors[screen.foreground]
+    val defaultBackground = colors[screen.background] ?: Color.Black
+    val defaultForeground = colors[screen.foreground] ?: Color.White
     drawRect(defaultBackground, size = size)
 
     screen.lines.forEachIndexed { row, spans ->
@@ -216,9 +216,9 @@ private fun textStyle(style: CellStyle?, color: Color, fontSize: TextUnit): Text
 }
 
 class ColorCache {
-    private val cache = HashMap<String, Color>()
+    private val cache = HashMap<String, Color?>()
 
-    operator fun get(hex: String): Color = cache.getOrPut(hex) { parseHexColor(hex) ?: Color.Magenta }
+    operator fun get(hex: String): Color? = cache.getOrPut(hex) { parseHexColor(hex) }
 }
 
 fun parseHexColor(hex: String): Color? {
