@@ -29,7 +29,12 @@ sealed interface WorkspaceEntry {
         override val key get() = workspace.id
     }
 
-    data class Group(val group: WorkspaceGroupInfo, val anchor: WorkspaceInfo?, val members: List<WorkspaceInfo>) : WorkspaceEntry {
+    data class Group(
+        val group: WorkspaceGroupInfo,
+        val anchor: WorkspaceInfo?,
+        val members: List<WorkspaceInfo>,
+        val showAnchor: Boolean = anchor != null,
+    ) : WorkspaceEntry {
         override val key get() = "group:${group.id}"
     }
 }
@@ -90,9 +95,14 @@ object WorkspaceListing {
             val wholeGroup = (filter == WorkspaceFilter.All || filter == WorkspaceFilter.Pinned && group.isPinned) &&
                 (query.isBlank() || group.name.contains(query.trim(), ignoreCase = true))
             val shown = if (wholeGroup) members else members.filter(::shows)
-            WorkspaceEntry.Group(group, anchor, shown)
-                .takeIf { wholeGroup || shown.isNotEmpty() || anchor != null && shows(anchor) }
+            val showAnchor = anchor != null && (wholeGroup || shows(anchor))
+            WorkspaceEntry.Group(group, anchor, shown, showAnchor).takeIf { showAnchor || shown.isNotEmpty() }
         }
+    }
+
+    fun anchorTitle(group: WorkspaceGroupInfo, anchor: WorkspaceInfo): String {
+        val title = anchor.title.trim()
+        return if (title.isEmpty() || title.equals(group.name.trim(), ignoreCase = true)) "${group.name.ifBlank { "Group" }} terminals" else title
     }
 
     fun count(workspaces: List<WorkspaceInfo>, groups: List<WorkspaceGroupInfo>, filter: WorkspaceFilter): Int {

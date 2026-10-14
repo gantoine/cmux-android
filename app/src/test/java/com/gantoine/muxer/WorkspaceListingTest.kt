@@ -108,7 +108,7 @@ class WorkspaceFilteringTest {
             WorkspaceListing.entries(all, listOf(group)),
         )
         assertEquals(
-            listOf(WorkspaceEntry.Group(group, anchor, listOf(first))),
+            listOf(WorkspaceEntry.Group(group, anchor, listOf(first), showAnchor = false)),
             WorkspaceListing.entries(all, listOf(group), WorkspaceFilter.Agents),
         )
         assertEquals(
@@ -121,6 +121,8 @@ class WorkspaceFilteringTest {
             WorkspaceListing.entries(all, listOf(pinnedGroup), WorkspaceFilter.Pinned),
         )
         assertEquals(4, WorkspaceListing.count(all, listOf(pinnedGroup), WorkspaceFilter.Pinned))
+        assertEquals("Q4 terminals", WorkspaceListing.anchorTitle(group, anchor))
+        assertEquals("api", WorkspaceListing.anchorTitle(group, anchor.copy(title = "api")))
         assertEquals(listOf(WorkspaceEntry.Single(first.copy(groupId = "missing"))), WorkspaceListing.entries(listOf(first.copy(groupId = "missing")), emptyList()))
     }
 }
