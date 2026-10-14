@@ -83,11 +83,18 @@ func adminSocketPath(stateDir string) (string, error) {
 func defaultMacName() string {
 	if output, err := exec.Command("scutil", "--get", "ComputerName").Output(); err == nil {
 		if name := strings.TrimSpace(string(output)); name != "" {
-			return name
+			return fixPossessive(name)
 		}
 	}
 	hostname, _ := os.Hostname()
 	return strings.TrimSuffix(hostname, ".local")
+}
+
+func fixPossessive(name string) string {
+	for _, apostrophe := range []string{"'", "\u2019"} {
+		name = strings.ReplaceAll(name, "s"+apostrophe+"s ", "s"+apostrophe+" ")
+	}
+	return name
 }
 
 func tailscaleBinary() (string, error) {
@@ -124,7 +131,7 @@ func tailscaleRelayURL(listen string) (string, error) {
 		} `json:"Self"`
 	}
 	if err := json.Unmarshal(output, &status); err != nil || status.Self.DNSName == "" {
-		return "", errors.New("could not find this Mac's Tailscale name")
+		return "", errors.New("could not find this computer's Tailscale name")
 	}
 	host := strings.TrimSuffix(status.Self.DNSName, ".")
 	return "https://" + host + ":" + listenPort(listen), nil

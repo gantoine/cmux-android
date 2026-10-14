@@ -543,7 +543,7 @@ func (s *session) clearViewport(current *attachment) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.clearViewportWith(ctx, current); err != nil {
-		s.server.logger.Warn("could not restore the Mac terminal size", "error", err)
+		s.server.logger.Warn("could not restore the computer's terminal size", "error", err)
 	}
 }
 

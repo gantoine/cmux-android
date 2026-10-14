@@ -164,7 +164,7 @@ class RelayConnection(
                 closed.complete(CloseReason("This phone is no longer paired with the computer.", unauthorized = true))
                 return
             }
-            closed.complete(CloseReason(t.message ?: "Could not reach the computer.", wasConnected = opened))
+            closed.complete(CloseReason(connectionFailureReason(t, opened), wasConnected = opened))
         }
     }
 

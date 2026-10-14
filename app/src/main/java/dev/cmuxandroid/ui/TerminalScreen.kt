@@ -1,5 +1,6 @@
 package dev.cmuxandroid.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -51,7 +52,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -207,25 +207,8 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            terminal?.title?.ifBlank { null } ?: workspace?.title ?: "Terminal",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        val subtitle = if (state is ConnectionState.Connected) {
-                            listOfNotNull(workspace?.title, terminal?.agentState).joinToString(" · ")
-                        } else {
-                            describe(state)
-                        }
-                        if (subtitle.isNotBlank()) {
-                            Text(subtitle, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                },
+            CmuxTopBar(
+                title = terminal?.title?.ifBlank { null } ?: workspace?.title ?: "Terminal",
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
@@ -242,6 +225,7 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
+            AnimatedVisibility(visible = state !is ConnectionState.Connected) { ConnectionBanner(state) }
             BoxWithConstraints(
                 Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background),
             ) {

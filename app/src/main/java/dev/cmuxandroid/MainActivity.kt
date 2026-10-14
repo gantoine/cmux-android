@@ -35,10 +35,7 @@ class MainActivity : ComponentActivity() {
 
     private fun targetFrom(intent: Intent?): LaunchTarget? {
         intent ?: return null
-        val data = intent.data
-        if (intent.action == Intent.ACTION_VIEW && data?.scheme == "cmuxandroid" && data.host == "pair") {
-            return LaunchTarget.Pair(data.getQueryParameter("url").orEmpty(), data.getQueryParameter("code").orEmpty())
-        }
+        if (intent.action == Intent.ACTION_VIEW) PairLink.parse(intent.data)?.let { return it }
         if (intent.action == Notifier.ACTION_OPEN_TERMINAL) {
             val macId = intent.getStringExtra(Notifier.EXTRA_MAC_ID) ?: return null
             val workspaceId = intent.getStringExtra(Notifier.EXTRA_WORKSPACE_ID) ?: return null

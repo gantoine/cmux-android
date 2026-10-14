@@ -47,7 +47,7 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
         update { macs ->
             val replaced = macs.filter { it.id == id || it.url == url }
             val background = replaced.any { it.backgroundNotifications }
-            macs - replaced.toSet() + Mac(id, name, url, cipher.encrypt(token), notificationSeq, background)
+            macs - replaced.toSet() + Mac(id, Names.possessive(name), url, cipher.encrypt(token), notificationSeq, background)
         }
     }
 
@@ -73,7 +73,8 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
     }
 
     suspend fun rename(id: String, name: String) = update { macs ->
-        macs.map { if (it.id == id && it.name != name) it.copy(name = name) else it }
+        val fixed = Names.possessive(name)
+        macs.map { if (it.id == id && it.name != fixed) it.copy(name = fixed) else it }
     }
 
     suspend fun current(): List<Mac> = macs.first()

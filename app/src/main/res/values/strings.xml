@@ -4,5 +4,5 @@
     <string name="channel_agents">Terminal notifications</string>
     <string name="channel_agents_description">Notifications from your cmux terminals and coding agents</string>
     <string name="channel_connection">Background connection</string>
-    <string name="channel_connection_description">Shown while the app stays connected to your Macs</string>
+    <string name="channel_connection_description">Shown while the app stays connected to your computers</string>
 </resources>

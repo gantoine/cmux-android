@@ -25,7 +25,7 @@ import (
 
 var version = "dev"
 
-const usage = `cmux-relay connects the cmux Android app to cmux on this Mac.
+const usage = `cmux-relay connects the cmux Android app to cmux on this computer.
 
 Usage:
   cmux-relay install [--listen ADDR] [--name NAME]   Run the relay at login (launchd) and start it now
@@ -77,7 +77,7 @@ func main() {
 func serveFlags(name string, args []string) (listen, macName string, err error) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.StringVar(&listen, "listen", defaultListenAddress, "address to listen on; keep it on loopback and expose it with tailscale serve")
-	flags.StringVar(&macName, "name", defaultMacName(), "name the phone shows for this Mac")
+	flags.StringVar(&macName, "name", defaultMacName(), "name the phone shows for this computer")
 	err = flags.Parse(args)
 	return listen, macName, err
 }
@@ -150,7 +150,7 @@ func runServe(args []string) error {
 
 func runPair(args []string) error {
 	flags := flag.NewFlagSet("pair", flag.ContinueOnError)
-	relayURL := flags.String("url", "", "HTTPS address the phone uses to reach this relay (default: this Mac's Tailscale name)")
+	relayURL := flags.String("url", "", "HTTPS address the phone uses to reach this relay (default: this computer's Tailscale name)")
 	listen := flags.String("listen", defaultListenAddress, "address the relay listens on, if you changed it with install or serve")
 	if err := flags.Parse(args); err != nil {
 		return err

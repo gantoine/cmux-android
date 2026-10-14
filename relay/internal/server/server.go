@@ -129,12 +129,12 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	device, token, err := s.devices.Pair(request.Code, request.DeviceName)
 	if errors.Is(err, devices.ErrInvalidPairingCode) {
 		time.Sleep(500 * time.Millisecond)
-		writeJSON(w, http.StatusUnauthorized, errorBody("invalid_code", "That pairing code is wrong or expired. Run `cmux-relay pair` on your Mac for a new one."))
+		writeJSON(w, http.StatusUnauthorized, errorBody("invalid_code", "That pairing code is wrong or expired. Run `cmux-relay pair` on your computer for a new one."))
 		return
 	}
 	if err != nil {
 		s.logger.Error("pairing failed", "error", err)
-		writeJSON(w, http.StatusInternalServerError, errorBody("internal", "Pairing failed on the Mac. Check the relay log."))
+		writeJSON(w, http.StatusInternalServerError, errorBody("internal", "Pairing failed on the computer. Check the relay log."))
 		return
 	}
 	s.logger.Info("device paired", "device_id", device.ID, "name", device.Name)
@@ -153,7 +153,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	device, ok := s.devices.Authenticate(token)
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, errorBody("unauthorized", "This device is not paired with the Mac, or it was removed."))
+		writeJSON(w, http.StatusUnauthorized, errorBody("unauthorized", "This device is not paired with the computer, or it was removed."))
 		return
 	}
 	if !s.trackSession() {

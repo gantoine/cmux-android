@@ -6,17 +6,17 @@
 
 Watch and drive your [cmux](https://github.com/manaflow-ai/cmux) terminals from an Android phone. See every workspace, open a live terminal, type into it, and get notified when a coding agent needs you.
 
-It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own Mac over [Tailscale](https://tailscale.com). There is no cloud service in the middle.
+It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own computer over [Tailscale](https://tailscale.com). There is no cloud service in the middle.
 
 > This is an independent project. It is not made, endorsed, or supported by Manaflow or the cmux team.
 
 ## How it works
 
 ```
-Android app ──HTTPS + WebSocket over Tailscale──▶ cmux-relay (on your Mac) ──Unix socket──▶ cmux
+Android app ──HTTPS + WebSocket over Tailscale──▶ cmux-relay (on your computer) ──Unix socket──▶ cmux
 ```
 
-`cmux-relay` is a small program that runs on your Mac. It talks to cmux through cmux's local control socket and gives the phone:
+`cmux-relay` is a small program that runs on your computer. It talks to cmux through cmux's local control socket and gives the phone:
 
 - the list of windows, workspaces and terminals, with agent status and unread counts,
 - a live view of one terminal, sent as changed rows only, and the keys you type,
@@ -24,9 +24,9 @@ Android app ──HTTPS + WebSocket over Tailscale──▶ cmux-relay (on your 
 
 The phone only reaches the relay through `tailscale serve`, which gives it HTTPS on your private tailnet. The relay itself listens on `127.0.0.1`.
 
-## Set up your Mac
+## Set up your computer
 
-You need cmux 0.65 or later and Tailscale signed in on the Mac and on the phone.
+You need cmux 0.65 or later and Tailscale signed in on the computer and on the phone.
 
 1. **Install the relay** with [Homebrew](https://brew.sh):
 
@@ -72,13 +72,13 @@ Install the APK from the [releases page](../../releases). To check it first, run
 B7:33:F8:8D:CD:BE:D3:93:F7:1B:FA:A3:75:5D:AD:E3:DB:C4:0B:F6:D6:B2:39:29:BB:6E:CB:BA:56:FB:AD:2D
 ```
 
-Then run this on your Mac:
+Then run this on your computer:
 
 ```sh
 cmux-relay pair
 ```
 
-Scan the QR code with your phone's camera, or tap **Pair a Mac** in the app and type the address and code. The code works once and expires after 10 minutes.
+Scan the QR code with your phone's camera, or tap **Pair a computer** in the app and type the address and code. The code works once and expires after 10 minutes.
 
 Pair as many computers as you like. Each one shows up in the app's **Computers** list.
 
@@ -86,9 +86,9 @@ Pair as many computers as you like. Each one shows up in the app's **Computers**
 
 - **Workspaces:** each workspace shows its color, a robot icon when an agent runs in it, and when it was last active. Type in the search box to filter by name, folder, or terminal. Tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace.
 - **Terminal:** pinch to zoom and drag sideways to pan.
-- **Scrolling back:** swipe down to read earlier output. The phone loads up to 2,000 lines of history and scrolls it locally, so the view on your Mac does not move. Tap **Live** or scroll to the bottom to follow the terminal again. In full-screen programs such as vim or Claude Code, swiping scrolls inside the program on the Mac instead.
+- **Scrolling back:** swipe down to read earlier output. The phone loads up to 2,000 lines of history and scrolls it locally, so the view on your computer does not move. Tap **Live** or scroll to the bottom to follow the terminal again. In full-screen programs such as vim or Claude Code, swiping scrolls inside the program on the computer instead.
 - **Copying:** long-press a word to select it, drag to extend the selection, then tap **Copy**. Selections can span history and the live screen.
-- **Typing:** tap the terminal and type. Every key goes straight to the Mac, with autocorrect and suggestions turned off. A hardware keyboard works too, including Ctrl and Alt shortcuts. The key bar has sticky Ctrl, ⌥ (Option/Alt) and ⇧ (Shift) keys that apply to the next key, plus Esc, Tab, arrows, ^C, ^D, backspace, Enter, and paste.
+- **Typing:** tap the terminal and type. Every key goes straight to the computer, with autocorrect and suggestions turned off. A hardware keyboard works too, including Ctrl and Alt shortcuts. The key bar has sticky Ctrl, ⌥ (Option/Alt) and ⇧ (Shift) keys that apply to the next key, plus Esc, Tab, arrows, ^C, ^D, backspace, Enter, and paste.
 - **Messages:** tap the note icon in the key bar to open a message box with autocorrect and voice dictation. **Send** pastes the message and presses Enter, which suits writing to a coding agent.
 - **Fit to phone:** while you view a terminal, cmux resizes it to the phone's screen, so lines wrap instead of running off the side. cmux gives the size back when you leave the terminal. Turn it off with the fit icon to see the terminal at its size on your computer; the app remembers your choice.
 - **Background notifications:** open a computer, tap the gear icon, and turn on **Notify me in the background**. The app then keeps a connection to that computer open in a foreground service, so its cmux notifications reach you while the app is closed. Each computer has its own switch, and a bell on the **Computers** list marks the ones that are on. Reading a notification on the computer removes it from the phone.
@@ -116,7 +116,7 @@ The relay logs to `~/Library/Logs/cmux-relay.log`.
 ## Security
 
 - The phone can do what you can do in cmux: read every terminal and type into it. Pair only phones you control, and revoke lost ones.
-- Each phone gets its own random token. The Mac stores only a SHA-256 hash of it, in `~/Library/Application Support/cmux-android-relay/devices.json` (mode 0600). The phone keeps it encrypted with a key in the Android Keystore.
+- Each phone gets its own random token. The computer stores only a SHA-256 hash of it, in `~/Library/Application Support/cmux-android-relay/devices.json` (mode 0600). The phone keeps it encrypted with a key in the Android Keystore.
 - Pairing codes are single-use, expire after 10 minutes, and stop working after 10 wrong guesses.
 - The relay listens on `127.0.0.1` only. `tailscale serve` adds TLS and keeps it inside your tailnet. Never expose it with `tailscale funnel` or a public port.
 - Pairing, listing, and revoking use a Unix socket that only your user can open, never the network.
@@ -145,7 +145,7 @@ To run the relay next to an installed copy, give it its own state directory and 
 CMUX_RELAY_STATE_DIR=/tmp/relay-dev go run ./relay/cmd/cmux-relay serve --listen 127.0.0.1:18765
 ```
 
-On the Android emulator the Mac is `http://10.0.2.2:18765`. Debug builds allow plain HTTP to that address only.
+On the Android emulator the computer is `http://10.0.2.2:18765`. Debug builds allow plain HTTP to that address only.
 
 ### Releasing
 
@@ -161,7 +161,7 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 
 | From phone | Purpose |
 | --- | --- |
-| `hello {notifications_after}` | Start the session. The answer carries the Mac name and cmux version. |
+| `hello {notifications_after}` | Start the session. The answer carries the computer name and cmux version. |
 | `attach {workspace_id, surface_id, fit?}` / `detach` / `resync` | Choose the terminal to stream. |
 | `input {text}` / `key {key}` / `paste {text, submit}` / `scroll {lines}` | Send input to the attached terminal. |
 | `history {lines?}` | Get up to 5,000 lines above the attached terminal's screen, oldest first, with their own style table. The default is 2,000. |

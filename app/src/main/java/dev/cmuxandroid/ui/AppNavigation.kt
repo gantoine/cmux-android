@@ -51,6 +51,7 @@ fun AppNavigation(app: CmuxApplication, launchTarget: LaunchTarget?, onLaunchTar
             MacsScreen(
                 app = app,
                 onOpenMac = { navController.navigate(Routes.workspaces(it.id)) },
+                onOpenSettings = { navController.navigate(Routes.settings(it.id)) },
                 onAddMac = { navController.navigate(Routes.pair()) },
             )
         }
