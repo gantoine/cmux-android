@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
@@ -82,6 +83,7 @@ fun WorkspacesScreen(
     app: CmuxApplication,
     macId: String,
     onBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenTerminal: (workspaceId: String, surfaceId: String) -> Unit,
 ) {
     val connections by app.connections.connectionsFlow.collectAsState()
@@ -129,6 +131,11 @@ fun WorkspacesScreen(
                 title = { Text(macName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                },
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings for $macName")
+                    }
                 },
             )
         },

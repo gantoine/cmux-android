@@ -1,9 +1,5 @@
 package dev.cmuxandroid.ui
 
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -22,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -49,10 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.cmuxandroid.CmuxApplication
 import dev.cmuxandroid.data.Mac
-import dev.cmuxandroid.data.MacStore
-import dev.cmuxandroid.data.Settings
 import dev.cmuxandroid.net.ConnectionState
-import dev.cmuxandroid.notifications.ConnectionService
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
@@ -60,31 +54,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun MacsScreen(app: CmuxApplication, onOpenMac: (Mac) -> Unit, onAddMac: () -> Unit) {
     val macs by app.store.macs.collectAsState(initial = null)
-    val settings by app.store.settings.collectAsState(initial = Settings(false, MacStore.DEFAULT_FONT_SIZE))
     val scope = rememberCoroutineScope()
     var removing by remember { mutableStateOf<Mac?>(null) }
-    val context = LocalContext.current
-
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            scope.launch { app.store.setBackgroundNotifications(true) }
-            ConnectionService.start(context)
-        }
-    }
-
-    fun setBackground(enabled: Boolean) {
-        if (!enabled) {
-            scope.launch { app.store.setBackgroundNotifications(false) }
-            ConnectionService.stop(context)
-            return
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !app.notifier.canNotify()) {
-            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
-        }
-        scope.launch { app.store.setBackgroundNotifications(true) }
-        ConnectionService.start(context)
-    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Computers") }) },
@@ -97,14 +68,6 @@ fun MacsScreen(app: CmuxApplication, onOpenMac: (Mac) -> Unit, onAddMac: () -> U
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            ListItem(
-                headlineContent = { Text("Notify me in the background") },
-                supportingContent = {
-                    Text("Keeps a connection open so agent and terminal alerts arrive while the app is closed. Uses some battery.")
-                },
-                trailingContent = { Switch(checked = settings.backgroundNotifications, onCheckedChange = ::setBackground) },
-            )
-            HorizontalDivider()
             val list = macs
             when {
                 list == null -> Unit
@@ -119,6 +82,15 @@ fun MacsScreen(app: CmuxApplication, onOpenMac: (Mac) -> Unit, onAddMac: () -> U
                             headlineContent = { Text(mac.name) },
                             supportingContent = { Text(describe(state), color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             leadingContent = { StatusDot(state) },
+                            trailingContent = {
+                                if (mac.backgroundNotifications) {
+                                    Icon(
+                                        Icons.Filled.NotificationsActive,
+                                        contentDescription = "Notifies in the background",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
                             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
                         )
                     }
@@ -180,7 +152,7 @@ fun describe(state: ConnectionState): String = when (state) {
     is ConnectionState.Connected -> "Connected · cmux ${state.welcome.cmuxVersion}"
     ConnectionState.Connecting -> "Connecting…"
     is ConnectionState.Disconnected -> "Offline · ${state.reason}"
-    ConnectionState.Unauthorized -> "Not paired anymore. Long-press to remove, then pair again."
+    ConnectionState.Unauthorized -> "Not paired anymore. Remove it, then pair again."
     ConnectionState.Stopped -> "Idle"
 }
 

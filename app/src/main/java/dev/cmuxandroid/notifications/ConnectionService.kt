@@ -41,7 +41,7 @@ class ConnectionService : LifecycleService() {
                     flowOf(0 to 0)
                 } else {
                     combine(connections.values.map { it.state }) { states ->
-                        states.count { it is ConnectionState.Connected } to states.size
+                        states.count { it is ConnectionState.Connected } to states.count { it !is ConnectionState.Stopped }
                     }
                 }
             }.collect { (connected, total) -> startInForeground(connected, total) }
@@ -50,7 +50,7 @@ class ConnectionService : LifecycleService() {
 
     private fun startInForeground(connected: Int, total: Int) {
         val text = when {
-            total == 0 -> "No computers paired"
+            total == 0 -> "No computers to watch"
             connected == total -> if (total == 1) "Connected to your computer" else "Connected to $total computers"
             else -> "Connected to $connected of $total computers"
         }

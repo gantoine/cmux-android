@@ -21,9 +21,10 @@ data class Mac(
     val url: String,
     val encryptedToken: String,
     val lastNotificationSeq: Long = 0,
+    val backgroundNotifications: Boolean = false,
 )
 
-data class Settings(val backgroundNotifications: Boolean, val fontSize: Float, val fitToPhone: Boolean = true)
+data class Settings(val fontSize: Float, val fitToPhone: Boolean = true)
 
 private val Context.dataStore by preferencesDataStore(name = "cmux")
 
@@ -35,7 +36,6 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
 
     val settings: Flow<Settings> = context.dataStore.data.map {
         Settings(
-            backgroundNotifications = it[BACKGROUND_NOTIFICATIONS] ?: false,
             fontSize = it[FONT_SIZE] ?: DEFAULT_FONT_SIZE,
             fitToPhone = it[FIT_TO_PHONE] ?: true,
         )
@@ -45,7 +45,24 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
 
     suspend fun add(id: String, name: String, url: String, token: String, notificationSeq: Long) {
         update { macs ->
-            macs.filterNot { it.id == id || it.url == url } + Mac(id, name, url, cipher.encrypt(token), notificationSeq)
+            val replaced = macs.filter { it.id == id || it.url == url }
+            val background = replaced.any { it.backgroundNotifications }
+            macs - replaced.toSet() + Mac(id, name, url, cipher.encrypt(token), notificationSeq, background)
+        }
+    }
+
+    suspend fun setBackgroundNotifications(id: String, enabled: Boolean) = update { macs ->
+        macs.map { if (it.id == id) it.copy(backgroundNotifications = enabled) else it }
+    }
+
+    suspend fun migrateGlobalBackgroundSetting() {
+        context.dataStore.edit { preferences ->
+            val wasOn = preferences[BACKGROUND_NOTIFICATIONS] ?: return@edit
+            if (wasOn) {
+                val migrated = decodeMacs(preferences).map { it.copy(backgroundNotifications = true) }
+                preferences[MACS] = json.encodeToString(serializer, migrated)
+            }
+            preferences.remove(BACKGROUND_NOTIFICATIONS)
         }
     }
 
@@ -60,10 +77,6 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
     }
 
     suspend fun current(): List<Mac> = macs.first()
-
-    suspend fun setBackgroundNotifications(enabled: Boolean) {
-        context.dataStore.edit { it[BACKGROUND_NOTIFICATIONS] = enabled }
-    }
 
     suspend fun setFontSize(size: Float) {
         context.dataStore.edit { it[FONT_SIZE] = size }

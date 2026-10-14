@@ -31,9 +31,8 @@ class ConnectionManager(
 
     fun start() {
         scope.launch {
-            combine(store.macs, store.settings, appVisible) { macs, settings, visible ->
-                macs to (visible || settings.backgroundNotifications)
-            }.collect { (macs, wanted) -> reconcile(macs, wanted) }
+            combine(store.macs, appVisible) { macs, visible -> macs to visible }
+                .collect { (macs, visible) -> reconcile(macs, visible) }
         }
     }
 
@@ -43,7 +42,7 @@ class ConnectionManager(
 
     fun connection(macId: String): RelayConnection? = synchronized(connections) { connections[macId] }
 
-    private fun reconcile(macs: List<Mac>, wanted: Boolean) {
+    private fun reconcile(macs: List<Mac>, appVisible: Boolean) {
         synchronized(connections) {
             val ids = macs.map { it.id }.toSet()
             connections.keys.filterNot { it in ids }.forEach { connections.remove(it)?.stop() }
@@ -63,8 +62,9 @@ class ConnectionManager(
                     )
                 }
             }
-            for (connection in connections.values) {
-                if (wanted) connection.start() else connection.stop()
+            for (mac in macs) {
+                val connection = connections[mac.id] ?: continue
+                if (appVisible || mac.backgroundNotifications) connection.start() else connection.stop()
             }
             _connectionsFlow.value = connections.toMap()
         }

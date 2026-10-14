@@ -8,14 +8,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.lifecycleScope
-import dev.cmuxandroid.notifications.ConnectionService
 import dev.cmuxandroid.notifications.Notifier
 import dev.cmuxandroid.ui.AppNavigation
 import dev.cmuxandroid.ui.CmuxTheme
 import dev.cmuxandroid.ui.LaunchTarget
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var launchTarget by mutableStateOf<LaunchTarget?>(null)
@@ -25,11 +21,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val app = application as CmuxApplication
         if (savedInstanceState == null) launchTarget = targetFrom(intent)
-        lifecycleScope.launch {
-            if (app.store.settings.first().backgroundNotifications && app.notifier.canNotify()) {
-                ConnectionService.start(this@MainActivity)
-            }
-        }
         setContent {
             CmuxTheme {
                 AppNavigation(app, launchTarget, onLaunchTargetHandled = { launchTarget = null })

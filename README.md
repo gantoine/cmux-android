@@ -91,7 +91,8 @@ Pair as many computers as you like. Each one shows up in the app's **Computers**
 - **Typing:** tap the terminal and type. Every key goes straight to the Mac, with autocorrect and suggestions turned off. A hardware keyboard works too, including Ctrl and Alt shortcuts. The key bar has sticky Ctrl, ⌥ (Option/Alt) and ⇧ (Shift) keys that apply to the next key, plus Esc, Tab, arrows, ^C, ^D, backspace, Enter, and paste.
 - **Messages:** tap the note icon in the key bar to open a message box with autocorrect and voice dictation. **Send** pastes the message and presses Enter, which suits writing to a coding agent.
 - **Fit to phone:** while you view a terminal, cmux resizes it to the phone's screen, so lines wrap instead of running off the side. cmux gives the size back when you leave the terminal. Turn it off with the fit icon to see the terminal at its size on your computer; the app remembers your choice.
-- **Background notifications:** turn on **Notify me in the background** on the **Computers** list. The app then keeps a connection open in a foreground service, so cmux notifications reach you while the app is closed. Reading a notification on the Mac removes it from the phone.
+- **Background notifications:** open a computer, tap the gear icon, and turn on **Notify me in the background**. The app then keeps a connection to that computer open in a foreground service, so its cmux notifications reach you while the app is closed. Each computer has its own switch, and a bell on the **Computers** list marks the ones that are on. Reading a notification on the computer removes it from the phone.
+- **Computer settings:** the same page lets you rename the computer, see its address and versions, and remove it.
 
 ## Updating the relay
 

@@ -19,10 +19,12 @@ private object Routes {
     const val MACS = "macs"
     const val PAIR = "pair?url={url}&code={code}"
     const val WORKSPACES = "mac/{macId}"
+    const val SETTINGS = "mac/{macId}/settings"
     const val TERMINAL = "terminal/{macId}/{workspaceId}/{surfaceId}"
 
     fun pair(url: String = "", code: String = "") = "pair?url=${Uri.encode(url)}&code=${Uri.encode(code)}"
     fun workspaces(macId: String) = "mac/${Uri.encode(macId)}"
+    fun settings(macId: String) = "mac/${Uri.encode(macId)}/settings"
     fun terminal(macId: String, workspaceId: String, surfaceId: String) =
         "terminal/${Uri.encode(macId)}/${Uri.encode(workspaceId)}/${Uri.encode(surfaceId)}"
 }
@@ -76,7 +78,16 @@ fun AppNavigation(app: CmuxApplication, launchTarget: LaunchTarget?, onLaunchTar
                 app = app,
                 macId = macId,
                 onBack = { navController.popBackStack() },
+                onOpenSettings = { navController.navigate(Routes.settings(macId)) },
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
+            )
+        }
+        composable(Routes.SETTINGS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
+            ComputerSettingsScreen(
+                app = app,
+                macId = entry.arguments?.getString("macId").orEmpty(),
+                onBack = { navController.popBackStack() },
+                onRemoved = { navController.popBackStack(Routes.MACS, inclusive = false) },
             )
         }
         composable(
