@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -72,7 +73,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -411,42 +411,41 @@ private fun WorkspaceRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (status != null) {
-                Spacer(Modifier.height(2.dp))
-                StatusPill(status)
-            }
         }
         Spacer(Modifier.width(12.dp))
-        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt)?.let { time ->
-                Text(
-                    time,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            when {
-                workspace.unreadCount > 0 -> Badge(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) { Text("${workspace.unreadCount}", modifier = Modifier.padding(horizontal = 2.dp)) }
-                workspace.hasUnread -> Box(Modifier.size(10.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (status != null) StatusPill(status, Modifier.widthIn(max = 120.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt)?.let { time ->
+                    Text(
+                        time,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                when {
+                    workspace.unreadCount > 0 -> Badge(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) { Text("${workspace.unreadCount}", modifier = Modifier.padding(horizontal = 2.dp)) }
+                    workspace.hasUnread -> Box(Modifier.size(10.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun StatusPill(status: AgentStatus) {
+private fun StatusPill(status: AgentStatus, modifier: Modifier = Modifier) {
     val (container, content) = when (status) {
         is AgentStatus.NeedsYou -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
         is AgentStatus.Working -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
         is AgentStatus.Other -> MaterialTheme.colorScheme.surfaceContainerHighest to MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Surface(shape = CircleShape, color = container, contentColor = content) {
-        Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(shape = CircleShape, color = container, contentColor = content, modifier = modifier) {
+        Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.AutoAwesome, contentDescription = null, Modifier.size(12.dp))
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(4.dp))
             Text(status.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -455,9 +454,8 @@ private fun StatusPill(status: AgentStatus) {
 @Composable
 fun WorkspaceTile(workspace: WorkspaceInfo, size: androidx.compose.ui.unit.Dp = 48.dp) {
     val accent = parseHexColor(WorkspaceListing.color(workspace)) ?: MaterialTheme.colorScheme.primary
-    val brush = Brush.linearGradient(listOf(lerp(accent, Color.White, 0.22f), accent, lerp(accent, Color.Black, 0.28f)))
     Box(
-        Modifier.size(size).background(brush, RoundedCornerShape(size * 0.3f)),
+        Modifier.size(size).background(accent, RoundedCornerShape(size * 0.3f)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
