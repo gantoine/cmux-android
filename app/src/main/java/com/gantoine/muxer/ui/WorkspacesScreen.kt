@@ -1,6 +1,12 @@
 package com.gantoine.muxer.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -69,15 +75,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.net.ConnectionState
@@ -382,7 +399,7 @@ private fun WorkspaceRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WorkspaceTile(workspace)
+        WorkspaceTile(workspace, status = status)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -411,10 +428,6 @@ private fun WorkspaceRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (status != null) {
-                Spacer(Modifier.height(2.dp))
-                StatusPill(status)
-            }
         }
         Spacer(Modifier.width(12.dp))
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -437,27 +450,50 @@ private fun WorkspaceRow(
 }
 
 @Composable
-private fun StatusPill(status: AgentStatus) {
-    val (container, content) = when (status) {
-        is AgentStatus.NeedsYou -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-        is AgentStatus.Working -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
-        is AgentStatus.Other -> MaterialTheme.colorScheme.surfaceContainerHighest to MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Surface(shape = CircleShape, color = container, contentColor = content) {
-        Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.AutoAwesome, contentDescription = null, Modifier.size(12.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(status.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
-fun WorkspaceTile(workspace: WorkspaceInfo, size: androidx.compose.ui.unit.Dp = 48.dp) {
+fun WorkspaceTile(workspace: WorkspaceInfo, size: Dp = 48.dp, status: AgentStatus? = null) {
     val accent = parseHexColor(WorkspaceListing.color(workspace)) ?: MaterialTheme.colorScheme.primary
-    val brush = Brush.linearGradient(listOf(lerp(accent, Color.White, 0.22f), accent, lerp(accent, Color.Black, 0.28f)))
+    val highlight = lerp(accent, Color.White, 0.55f)
+    val corner = size * 0.3f
+    val orbit by rememberInfiniteTransition(label = "tile").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
+        label = "orbit",
+    )
+    val settled by animateFloatAsState(if (status is AgentStatus.NeedsYou) 1f else 0f, tween(500), label = "settled")
+    val ring = remember { Path() }
+    val segment = remember { Path() }
+    val measure = remember { PathMeasure() }
     Box(
-        Modifier.size(size).background(brush, RoundedCornerShape(size * 0.3f)),
+        Modifier
+            .size(size)
+            .then(if (status != null) Modifier.semantics { contentDescription = status.label } else Modifier)
+            .drawBehind {
+                if (status !is AgentStatus.Working && settled == 0f) return@drawBehind
+                val stroke = Stroke(3.dp.toPx(), cap = StrokeCap.Round)
+                val inset = -(4.dp.toPx() + stroke.width / 2)
+                ring.reset()
+                ring.addRoundRect(
+                    RoundRect(
+                        Rect(inset, inset, this.size.width - inset, this.size.height - inset),
+                        CornerRadius(corner.toPx() - inset),
+                    ),
+                )
+                if (status is AgentStatus.Working) {
+                    drawPath(ring, accent.copy(alpha = 0.35f), style = stroke)
+                    measure.setPath(ring, false)
+                    val length = measure.length
+                    val start = orbit * length
+                    val stop = start + length * 0.3f
+                    segment.reset()
+                    measure.getSegment(start, minOf(stop, length), segment, true)
+                    if (stop > length) measure.getSegment(0f, stop - length, segment, true)
+                    drawPath(segment, highlight, style = stroke)
+                } else {
+                    drawPath(ring, highlight.copy(alpha = settled), style = stroke)
+                }
+            }
+            .background(accent, RoundedCornerShape(corner)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
