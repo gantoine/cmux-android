@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.cmuxandroid"
+    namespace = "com.gantoine.cmux"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.cmuxandroid"
+        applicationId = "com.gantoine.cmux"
         minSdk = 26
         targetSdk = 36
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
