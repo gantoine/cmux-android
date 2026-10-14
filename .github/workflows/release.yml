@@ -75,6 +75,7 @@ jobs:
             -PversionName="$VERSION" -PversionCode="$VERSION_CODE"
           rm "$RUNNER_TEMP/release.jks"
           cp app/build/outputs/apk/release/app-release.apk "relay/dist/cmux-android-${VERSION}.apk"
+          cp app/build/outputs/mapping/release/mapping.txt "relay/dist/cmux-android-${VERSION}-mapping.txt"
 
       - name: Checksums
         working-directory: relay/dist
