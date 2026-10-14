@@ -42,6 +42,7 @@ data class WorkspaceInfo(
     val currentDirectory: String? = null,
     val isSelected: Boolean = false,
     val isPinned: Boolean = false,
+    val groupId: String? = null,
     val preview: String? = null,
     val previewAt: Double? = null,
     val lastActivityAt: Double? = null,
@@ -51,7 +52,17 @@ data class WorkspaceInfo(
 )
 
 @Serializable
-data class WorkspacesMessage(val workspaces: List<WorkspaceInfo>)
+data class WorkspaceGroupInfo(
+    val id: String,
+    val name: String = "",
+    val anchorWorkspaceId: String? = null,
+    val memberWorkspaceIds: List<String> = emptyList(),
+    val isCollapsed: Boolean = false,
+    val isPinned: Boolean = false,
+)
+
+@Serializable
+data class WorkspacesMessage(val workspaces: List<WorkspaceInfo>, val groups: List<WorkspaceGroupInfo> = emptyList())
 
 @Serializable
 data class CellStyle(

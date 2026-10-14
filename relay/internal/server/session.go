@@ -403,16 +403,13 @@ func (s *session) watchWorkspaces() {
 	var lastHash [32]byte
 	for {
 		ctx, cancel := context.WithTimeout(s.ctx, callTimeout)
-		workspaces, err := s.server.cmux.Workspaces(ctx)
+		list, err := s.server.cmux.Workspaces(ctx)
 		cancel()
 		if err == nil {
-			if workspaces == nil {
-				workspaces = []cmux.Workspace{}
-			}
-			encoded, _ := json.Marshal(workspaces)
+			encoded, _ := json.Marshal(list)
 			if hash := sha256.Sum256(encoded); hash != lastHash {
 				lastHash = hash
-				s.send(map[string]any{"type": "workspaces", "workspaces": json.RawMessage(encoded)})
+				s.send(map[string]any{"type": "workspaces", "workspaces": list.Workspaces, "groups": list.Groups})
 			}
 		} else {
 			s.server.logger.Warn("could not list workspaces", "error", err)

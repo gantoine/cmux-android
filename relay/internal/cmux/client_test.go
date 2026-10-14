@@ -112,16 +112,19 @@ func TestClientToleratesUnconfiguredPasswordAndReportsAccessDenied(t *testing.T)
 		if method == "auth.login" {
 			return `{"ok":false,"error":{"code":"auth_unconfigured","message":"not password mode"}}`
 		}
-		return `{"ok":true,"result":{"workspaces":[{"id":"w1","title":"api","terminals":[{"id":"t1","title":"zsh"}]}]}}`
+		return `{"ok":true,"result":{"workspaces":[{"id":"w1","title":"api","group_id":"g1","terminals":[{"id":"t1","title":"zsh"}]}],"groups":[{"id":"g1","name":"Q4","anchor_workspace_id":"w1","member_workspace_ids":["w1"]}]}}`
 	})
 	client := NewClient(fake.path, func() (string, error) { return "stale", nil })
 	defer client.Close()
-	workspaces, err := client.Workspaces(context.Background())
+	list, err := client.Workspaces(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(workspaces) != 1 || workspaces[0].Terminals[0].ID != "t1" {
-		t.Fatalf("workspaces = %+v", workspaces)
+	if len(list.Workspaces) != 1 || list.Workspaces[0].Terminals[0].ID != "t1" {
+		t.Fatalf("workspaces = %+v", list.Workspaces)
+	}
+	if len(list.Groups) != 1 || *list.Groups[0].AnchorWorkspaceID != "w1" || list.Groups[0].MemberWorkspaceIDs[0] != "w1" {
+		t.Fatalf("groups = %+v", list.Groups)
 	}
 
 	denied := startFakeSocket(t, func(string, map[string]any, bool) string {

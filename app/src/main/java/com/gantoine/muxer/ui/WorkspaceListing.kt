@@ -1,6 +1,7 @@
 package com.gantoine.muxer.ui
 
 import com.gantoine.muxer.protocol.TerminalInfo
+import com.gantoine.muxer.protocol.WorkspaceGroupInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import java.time.Instant
 import java.time.ZoneId
@@ -19,6 +20,18 @@ sealed interface AgentStatus {
     data class Working(override val label: String) : AgentStatus
     data class Idle(override val label: String) : AgentStatus
     data class Other(override val label: String) : AgentStatus
+}
+
+sealed interface WorkspaceEntry {
+    val key: String
+
+    data class Single(val workspace: WorkspaceInfo) : WorkspaceEntry {
+        override val key get() = workspace.id
+    }
+
+    data class Group(val group: WorkspaceGroupInfo, val anchor: WorkspaceInfo?, val members: List<WorkspaceInfo>) : WorkspaceEntry {
+        override val key get() = "group:${group.id}"
+    }
 }
 
 object WorkspaceListing {
@@ -56,20 +69,51 @@ object WorkspaceListing {
         WorkspaceFilter.Pinned -> workspace.isPinned
     }
 
-    fun count(workspaces: List<WorkspaceInfo>, filter: WorkspaceFilter): Int = workspaces.count { passes(it, filter) }
+    fun entries(
+        workspaces: List<WorkspaceInfo>,
+        groups: List<WorkspaceGroupInfo>,
+        filter: WorkspaceFilter = WorkspaceFilter.All,
+        query: String = "",
+    ): List<WorkspaceEntry> {
+        val byId = workspaces.associateBy { it.id }
+        val groupsById = groups.associateBy { it.id }
+        val emitted = mutableSetOf<String>()
+        fun shows(workspace: WorkspaceInfo) = passes(workspace, filter) && matches(workspace, query)
+        return workspaces.mapNotNull { workspace ->
+            val group = workspace.groupId?.let(groupsById::get)
+                ?: return@mapNotNull WorkspaceEntry.Single(workspace).takeIf { shows(workspace) }
+            if (!emitted.add(group.id)) return@mapNotNull null
+            val anchor = group.anchorWorkspaceId?.let(byId::get)
+            val members = (group.memberWorkspaceIds.mapNotNull(byId::get) + workspaces.filter { it.groupId == group.id })
+                .distinctBy { it.id }
+                .filter { it.id != anchor?.id }
+            val wholeGroup = (filter == WorkspaceFilter.All || filter == WorkspaceFilter.Pinned && group.isPinned) &&
+                (query.isBlank() || group.name.contains(query.trim(), ignoreCase = true))
+            val shown = if (wholeGroup) members else members.filter(::shows)
+            WorkspaceEntry.Group(group, anchor, shown)
+                .takeIf { wholeGroup || shown.isNotEmpty() || anchor != null && shows(anchor) }
+        }
+    }
+
+    fun count(workspaces: List<WorkspaceInfo>, groups: List<WorkspaceGroupInfo>, filter: WorkspaceFilter): Int {
+        val pinnedGroups = groups.filter { it.isPinned }.map { it.id }.toSet()
+        return workspaces.count { passes(it, filter) || filter == WorkspaceFilter.Pinned && it.groupId in pinnedGroups }
+    }
+
+    fun agentStatus(workspaces: List<WorkspaceInfo>): AgentStatus? =
+        classify(workspaces.flatMap { it.terminals }.mapNotNull { it.agentState?.trim()?.takeIf(String::isNotEmpty) }.distinct())
 
     fun isAgent(workspace: WorkspaceInfo): Boolean = workspace.terminals.any { it.agentSource != null || it.agentState != null }
 
     fun needsYou(workspace: WorkspaceInfo): Boolean =
         workspace.unreadCount > 0 || workspace.hasUnread || agentStatus(workspace) is AgentStatus.NeedsYou
 
-    fun agentStatus(workspace: WorkspaceInfo): AgentStatus? =
-        agentStatus(workspace.terminals.mapNotNull { it.agentState?.trim()?.takeIf(String::isNotEmpty) }.distinct())
+    fun agentStatus(workspace: WorkspaceInfo): AgentStatus? = agentStatus(listOf(workspace))
 
     fun agentStatus(terminal: TerminalInfo): AgentStatus? =
-        agentStatus(listOfNotNull(terminal.agentState?.trim()?.takeIf(String::isNotEmpty)))
+        classify(listOfNotNull(terminal.agentState?.trim()?.takeIf(String::isNotEmpty)))
 
-    private fun agentStatus(states: List<String>): AgentStatus? {
+    private fun classify(states: List<String>): AgentStatus? {
         if (states.isEmpty()) return null
         states.firstOrNull { state -> attentionWords.any { state.contains(it, ignoreCase = true) } }
             ?.let { return AgentStatus.NeedsYou(humanize(it)) }
