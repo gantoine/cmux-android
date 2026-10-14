@@ -43,6 +43,7 @@ data class WorkspaceInfo(
     val isSelected: Boolean = false,
     val isPinned: Boolean = false,
     val preview: String? = null,
+    val previewAt: Double? = null,
     val lastActivityAt: Double? = null,
     val hasUnread: Boolean = false,
     val unreadCount: Int = 0,

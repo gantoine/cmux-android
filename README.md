@@ -80,17 +80,18 @@ cmux-relay pair
 
 Scan the QR code with your phone's camera, or tap **Pair a Mac** in the app and type the address and code. The code works once and expires after 10 minutes.
 
-Pair as many Macs as you like. Each one shows up in the app's Mac list.
+Pair as many computers as you like. Each one shows up in the app's **Computers** list.
 
 ## Using the app
 
-- **Workspaces:** tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace.
+- **Workspaces:** each workspace shows its color, a robot icon when an agent runs in it, and when it was last active. Type in the search box to filter by name, folder, or terminal. Tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace.
 - **Terminal:** pinch to zoom and drag sideways to pan.
 - **Scrolling back:** swipe down to read earlier output. The phone loads up to 2,000 lines of history and scrolls it locally, so the view on your Mac does not move. Tap **Live** or scroll to the bottom to follow the terminal again. In full-screen programs such as vim or Claude Code, swiping scrolls inside the program on the Mac instead.
 - **Copying:** long-press a word to select it, drag to extend the selection, then tap **Copy**. Selections can span history and the live screen.
-- **Typing:** tap the terminal and type. Every key goes straight to the Mac, with autocorrect and suggestions turned off. A hardware keyboard works too, including Ctrl and Alt shortcuts. The key bar has Esc, Tab, a sticky Ctrl, arrows, ^C, ^D, backspace, Enter, and paste.
-- **Fit to phone:** the fit icon resizes the Mac terminal to the phone's screen while you watch. cmux gives the size back when you leave the terminal.
-- **Background notifications:** turn on **Notify me in the background** on the Mac list. The app then keeps a connection open in a foreground service, so cmux notifications reach you while the app is closed. Reading a notification on the Mac removes it from the phone.
+- **Typing:** tap the terminal and type. Every key goes straight to the Mac, with autocorrect and suggestions turned off. A hardware keyboard works too, including Ctrl and Alt shortcuts. The key bar has sticky Ctrl, ⌥ (Option/Alt) and ⇧ (Shift) keys that apply to the next key, plus Esc, Tab, arrows, ^C, ^D, backspace, Enter, and paste.
+- **Messages:** tap the note icon in the key bar to open a message box with autocorrect and voice dictation. **Send** pastes the message and presses Enter, which suits writing to a coding agent.
+- **Fit to phone:** while you view a terminal, cmux resizes it to the phone's screen, so lines wrap instead of running off the side. cmux gives the size back when you leave the terminal. Turn it off with the fit icon to see the terminal at its size on your computer; the app remembers your choice.
+- **Background notifications:** turn on **Notify me in the background** on the **Computers** list. The app then keeps a connection open in a foreground service, so cmux notifications reach you while the app is closed. Reading a notification on the Mac removes it from the phone.
 
 ## Updating the relay
 

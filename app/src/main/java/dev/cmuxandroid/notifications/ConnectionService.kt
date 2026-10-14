@@ -50,9 +50,9 @@ class ConnectionService : LifecycleService() {
 
     private fun startInForeground(connected: Int, total: Int) {
         val text = when {
-            total == 0 -> "No Macs paired"
-            connected == total -> if (total == 1) "Connected to your Mac" else "Connected to $total Macs"
-            else -> "Connected to $connected of $total Macs"
+            total == 0 -> "No computers paired"
+            connected == total -> if (total == 1) "Connected to your computer" else "Connected to $total computers"
+            else -> "Connected to $connected of $total computers"
         }
         val openApp = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,

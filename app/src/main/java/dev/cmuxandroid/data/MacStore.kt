@@ -23,7 +23,7 @@ data class Mac(
     val lastNotificationSeq: Long = 0,
 )
 
-data class Settings(val backgroundNotifications: Boolean, val fontSize: Float)
+data class Settings(val backgroundNotifications: Boolean, val fontSize: Float, val fitToPhone: Boolean = true)
 
 private val Context.dataStore by preferencesDataStore(name = "cmux")
 
@@ -37,6 +37,7 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
         Settings(
             backgroundNotifications = it[BACKGROUND_NOTIFICATIONS] ?: false,
             fontSize = it[FONT_SIZE] ?: DEFAULT_FONT_SIZE,
+            fitToPhone = it[FIT_TO_PHONE] ?: true,
         )
     }
 
@@ -68,6 +69,10 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
         context.dataStore.edit { it[FONT_SIZE] = size }
     }
 
+    suspend fun setFitToPhone(enabled: Boolean) {
+        context.dataStore.edit { it[FIT_TO_PHONE] = enabled }
+    }
+
     private suspend fun update(transform: (List<Mac>) -> List<Mac>) {
         context.dataStore.edit { preferences ->
             preferences[MACS] = json.encodeToString(serializer, transform(decodeMacs(preferences)))
@@ -82,5 +87,6 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
         private val MACS = stringPreferencesKey("macs")
         private val BACKGROUND_NOTIFICATIONS = booleanPreferencesKey("background_notifications")
         private val FONT_SIZE = floatPreferencesKey("font_size")
+        private val FIT_TO_PHONE = booleanPreferencesKey("fit_to_phone")
     }
 }

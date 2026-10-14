@@ -122,7 +122,7 @@ class RelayConnection(
                 webSocket.cancel()
                 if (socket === webSocket) {
                     socket = null
-                    failPending("The connection to the Mac dropped.")
+                    failPending("The connection to the computer dropped.")
                 }
             }
             if (reason.unauthorized) {
@@ -151,20 +151,20 @@ class RelayConnection(
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-            val message = if (code == 1008) "This phone was removed on the Mac. Pair it again." else "The Mac closed the connection."
+            val message = if (code == 1008) "This phone was removed on the computer. Pair it again." else "The computer closed the connection."
             closed.complete(CloseReason(message, unauthorized = code == 1008, wasConnected = opened))
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            closed.complete(CloseReason("The Mac closed the connection.", wasConnected = opened))
+            closed.complete(CloseReason("The computer closed the connection.", wasConnected = opened))
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             if (response?.code == 401) {
-                closed.complete(CloseReason("This phone is no longer paired with the Mac.", unauthorized = true))
+                closed.complete(CloseReason("This phone is no longer paired with the computer.", unauthorized = true))
                 return
             }
-            closed.complete(CloseReason(t.message ?: "Could not reach the Mac.", wasConnected = opened))
+            closed.complete(CloseReason(t.message ?: "Could not reach the computer.", wasConnected = opened))
         }
     }
 
@@ -177,7 +177,7 @@ class RelayConnection(
             attachment?.let { sendAttach(it) }
             onWelcome(macId, welcome)
         }.onFailure {
-            _state.value = ConnectionState.Disconnected(it.message ?: "The Mac rejected the connection.")
+            _state.value = ConnectionState.Disconnected(it.message ?: "The computer rejected the connection.")
             webSocket.close(1000, "hello failed")
         }
     }
@@ -214,7 +214,7 @@ class RelayConnection(
             deferred.complete(Result.success(message["data"]))
         } else {
             val error = message["error"]?.let { RelayJson.decodeFromJsonElement(RequestError.serializer(), it) }
-            deferred.complete(Result.failure(RelayException(error?.code ?: "error", error?.message ?: "The Mac could not do that.")))
+            deferred.complete(Result.failure(RelayException(error?.code ?: "error", error?.message ?: "The computer could not do that.")))
         }
     }
 
@@ -230,12 +230,12 @@ class RelayConnection(
         val sent = socket?.send(message(type, fields, id).toString()) ?: false
         if (!sent) {
             pending.remove(id)
-            return Result.failure(RelayException("disconnected", "Not connected to the Mac."))
+            return Result.failure(RelayException("disconnected", "Not connected to the computer."))
         }
         val result = withTimeoutOrNull(REQUEST_TIMEOUT_MS) { deferred.await() }
         if (result != null) return result
         pending.remove(id)
-        return Result.failure(RelayException("timeout", "The Mac took too long to answer."))
+        return Result.failure(RelayException("timeout", "The computer took too long to answer."))
     }
 
     fun send(type: String, fields: JsonObject = JsonObject(emptyMap())) {

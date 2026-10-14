@@ -3,6 +3,7 @@ package dev.cmuxandroid
 import dev.cmuxandroid.protocol.Span
 import dev.cmuxandroid.terminal.CellPosition
 import dev.cmuxandroid.terminal.Selection
+import dev.cmuxandroid.terminal.StickyModifiers
 import dev.cmuxandroid.terminal.TerminalContent
 import dev.cmuxandroid.terminal.TerminalHistory
 import dev.cmuxandroid.terminal.TerminalKeys
@@ -53,6 +54,20 @@ class TerminalTextTest {
         assertEquals(TerminalKeys.Edit(backspaces = 0, added = "lo"), TerminalKeys.diff("hel", "hello"))
         assertEquals(TerminalKeys.Edit(backspaces = 2, added = "he"), TerminalKeys.diff("teh", "the"))
         assertEquals(TerminalKeys.Edit(backspaces = 2, added = ""), TerminalKeys.diff("ls -", "ls"))
+    }
+
+    @Test
+    fun stickyModifiersTurnTypingIntoShortcuts() {
+        val none = StickyModifiers()
+        assertEquals(TerminalKeys.Input.Text("r"), TerminalKeys.withModifiers("r", none))
+        assertEquals(TerminalKeys.Input.Key("ctrl+r"), TerminalKeys.withModifiers("R", StickyModifiers(ctrl = true)))
+        assertEquals(TerminalKeys.Input.Key("ctrl+alt+x"), TerminalKeys.withModifiers("x", StickyModifiers(ctrl = true, alt = true)))
+        assertEquals(TerminalKeys.Input.Text("A"), TerminalKeys.withModifiers("a", StickyModifiers(shift = true)))
+        assertEquals(TerminalKeys.Input.Text("hello"), TerminalKeys.withModifiers("hello", StickyModifiers(ctrl = true)))
+
+        assertEquals(TerminalKeys.Input.Key("shift+tab"), TerminalKeys.keyWithModifiers("tab", StickyModifiers(shift = true)))
+        assertEquals(TerminalKeys.Input.Key("alt+left"), TerminalKeys.keyWithModifiers("left", StickyModifiers(alt = true)))
+        assertEquals(TerminalKeys.Input.Key("ctrl-c"), TerminalKeys.keyWithModifiers("ctrl-c", StickyModifiers(alt = true)))
     }
 
     @Test

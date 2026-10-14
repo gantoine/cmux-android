@@ -33,7 +33,7 @@ class PairingClient(private val client: OkHttpClient) {
                     val text = response.body.string()
                     if (!response.isSuccessful) {
                         val error = runCatching { RelayJson.decodeFromString<ErrorResponse>(text).error.message }.getOrNull()
-                        throw PairingException(error ?: "The Mac answered with HTTP ${response.code}.")
+                        throw PairingException(error ?: "The computer answered with HTTP ${response.code}.")
                     }
                     val paired = runCatching { RelayJson.decodeFromString<PairResponse>(text) }.getOrElse {
                         throw PairingException("${base.host} answered, but not like cmux-relay. Check the address.")
@@ -42,7 +42,7 @@ class PairingClient(private val client: OkHttpClient) {
                 }
             } catch (error: IOException) {
                 throw PairingException(
-                    "Could not reach ${base.host}. Check that Tailscale is on for this phone and the relay is running on the Mac.",
+                    "Could not reach ${base.host}. Check that Tailscale is on for this phone and the relay is running on the computer.",
                 )
             }
         }

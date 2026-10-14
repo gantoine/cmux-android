@@ -71,7 +71,7 @@ fun PairScreen(app: CmuxApplication, initialUrl: String, initialCode: String, on
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Pair a Mac") },
+                title = { Text("Pair a computer") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
@@ -83,14 +83,14 @@ fun PairScreen(app: CmuxApplication, initialUrl: String, initialCode: String, on
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Run `cmux-relay pair` on your Mac and copy the address and code it shows. Only pair with a Mac you own: it can show you anything, and what you type goes to it.",
+                "Run `cmux-relay pair` on your computer and copy the address and code it shows. Only pair with a computer you own: it can show you anything, and what you type goes to it.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedTextField(
                 value = address,
                 onValueChange = { address = it },
-                label = { Text("Mac address") },
+                label = { Text("Computer address") },
                 placeholder = { Text("https://my-mac.tailnet.ts.net:8765") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),

@@ -87,12 +87,12 @@ fun MacsScreen(app: CmuxApplication, onOpenMac: (Mac) -> Unit, onAddMac: () -> U
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Macs") }) },
+        topBar = { TopAppBar(title = { Text("Computers") }) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onAddMac,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("Pair a Mac") },
+                text = { Text("Pair a computer") },
             )
         },
     ) { padding ->
@@ -132,7 +132,7 @@ fun MacsScreen(app: CmuxApplication, onOpenMac: (Mac) -> Unit, onAddMac: () -> U
             onDismissRequest = { removing = null },
             title = { Text("Remove ${mac.name}?") },
             text = {
-                Text("This phone forgets the Mac. To also revoke its access on the Mac, run `cmux-relay devices` and `cmux-relay revoke`.")
+                Text("This phone forgets the computer. To also revoke its access on the computer, run `cmux-relay devices` and `cmux-relay revoke`.")
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -152,10 +152,10 @@ private fun EmptyMacs() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("No Macs yet", style = MaterialTheme.typography.titleLarge)
+        Text("No computers yet", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.size(12.dp))
         Text(
-            "On your Mac, install the relay and run `cmux-relay pair`. Then scan the QR code with your camera or tap Pair a Mac.",
+            "On your computer, install the relay and run `cmux-relay pair`. Then scan the QR code with your camera or tap Pair a computer.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

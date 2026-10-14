@@ -20,7 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -84,9 +87,10 @@ fun WorkspacesScreen(
     val connections by app.connections.connectionsFlow.collectAsState()
     val macs by app.store.macs.collectAsState(initial = emptyList())
     val connection = connections[macId]
-    val macName = macs.firstOrNull { it.id == macId }?.name ?: "Mac"
+    val macName = macs.firstOrNull { it.id == macId }?.name ?: "Computer"
     val snackbar = remember { SnackbarHostState() }
     var dialog by remember { mutableStateOf<WorkspaceDialog?>(null) }
+    var query by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     fun run(action: suspend RelayConnection.() -> Result<*>, onSuccess: () -> Unit = {}) {
@@ -137,7 +141,7 @@ fun WorkspacesScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (connection == null) {
-                FullWidthMessage("This Mac is not paired anymore.")
+                FullWidthMessage("This computer is not paired anymore.")
                 return@Column
             }
             val state by connection.state.collectAsState()
@@ -145,7 +149,25 @@ fun WorkspacesScreen(
             if (state !is ConnectionState.Connected) {
                 FullWidthMessage(describe(state))
             }
-            val list = workspaces ?: return@Column
+            val all = workspaces ?: return@Column
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Search workspaces") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Clear, contentDescription = "Clear search") }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            val list = all.filter { WorkspaceListing.matches(it, query) }
+            if (list.isEmpty() && query.isNotBlank()) {
+                FullWidthMessage("No workspaces match \"${query.trim()}\".")
+            }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(list, key = { it.id }) { workspace ->
                     WorkspaceRow(
@@ -167,7 +189,7 @@ fun WorkspacesScreen(
         null -> Unit
         WorkspaceDialog.Create -> TextInputDialog(
             title = "New workspace",
-            fields = listOf("Name" to "", "Folder on the Mac (optional)" to ""),
+            fields = listOf("Name" to "", "Folder on the computer (optional)" to ""),
             confirm = "Create",
             onDismiss = { dialog = null },
         ) { (title, cwd) ->
@@ -202,9 +224,9 @@ fun WorkspacesScreen(
             text = {
                 Text(
                     if (current.force) {
-                        "Something is still running in it. Closing stops it on your Mac."
+                        "Something is still running in it. Closing stops it on your computer."
                     } else {
-                        "This closes the workspace and its terminals on your Mac."
+                        "This closes the workspace and its terminals on your computer."
                     },
                 )
             },
@@ -257,9 +279,16 @@ private fun WorkspaceRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val accent = workspace.customColor?.let(::parseHexColor) ?: MaterialTheme.colorScheme.surfaceVariant
-            Box(Modifier.size(width = 4.dp, height = 40.dp).background(accent, RoundedCornerShape(2.dp)))
-            Spacer(Modifier.width(12.dp))
+            val accent = parseHexColor(WorkspaceListing.color(workspace)) ?: MaterialTheme.colorScheme.surfaceVariant
+            Box(Modifier.size(42.dp).background(accent, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(
+                    if (WorkspaceListing.isAgent(workspace)) Icons.Filled.SmartToy else Icons.Filled.Terminal,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (workspace.isPinned) {
@@ -271,6 +300,7 @@ private fun WorkspaceRow(
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                 }
                 val detail = workspace.preview ?: workspace.currentDirectory?.let(::shortPath)
@@ -293,11 +323,17 @@ private fun WorkspaceRow(
                     )
                 }
             }
-            if (workspace.unreadCount > 0) {
-                Box(
-                    Modifier.background(Color(0xFF8CAAEE), CircleShape).padding(horizontal = 8.dp, vertical = 2.dp),
-                ) {
-                    Text("${workspace.unreadCount}", color = Color(0xFF1E1F29), style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt)?.let { time ->
+                    Text(time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (workspace.unreadCount > 0) {
+                    Box(
+                        Modifier.background(Color(0xFF8CAAEE), CircleShape).padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text("${workspace.unreadCount}", color = Color(0xFF1E1F29), style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }

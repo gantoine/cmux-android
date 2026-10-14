@@ -1,6 +1,21 @@
 package dev.cmuxandroid.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import dev.cmuxandroid.terminal.StickyModifiers
+import dev.cmuxandroid.terminal.TerminalKeys
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,7 +98,7 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     val connections by app.connections.connectionsFlow.collectAsState()
     val connection = connections[macId]
     if (connection == null) {
-        FullWidthMessage("This Mac is not paired anymore.")
+        FullWidthMessage("This computer is not paired anymore.")
         return
     }
     val state by connection.state.collectAsState()
@@ -98,14 +113,22 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     var fontSize by remember { mutableFloatStateOf(MacStore.DEFAULT_FONT_SIZE) }
     var fontSizeLoaded by remember { mutableStateOf(false) }
     var fitToPhone by remember { mutableStateOf(false) }
-    var ctrl by remember { mutableStateOf(false) }
+    var modifiers by remember { mutableStateOf(StickyModifiers()) }
+    var composerOpen by remember { mutableStateOf(false) }
+    var composerText by rememberSaveable { mutableStateOf("") }
+    val dictation = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!spoken.isNullOrBlank()) composerText = listOf(composerText.trimEnd(), spoken).filter { it.isNotEmpty() }.joinToString(" ")
+    }
     val viewport = remember(surfaceId) { TerminalViewport() }
     var history by remember(surfaceId) { mutableStateOf<TerminalHistory?>(null) }
     var loadingHistory by remember(surfaceId) { mutableStateOf(false) }
     var inputView by remember { mutableStateOf<TerminalInputView?>(null) }
 
     LaunchedEffect(Unit) {
-        fontSize = app.store.settings.first().fontSize
+        val settings = app.store.settings.first()
+        fontSize = settings.fontSize
+        fitToPhone = settings.fitToPhone
         fontSizeLoaded = true
     }
     LaunchedEffect(fontSize, fontSizeLoaded) {
@@ -127,7 +150,7 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     LaunchedEffect(connection) {
         connection.detached.collect { detached ->
             if (detached.surfaceId == surfaceId) {
-                snackbar.showSnackbar("This terminal closed on the Mac.")
+                snackbar.showSnackbar("This terminal closed on the computer.")
                 onBack()
             }
         }
@@ -136,7 +159,7 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     fun perform(type: String, build: JsonObjectBuilder.() -> Unit = {}) {
         scope.launch {
             connection.request(type, buildJsonObject(build)).onFailure {
-                snackbar.showSnackbar(it.message ?: "The Mac did not accept that.")
+                snackbar.showSnackbar(it.message ?: "The computer did not accept that.")
             }
         }
     }
@@ -164,21 +187,20 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     val sink = remember(connection) {
         object : TerminalInputSink {
             override fun text(text: String) {
-                if (ctrl && text.length == 1 && text[0].isLetter()) {
-                    ctrl = false
-                    connection.send("key", buildJsonObject { put("key", "ctrl+${text[0].lowercaseChar()}") })
-                    return
-                }
-                ctrl = false
+                val input = TerminalKeys.withModifiers(text, modifiers)
+                modifiers = StickyModifiers()
                 if (!viewport.isLive) goLive()
-                connection.send("input", buildJsonObject { put("text", text) })
+                when (input) {
+                    is TerminalKeys.Input.Key -> connection.send("key", buildJsonObject { put("key", input.name) })
+                    is TerminalKeys.Input.Text -> connection.send("input", buildJsonObject { put("text", input.text) })
+                }
             }
 
             override fun key(name: String) {
-                val withCtrl = if (ctrl && name in CTRL_COMBINABLE_KEYS) "ctrl+$name" else name
-                ctrl = false
+                val input = TerminalKeys.keyWithModifiers(name, modifiers)
+                modifiers = StickyModifiers()
                 if (!viewport.isLive) goLive()
-                connection.send("key", buildJsonObject { put("key", withCtrl) })
+                connection.send("key", buildJsonObject { put("key", input.name) })
             }
         }
     }
@@ -208,7 +230,10 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
-                    IconToggleButton(checked = fitToPhone, onCheckedChange = { fitToPhone = it }) {
+                    IconToggleButton(checked = fitToPhone, onCheckedChange = {
+                        fitToPhone = it
+                        scope.launch { app.store.setFitToPhone(it) }
+                    }) {
                         Icon(Icons.Filled.FitScreen, contentDescription = "Fit the terminal to this phone")
                     }
                 },
@@ -271,37 +296,63 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
                     }
                 }
             }
-            KeyBar(
-                ctrl = ctrl,
-                onCtrl = { ctrl = !ctrl },
-                onKey = sink::key,
-                onKeyboard = { inputView?.showKeyboard() },
-                onPaste = {
-                    clipboard.getText()?.text?.takeIf { it.isNotEmpty() }?.let { pasted ->
-                        if (!viewport.isLive) goLive()
-                        perform("paste") {
-                            put("text", pasted)
-                            put("submit", false)
-                        }
-                    }
-                },
-                inputHost = {
-                    AndroidView(
-                        factory = { context -> TerminalInputView(context).also { inputView = it } },
-                        update = { view -> view.sink = sink },
-                        modifier = Modifier.size(1.dp),
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding()) {
+                if (composerOpen) {
+                    Composer(
+                        text = composerText,
+                        onTextChange = { composerText = it },
+                        onDictate = {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            try {
+                                dictation.launch(intent)
+                            } catch (_: ActivityNotFoundException) {
+                                scope.launch { snackbar.showSnackbar("No voice input is available on this phone.") }
+                            }
+                        },
+                        onSend = {
+                            val message = composerText.trim()
+                            if (message.isNotEmpty()) {
+                                if (!viewport.isLive) goLive()
+                                perform("paste") {
+                                    put("text", message)
+                                    put("submit", true)
+                                }
+                                composerText = ""
+                            }
+                        },
                     )
-                },
-            )
+                }
+                KeyBar(
+                    modifiers = modifiers,
+                    onModifiers = { modifiers = it },
+                    onKey = sink::key,
+                    onKeyboard = { inputView?.showKeyboard() },
+                    composerOpen = composerOpen,
+                    onComposer = { composerOpen = !composerOpen },
+                    onPaste = {
+                        clipboard.getText()?.text?.takeIf { it.isNotEmpty() }?.let { pasted ->
+                            if (!viewport.isLive) goLive()
+                            perform("paste") {
+                                put("text", pasted)
+                                put("submit", false)
+                            }
+                        }
+                    },
+                    inputHost = {
+                        AndroidView(
+                            factory = { context -> TerminalInputView(context).also { inputView = it } },
+                            update = { view -> view.sink = sink },
+                            modifier = Modifier.size(1.dp),
+                        )
+                    },
+                )
+            }
         }
     }
 }
 
 private const val FIT_SETTLE_MS = 300L
-
-private val CTRL_COMBINABLE_KEYS = setOf(
-    "up", "down", "left", "right", "home", "end", "pageup", "pagedown", "enter", "tab", "backspace", "delete",
-)
 
 private val KEYS = listOf(
     "Esc" to "escape",
@@ -318,30 +369,66 @@ private val KEYS = listOf(
 
 @Composable
 private fun KeyBar(
-    ctrl: Boolean,
-    onCtrl: () -> Unit,
+    modifiers: StickyModifiers,
+    onModifiers: (StickyModifiers) -> Unit,
     onKey: (String) -> Unit,
     onKeyboard: () -> Unit,
+    composerOpen: Boolean,
+    onComposer: () -> Unit,
     onPaste: () -> Unit,
     inputHost: @Composable () -> Unit,
 ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .navigationBarsPadding()
-            .padding(horizontal = 4.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         inputHost()
         IconButton(onClick = onKeyboard) { Icon(Icons.Filled.Keyboard, contentDescription = "Show the keyboard") }
+        IconToggleButton(checked = composerOpen, onCheckedChange = { onComposer() }) {
+            Icon(Icons.Filled.EditNote, contentDescription = if (composerOpen) "Hide the message box" else "Write a message")
+        }
         Row(
             Modifier.weight(1f).horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            KeyButton(if (ctrl) "Ctrl ●" else "Ctrl", onClick = onCtrl)
+            ModifierButton("Ctrl", modifiers.ctrl) { onModifiers(modifiers.copy(ctrl = !modifiers.ctrl)) }
+            ModifierButton("⌥", modifiers.alt) { onModifiers(modifiers.copy(alt = !modifiers.alt)) }
+            ModifierButton("⇧", modifiers.shift) { onModifiers(modifiers.copy(shift = !modifiers.shift)) }
             KEYS.forEach { (label, name) -> KeyButton(label) { onKey(name) } }
             KeyButton("Paste", onClick = onPaste)
+        }
+    }
+}
+
+@Composable
+private fun ModifierButton(label: String, active: Boolean, onClick: () -> Unit) {
+    if (active) {
+        Button(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
+            KeyLabel(label)
+        }
+    } else {
+        KeyButton(label, onClick)
+    }
+}
+
+@Composable
+private fun Composer(text: String, onTextChange: (String) -> Unit, onDictate: () -> Unit, onSend: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 6.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = onTextChange,
+            placeholder = { Text("Message") },
+            maxLines = 5,
+            shape = RoundedCornerShape(24.dp),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = true),
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onDictate) { Icon(Icons.Filled.Mic, contentDescription = "Dictate a message") }
+        IconButton(onClick = onSend, enabled = text.isNotBlank()) {
+            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send the message")
         }
     }
 }
@@ -361,7 +448,13 @@ private fun SelectionBar(modifier: Modifier, onCopy: () -> Unit, onCancel: () ->
 private fun KeyButton(label: String, onClick: () -> Unit) {
     Box {
         FilledTonalButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-            Text(label, style = MaterialTheme.typography.labelLarge)
+            KeyLabel(label)
         }
     }
+}
+
+@Composable
+private fun KeyLabel(label: String) {
+    val symbol = label.length == 1 && !label[0].isLetterOrDigit()
+    Text(label, style = if (symbol) MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge)
 }

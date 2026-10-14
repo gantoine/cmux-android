@@ -121,10 +121,37 @@ private class TerminalInputConnection(private val view: TerminalInputView) : Bas
     }
 }
 
+data class StickyModifiers(val ctrl: Boolean = false, val alt: Boolean = false, val shift: Boolean = false) {
+    val any: Boolean get() = ctrl || alt || shift
+
+    fun prefix(includeShift: Boolean): String =
+        listOfNotNull("ctrl".takeIf { ctrl }, "alt".takeIf { alt }, "shift".takeIf { shift && includeShift })
+            .joinToString("") { "$it+" }
+}
+
 object TerminalKeys {
     sealed interface Input {
         data class Key(val name: String) : Input
         data class Text(val text: String) : Input
+    }
+
+    private val combinableKeys = setOf(
+        "up", "down", "left", "right", "home", "end", "pageup", "pagedown", "enter", "tab", "backspace", "delete",
+    )
+
+    fun withModifiers(text: String, modifiers: StickyModifiers): Input {
+        val single = text.codePointCount(0, text.length) == 1
+        if (single && (modifiers.ctrl || modifiers.alt) && text[0].isLetterOrDigit()) {
+            return Input.Key(modifiers.prefix(includeShift = false) + text.lowercase())
+        }
+        if (single && modifiers.shift && !modifiers.ctrl && !modifiers.alt) return Input.Text(text.uppercase())
+        return Input.Text(text)
+    }
+
+    fun keyWithModifiers(name: String, modifiers: StickyModifiers): Input.Key {
+        if (!modifiers.any || name !in combinableKeys) return Input.Key(name)
+        if (name == "tab" && modifiers.shift && !modifiers.ctrl && !modifiers.alt) return Input.Key("shift+tab")
+        return Input.Key(modifiers.prefix(includeShift = true) + name)
     }
 
     data class Edit(val backspaces: Int, val added: String)
