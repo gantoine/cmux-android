@@ -69,7 +69,7 @@ You need cmux 0.65 or later and Tailscale signed in on the computer and on the p
 Install the APK from the [releases page](../../releases). To check it first, run `apksigner verify --print-certs muxer-<version>.apk` and compare the SHA-256 certificate fingerprint with this one:
 
 ```
-B7:33:F8:8D:CD:BE:D3:93:F7:1B:FA:A3:75:5D:AD:E3:DB:C4:0B:F6:D6:B2:39:29:BB:6E:CB:BA:56:FB:AD:2D
+9D:6C:85:65:17:81:34:51:CF:1D:82:8F:BC:A0:AE:91:B0:D4:C5:92:B0:74:04:0F:72:19:19:DB:C5:61:5C:8B
 ```
 
 Then run this on your computer:
