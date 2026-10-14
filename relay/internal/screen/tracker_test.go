@@ -3,7 +3,7 @@ package screen
 import (
 	"testing"
 
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/cmux"
 )
 
 func replay(columns, rows int, styles []cmux.Style, spans ...cmux.Span) cmux.Replay {

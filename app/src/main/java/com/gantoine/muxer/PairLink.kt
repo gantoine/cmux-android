@@ -5,7 +5,7 @@ import com.gantoine.muxer.ui.LaunchTarget
 
 object PairLink {
     fun parse(uri: Uri?): LaunchTarget.Pair? {
-        if (uri?.scheme != "cmuxandroid" || uri.host != "pair") return null
+        if (uri?.scheme != "muxer" || uri.host != "pair") return null
         return LaunchTarget.Pair(uri.getQueryParameter("url").orEmpty(), uri.getQueryParameter("code").orEmpty())
     }
 

@@ -13,10 +13,10 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/gantoine/cmux-android/relay/internal/claude"
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
-	"github.com/gantoine/cmux-android/relay/internal/devices"
-	"github.com/gantoine/cmux-android/relay/internal/notify"
+	"github.com/gantoine/muxer/relay/internal/claude"
+	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/notify"
 )
 
 const ProtocolVersion = 1
@@ -127,7 +127,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"app":              "cmux-android-relay",
+		"app":              "muxer",
 		"mac_name":         s.options.MacName,
 		"relay_version":    s.options.RelayVersion,
 		"protocol_version": ProtocolVersion,
@@ -146,7 +146,7 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	device, token, err := s.devices.Pair(request.Code, request.DeviceName)
 	if errors.Is(err, devices.ErrInvalidPairingCode) {
 		time.Sleep(500 * time.Millisecond)
-		writeJSON(w, http.StatusUnauthorized, errorBody("invalid_code", "That pairing code is wrong or expired. Run `cmux-relay pair` on your computer for a new one."))
+		writeJSON(w, http.StatusUnauthorized, errorBody("invalid_code", "That pairing code is wrong or expired. Run `muxer pair` on your computer for a new one."))
 		return
 	}
 	if err != nil {

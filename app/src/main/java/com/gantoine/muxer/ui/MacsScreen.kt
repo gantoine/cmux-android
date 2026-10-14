@@ -153,7 +153,7 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
             onDismissRequest = { dialog = null },
             title = { Text("Remove ${current.mac.name}?") },
             text = {
-                Text("This phone forgets the computer. To also revoke its access on the computer, run `cmux-relay devices` and `cmux-relay revoke`.")
+                Text("This phone forgets the computer. To also revoke its access on the computer, run `muxer devices` and `muxer revoke`.")
             },
             confirmButton = {
                 TextButton(onClick = {

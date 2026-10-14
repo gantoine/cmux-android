@@ -18,13 +18,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
-	"github.com/gantoine/cmux-android/relay/internal/server"
+	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/server"
 )
 
 const (
 	defaultListenAddress = "127.0.0.1:8765"
-	launchdLabel         = "dev.cmuxandroid.relay"
+	launchdLabel         = "com.gantoine.muxer.relay"
+	legacyLaunchdLabel   = "dev.cmuxandroid.relay"
+	legacyStateDirName   = "cmux-android-relay"
 )
 
 type paths struct {
@@ -40,9 +42,9 @@ func statePaths() (paths, error) {
 	if err != nil {
 		return paths{}, err
 	}
-	dir := os.Getenv("CMUX_RELAY_STATE_DIR")
+	dir := os.Getenv("MUXER_STATE_DIR")
 	if dir == "" {
-		dir = filepath.Join(home, "Library", "Application Support", "cmux-android-relay")
+		dir = filepath.Join(home, "Library", "Application Support", "muxer")
 	}
 	admin, err := adminSocketPath(dir)
 	if err != nil {
@@ -53,7 +55,7 @@ func statePaths() (paths, error) {
 		devices: filepath.Join(dir, "devices.json"),
 		admin:   admin,
 		plist:   filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist"),
-		log:     filepath.Join(home, "Library", "Logs", "cmux-relay.log"),
+		log:     filepath.Join(home, "Library", "Logs", "muxer.log"),
 	}, nil
 }
 
@@ -64,7 +66,7 @@ func adminSocketPath(stateDir string) (string, error) {
 	if len(preferred) <= maxUnixSocketPath {
 		return preferred, nil
 	}
-	privateDir := filepath.Join("/tmp", "cmux-relay-"+strconv.Itoa(os.Getuid()))
+	privateDir := filepath.Join("/tmp", "muxer-"+strconv.Itoa(os.Getuid()))
 	if err := os.Mkdir(privateDir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 		return "", err
 	}
@@ -151,6 +153,9 @@ func runInstall(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := retireLegacyRelay(p); err != nil {
+		return err
+	}
 	executable, err := stableExecutablePath()
 	if err != nil {
 		return err
@@ -175,8 +180,41 @@ func runInstall(args []string) error {
 	fmt.Println()
 	fmt.Println("Next:")
 	fmt.Println("  1. Let the phone reach it over Tailscale:  " + tailscaleServeCommand(listen))
-	fmt.Println("  2. Check the setup:                        cmux-relay doctor")
-	fmt.Println("  3. Pair your phone:                        cmux-relay pair")
+	fmt.Println("  2. Check the setup:                        muxer doctor")
+	fmt.Println("  3. Pair your phone:                        muxer pair")
+	return nil
+}
+
+func retireLegacyRelay(p paths) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	legacyPlist := filepath.Join(home, "Library", "LaunchAgents", legacyLaunchdLabel+".plist")
+	if _, err := os.Stat(legacyPlist); err == nil {
+		_ = exec.Command("launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+legacyLaunchdLabel).Run()
+		if err := os.Remove(legacyPlist); err != nil {
+			return err
+		}
+		fmt.Println("Stopped the old cmux-relay background relay and removed it from login items.")
+	}
+	if os.Getenv("MUXER_STATE_DIR") != "" {
+		return nil
+	}
+	return adoptLegacyStateDir(filepath.Join(home, "Library", "Application Support", legacyStateDirName), p.dir)
+}
+
+func adoptLegacyStateDir(legacyDir, dir string) error {
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if _, err := os.Stat(legacyDir); err != nil {
+		return nil
+	}
+	if err := os.Rename(legacyDir, dir); err != nil {
+		return err
+	}
+	fmt.Println("Moved paired phones from", legacyDir, "to", dir)
 	return nil
 }
 
@@ -185,7 +223,7 @@ func stableExecutablePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	onPath, _ := exec.LookPath("cmux-relay")
+	onPath, _ := exec.LookPath("muxer")
 	return preferStableLink(executable, onPath), nil
 }
 
@@ -300,7 +338,7 @@ func runDoctor(args []string) error {
 
 	fmt.Println("Relay")
 	_, adminErr := server.CallAdmin(p.admin, server.AdminRequest{Command: "devices"})
-	check(adminErr == nil, "relay is running", "relay is not running; run `cmux-relay install`")
+	check(adminErr == nil, "relay is running", "relay is not running; run `muxer install`")
 
 	fmt.Println("Tailscale")
 	binary, tailscaleErr := tailscaleBinary()
@@ -317,6 +355,6 @@ func runDoctor(args []string) error {
 	if problems > 0 {
 		return fmt.Errorf("%d problem(s) found", problems)
 	}
-	fmt.Println("Everything looks good. Run `cmux-relay pair` to add a phone.")
+	fmt.Println("Everything looks good. Run `muxer pair` to add a phone.")
 	return nil
 }

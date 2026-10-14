@@ -20,7 +20,7 @@ type fakeSocket struct {
 
 func startFakeSocket(t *testing.T, respond func(method string, params map[string]any, authenticated bool) string) *fakeSocket {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "cmux-relay-test")
+	dir, err := os.MkdirTemp("/tmp", "muxer-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestClientToleratesUnconfiguredPasswordAndReportsAccessDenied(t *testing.T)
 }
 
 func TestClientRecoversFromConnectionsCmuxClosedWhileIdle(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "cmux-relay-test")
+	dir, err := os.MkdirTemp("/tmp", "muxer-test")
 	if err != nil {
 		t.Fatal(err)
 	}

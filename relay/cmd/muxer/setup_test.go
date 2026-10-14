@@ -11,14 +11,14 @@ func TestInstallRecordsTheLinkThatSurvivesUpgrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cellarBinary := filepath.Join(prefix, "Cellar", "cmux-relay", "0.1.0", "bin", "cmux-relay")
+	cellarBinary := filepath.Join(prefix, "Cellar", "muxer", "0.1.0", "bin", "muxer")
 	if err := os.MkdirAll(filepath.Dir(cellarBinary), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(cellarBinary, []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(prefix, "bin", "cmux-relay")
+	link := filepath.Join(prefix, "bin", "muxer")
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestInstallRecordsTheLinkThatSurvivesUpgrades(t *testing.T) {
 		t.Fatalf("a Homebrew install must record %s, not the versioned Cellar path; got %s", link, got)
 	}
 
-	other := filepath.Join(prefix, "elsewhere", "cmux-relay")
+	other := filepath.Join(prefix, "elsewhere", "muxer")
 	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -56,5 +56,37 @@ func TestFixPossessiveDropsTheSecondSAfterAnS(t *testing.T) {
 		if got := fixPossessive(input); got != want {
 			t.Errorf("fixPossessive(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestInstallKeepsPhonesPairedWithTheOldRelay(t *testing.T) {
+	root := t.TempDir()
+	legacyDir := filepath.Join(root, "cmux-android-relay")
+	dir := filepath.Join(root, "muxer")
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "devices.json"), []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := adoptLegacyStateDir(legacyDir, dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "devices.json")); err != nil {
+		t.Fatalf("paired phones must move to the new state folder: %v", err)
+	}
+
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "devices.json"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := adoptLegacyStateDir(legacyDir, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "devices.json")); string(got) != "[]" {
+		t.Fatalf("an existing state folder must not be replaced; got %q", got)
 	}
 }
