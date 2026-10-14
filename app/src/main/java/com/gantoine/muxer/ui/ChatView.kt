@@ -100,7 +100,7 @@ fun ChatView(
                 }
             }
         }
-        AnimatedVisibility(visible = status is AgentStatus.NeedsYou) {
+        AnimatedVisibility(visible = WorkspaceListing.needsTerminalAnswer(status)) {
             NeedsYouCard(status?.label.orEmpty(), onShowTerminal)
         }
         ChatComposer(

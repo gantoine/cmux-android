@@ -25,6 +25,10 @@ object WorkspaceListing {
 
     private val attentionWords = listOf("wait", "input", "attention", "permission", "approv", "question", "blocked", "need", "review")
     private val workingWords = listOf("run", "work", "think", "busy", "generat", "active", "progress", "tool")
+    private val terminalPromptWords = listOf("permission", "approv", "question")
+
+    fun needsTerminalAnswer(status: AgentStatus?): Boolean =
+        status is AgentStatus.NeedsYou && terminalPromptWords.any { status.label.contains(it, ignoreCase = true) }
 
     fun matches(workspace: WorkspaceInfo, query: String): Boolean {
         val needle = query.trim()
