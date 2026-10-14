@@ -21,7 +21,7 @@ class PairingClient(private val client: OkHttpClient) {
     suspend fun pair(address: String, code: String, deviceName: String): Pair<String, PairResponse> =
         withContext(Dispatchers.IO) {
             val base = normalizeRelayUrl(address) ?: throw PairingException(
-                "Enter the address that `cmux-relay pair` printed, like https://my-mac.tailnet.ts.net:8765",
+                "Enter the address that `muxer pair` printed, like https://my-mac.tailnet.ts.net:8765",
             )
             val body = buildJsonObject {
                 put("code", code.trim())
@@ -36,7 +36,7 @@ class PairingClient(private val client: OkHttpClient) {
                         throw PairingException(error ?: "The computer answered with HTTP ${response.code}.")
                     }
                     val paired = runCatching { RelayJson.decodeFromString<PairResponse>(text) }.getOrElse {
-                        throw PairingException("${base.host} answered, but not like cmux-relay. Check the address.")
+                        throw PairingException("${base.host} answered, but not like muxer. Check the address.")
                     }
                     base.toString().trimEnd('/') to paired
                 }

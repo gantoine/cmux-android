@@ -3,7 +3,7 @@ package screen
 import (
 	"unicode/utf8"
 
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/cmux"
 )
 
 type History struct {

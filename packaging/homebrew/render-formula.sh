@@ -9,43 +9,43 @@ fi
 version=$1
 arm64_sha=$2
 amd64_sha=$3
-base_url=${4:-https://github.com/gantoine/cmux-android/releases/download/$version}
+base_url=${4:-https://github.com/gantoine/muxer/releases/download/$version}
 
 cat <<FORMULA
-class CmuxRelay < Formula
-  desc "Connects the cmux Android app to cmux on this Mac"
-  homepage "https://github.com/gantoine/cmux-android"
+class Muxer < Formula
+  desc "Connects the Muxer Android app to cmux on this Mac"
+  homepage "https://github.com/gantoine/muxer"
   version "$version"
   license "MIT"
 
   if Hardware::CPU.arm?
-    url "$base_url/cmux-relay-$version-darwin-arm64.tar.gz"
+    url "$base_url/muxer-$version-darwin-arm64.tar.gz"
     sha256 "$arm64_sha"
   else
-    url "$base_url/cmux-relay-$version-darwin-amd64.tar.gz"
+    url "$base_url/muxer-$version-darwin-amd64.tar.gz"
     sha256 "$amd64_sha"
   end
 
   depends_on :macos
 
   def install
-    bin.install "cmux-relay"
+    bin.install "muxer"
   end
 
   def caveats
     <<~EOS
       Set up the relay:
-        cmux-relay install
+        muxer install
         tailscale serve --bg --https=8765 http://127.0.0.1:8765
-        cmux-relay doctor
-        cmux-relay pair
+        muxer doctor
+        muxer pair
 
-      After upgrading, run \`cmux-relay install\` again to restart the relay on the new version.
+      After upgrading, run \`muxer install\` again to restart the relay on the new version.
     EOS
   end
 
   test do
-    assert_equal version.to_s, shell_output("#{bin}/cmux-relay version").strip
+    assert_equal version.to_s, shell_output("#{bin}/muxer version").strip
   end
 end
 FORMULA

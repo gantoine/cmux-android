@@ -19,9 +19,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/gantoine/cmux-android/relay/internal/claude"
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
-	"github.com/gantoine/cmux-android/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/claude"
+	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/devices"
 )
 
 type fakeCmux struct {

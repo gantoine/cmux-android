@@ -17,25 +17,25 @@ import (
 
 	"github.com/mdp/qrterminal/v3"
 
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
-	"github.com/gantoine/cmux-android/relay/internal/devices"
-	"github.com/gantoine/cmux-android/relay/internal/notify"
-	"github.com/gantoine/cmux-android/relay/internal/server"
+	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/notify"
+	"github.com/gantoine/muxer/relay/internal/server"
 )
 
 var version = "dev"
 
-const usage = `cmux-relay connects the cmux Android app to cmux on this computer.
+const usage = `muxer connects the Muxer Android app to cmux on this computer.
 
 Usage:
-  cmux-relay install [--listen ADDR] [--name NAME]   Run the relay at login (launchd) and start it now
-  cmux-relay uninstall                               Stop the relay and remove it from login items
-  cmux-relay pair [--url URL] [--listen ADDR]        Show a QR code and pairing code for a new phone
-  cmux-relay devices                                 List paired phones
-  cmux-relay revoke DEVICE_ID                        Remove a paired phone
-  cmux-relay doctor                                  Check cmux, socket access, and Tailscale setup
-  cmux-relay serve [--listen ADDR] [--name NAME]     Run the relay in the foreground
-  cmux-relay version
+  muxer install [--listen ADDR] [--name NAME]   Run the relay at login (launchd) and start it now
+  muxer uninstall                               Stop the relay and remove it from login items
+  muxer pair [--url URL] [--listen ADDR]        Show a QR code and pairing code for a new phone
+  muxer devices                                 List paired phones
+  muxer revoke DEVICE_ID                        Remove a paired phone
+  muxer doctor                                  Check cmux, socket access, and Tailscale setup
+  muxer serve [--listen ADDR] [--name NAME]     Run the relay in the foreground
+  muxer version
 `
 
 func main() {
@@ -169,7 +169,7 @@ func runPair(args []string) error {
 	if err != nil {
 		return err
 	}
-	link := url.URL{Scheme: "cmuxandroid", Host: "pair", RawQuery: url.Values{"url": {*relayURL}, "code": {response.Code}}.Encode()}
+	link := url.URL{Scheme: "muxer", Host: "pair", RawQuery: url.Values{"url": {*relayURL}, "code": {response.Code}}.Encode()}
 	fmt.Println("Scan this with your phone's camera, or open the app and enter the details below.")
 	fmt.Println()
 	qrterminal.GenerateHalfBlock(link.String(), qrterminal.L, os.Stdout)
@@ -190,7 +190,7 @@ func runDevices() error {
 		return err
 	}
 	if len(response.Devices) == 0 {
-		fmt.Println("No paired phones. Run `cmux-relay pair` to add one.")
+		fmt.Println("No paired phones. Run `muxer pair` to add one.")
 		return nil
 	}
 	table := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -204,7 +204,7 @@ func runDevices() error {
 
 func runRevoke(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: cmux-relay revoke DEVICE_ID")
+		return errors.New("usage: muxer revoke DEVICE_ID")
 	}
 	paths, err := statePaths()
 	if err != nil {

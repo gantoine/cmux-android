@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gantoine/cmux-android/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/devices"
 )
 
 type AdminRequest struct {
@@ -80,7 +80,7 @@ func handleAdmin(conn net.Conn, store *devices.Store) {
 func CallAdmin(path string, request AdminRequest) (AdminResponse, error) {
 	conn, err := net.DialTimeout("unix", path, 3*time.Second)
 	if err != nil {
-		return AdminResponse{}, errors.New("the relay is not running; start it with `cmux-relay install` or `cmux-relay serve`")
+		return AdminResponse{}, errors.New("the relay is not running; start it with `muxer install` or `muxer serve`")
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))

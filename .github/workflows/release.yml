@@ -54,9 +54,9 @@ jobs:
           for arch in arm64 amd64; do
             GOOS=darwin GOARCH=$arch go build -trimpath \
               -ldflags "-s -w -X main.version=${VERSION}" \
-              -o dist/cmux-relay ./cmd/cmux-relay
-            tar -C dist -czf "dist/cmux-relay-${VERSION}-darwin-${arch}.tar.gz" cmux-relay
-            rm dist/cmux-relay
+              -o dist/muxer ./cmd/muxer
+            tar -C dist -czf "dist/muxer-${VERSION}-darwin-${arch}.tar.gz" muxer
+            rm dist/muxer
           done
 
       - name: Build signed APK
@@ -106,18 +106,20 @@ jobs:
           git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/gantoine/homebrew-tap.git" "$RUNNER_TEMP/tap"
           bot_id=$(GH_TOKEN="$TAP_TOKEN" gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
 
-          arm64_sha=$(shasum -a 256 "relay/dist/cmux-relay-${VERSION}-darwin-arm64.tar.gz" | cut -d' ' -f1)
-          amd64_sha=$(shasum -a 256 "relay/dist/cmux-relay-${VERSION}-darwin-amd64.tar.gz" | cut -d' ' -f1)
+          arm64_sha=$(shasum -a 256 "relay/dist/muxer-${VERSION}-darwin-arm64.tar.gz" | cut -d' ' -f1)
+          amd64_sha=$(shasum -a 256 "relay/dist/muxer-${VERSION}-darwin-amd64.tar.gz" | cut -d' ' -f1)
           mkdir -p "$RUNNER_TEMP/tap/Formula"
-          packaging/homebrew/render-formula.sh "$VERSION" "$arm64_sha" "$amd64_sha" > "$RUNNER_TEMP/tap/Formula/cmux-relay.rb"
+          packaging/homebrew/render-formula.sh "$VERSION" "$arm64_sha" "$amd64_sha" > "$RUNNER_TEMP/tap/Formula/muxer.rb"
 
           cd "$RUNNER_TEMP/tap"
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git add Formula/cmux-relay.rb
+          git rm -q --ignore-unmatch Formula/cmux-relay.rb
+          echo '{ "cmux-relay": "muxer" }' > formula_renames.json
+          git add Formula/muxer.rb formula_renames.json
           if git diff --cached --quiet; then
             echo "The formula is already at ${VERSION}."
           else
-            git commit -m "cmux-relay ${VERSION}"
+            git commit -m "muxer ${VERSION}"
             git push origin HEAD:main
           fi

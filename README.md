@@ -13,10 +13,10 @@ It works with any cmux plan, and you don't need to sign in to cmux. Everything r
 ## How it works
 
 ```
-Android app ──HTTPS + WebSocket over Tailscale──▶ cmux-relay (on your computer) ──Unix socket──▶ cmux
+Android app ──HTTPS + WebSocket over Tailscale──▶ muxer (on your computer) ──Unix socket──▶ cmux
 ```
 
-`cmux-relay` is a small program that runs on your computer. It talks to cmux through cmux's local control socket and gives the phone:
+`muxer` is a small program that runs on your computer. It talks to cmux through cmux's local control socket and gives the phone:
 
 - the list of windows, workspaces and terminals, with agent status and unread counts,
 - a live view of one terminal, sent as changed rows only, and the keys you type,
@@ -31,14 +31,14 @@ You need cmux 0.65 or later and Tailscale signed in on the computer and on the p
 1. **Install the relay** with [Homebrew](https://brew.sh):
 
    ```sh
-   brew install gantoine/tap/cmux-relay
+   brew install gantoine/tap/muxer
    ```
 
    <details>
    <summary>Other ways to install it</summary>
 
-   - **Download:** get `cmux-relay-<version>-darwin-arm64.tar.gz` (Apple silicon) or `-darwin-amd64.tar.gz` (Intel) from the [releases page](../../releases), check it against `SHA256SUMS`, extract it, and move `cmux-relay` into a folder on your `PATH`. The binary is not notarized by Apple. If you downloaded it with a browser, run `xattr -d com.apple.quarantine cmux-relay` before the first run.
-   - **From source** (Go 1.26 or later): `go install github.com/gantoine/cmux-android/relay/cmd/cmux-relay@latest`
+   - **Download:** get `muxer-<version>-darwin-arm64.tar.gz` (Apple silicon) or `-darwin-amd64.tar.gz` (Intel) from the [releases page](../../releases), check it against `SHA256SUMS`, extract it, and move `muxer` into a folder on your `PATH`. The binary is not notarized by Apple. If you downloaded it with a browser, run `xattr -d com.apple.quarantine muxer` before the first run.
+   - **From source** (Go 1.26 or later): `go install github.com/gantoine/muxer/relay/cmd/muxer@latest`
 
    </details>
 
@@ -49,7 +49,7 @@ You need cmux 0.65 or later and Tailscale signed in on the computer and on the p
 3. **Start the relay at login.**
 
    ```sh
-   cmux-relay install
+   muxer install
    ```
 
 4. **Make it reachable from your tailnet only.**
@@ -61,7 +61,7 @@ You need cmux 0.65 or later and Tailscale signed in on the computer and on the p
 5. **Check everything.**
 
    ```sh
-   cmux-relay doctor
+   muxer doctor
    ```
 
 ## Pair your phone
@@ -75,7 +75,7 @@ B7:33:F8:8D:CD:BE:D3:93:F7:1B:FA:A3:75:5D:AD:E3:DB:C4:0B:F6:D6:B2:39:29:BB:6E:CB
 Then run this on your computer:
 
 ```sh
-cmux-relay pair
+muxer pair
 ```
 
 Scan the QR code with your phone's camera, or tap **Pair a computer** in the app and type the address and code. The code works once and expires after 10 minutes.
@@ -98,26 +98,28 @@ Pair as many computers as you like. Each one shows up in the app's **Computers**
 ## Updating the relay
 
 ```sh
-brew upgrade cmux-relay
-cmux-relay install
+brew upgrade muxer
+muxer install
 ```
 
-Running `cmux-relay install` again restarts the background relay on the new version. Paired phones stay paired.
+Running `muxer install` again restarts the background relay on the new version. Paired phones stay paired.
+
+If you installed the relay when it was called `cmux-relay`, `brew upgrade` moves you to `muxer`. Run `muxer install` once afterwards: it stops the old background relay, removes it from login items, and keeps your paired phones.
 
 ## Managing phones
 
 ```sh
-cmux-relay devices          # list paired phones
-cmux-relay revoke DEVICE_ID # disconnect a phone and make it pair again
-cmux-relay uninstall        # stop the relay and remove it from login items
+muxer devices          # list paired phones
+muxer revoke DEVICE_ID # disconnect a phone and make it pair again
+muxer uninstall        # stop the relay and remove it from login items
 ```
 
-The relay logs to `~/Library/Logs/cmux-relay.log`.
+The relay logs to `~/Library/Logs/muxer.log`.
 
 ## Security
 
 - The phone can do what you can do in cmux: read every terminal and type into it. Pair only phones you control, and revoke lost ones.
-- Each phone gets its own random token. The computer stores only a SHA-256 hash of it, in `~/Library/Application Support/cmux-android-relay/devices.json` (mode 0600). The phone keeps it encrypted with a key in the Android Keystore.
+- Each phone gets its own random token. The computer stores only a SHA-256 hash of it, in `~/Library/Application Support/muxer/devices.json` (mode 0600). The phone keeps it encrypted with a key in the Android Keystore.
 - Pairing codes are single-use, expire after 10 minutes, and stop working after 10 wrong guesses.
 - The relay listens on `127.0.0.1` only. `tailscale serve` adds TLS and keeps it inside your tailnet. Never expose it with `tailscale funnel` or a public port.
 - Pairing, listing, and revoking use a Unix socket that only your user can open, never the network.
@@ -125,7 +127,7 @@ The relay logs to `~/Library/Logs/cmux-relay.log`.
 
 ## Limits
 
-- The relay uses cmux's `mobile.*` socket methods, which power the official iOS app. cmux does not document them, so a cmux update can break the relay. `cmux-relay doctor` and the relay log show what failed.
+- The relay uses cmux's `mobile.*` socket methods, which power the official iOS app. cmux does not document them, so a cmux update can break the relay. `muxer doctor` and the relay log show what failed.
 - cmux has no way to push terminal output over its local socket, so the relay polls the terminal you are viewing: about 12 times a second while it changes, slowing to once a second when idle. It polls only while a phone has a terminal open.
 - History you scroll back through is loaded once. While you read it, the live screen keeps updating, but lines that scroll off the screen meanwhile are not added. Tap **Live** and scroll up again to reload it.
 - The chat view reads Claude Code's transcript files in `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`). It finds the session for a terminal through cmux, or else through the running sessions Claude Code lists in `~/.claude/sessions`, matched to the terminal by the `CMUX_SURFACE_ID` that cmux sets in its shells. Claude Code does not document these files, so a Claude Code update can break the chat view; the terminal view keeps working.
@@ -135,7 +137,7 @@ The relay logs to `~/Library/Logs/cmux-relay.log`.
 
 ```sh
 # relay
-cd relay && go test -race ./... && go build ./cmd/cmux-relay
+cd relay && go test -race ./... && go build ./cmd/muxer
 
 # Android app (JDK 21 and the Android SDK)
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
@@ -144,7 +146,7 @@ cd relay && go test -race ./... && go build ./cmd/cmux-relay
 To run the relay next to an installed copy, give it its own state directory and port:
 
 ```sh
-cd relay && CMUX_RELAY_STATE_DIR=/tmp/relay-dev go run ./cmd/cmux-relay serve --listen 127.0.0.1:18765
+cd relay && MUXER_STATE_DIR=/tmp/relay-dev go run ./cmd/muxer serve --listen 127.0.0.1:18765
 ```
 
 On the Android emulator the computer is `http://10.0.2.2:18765`. Debug builds allow plain HTTP to that address only.
@@ -155,7 +157,7 @@ Publish a GitHub release whose tag is a semantic version such as `0.2.0` or `0.2
 
 Signing uses the `SIGNING_KEYSTORE_BASE64`, `SIGNING_KEYSTORE_PASSWORD` and `SIGNING_KEY_PASSWORD` secrets and the `SIGNING_KEY_ALIAS` variable.
 
-For releases that are not marked as pre-releases, the workflow also updates the `cmux-relay` formula in [gantoine/homebrew-tap](https://github.com/gantoine/homebrew-tap). It renders the formula with `packaging/homebrew/render-formula.sh` and pushes as a GitHub App that is installed only on the tap with contents write access. The workflow reads the app's ID from the `HOMEBREW_TAP_APP_ID` variable and its private key from the `HOMEBREW_TAP_APP_PRIVATE_KEY` secret, and each token it creates lasts one hour.
+For releases that are not marked as pre-releases, the workflow also updates the `muxer` formula in [gantoine/homebrew-tap](https://github.com/gantoine/homebrew-tap). It renders the formula with `packaging/homebrew/render-formula.sh` and pushes as a GitHub App that is installed only on the tap with contents write access. The workflow reads the app's ID from the `HOMEBREW_TAP_APP_ID` variable and its private key from the `HOMEBREW_TAP_APP_PRIVATE_KEY` secret, and each token it creates lasts one hour.
 
 ### Relay protocol
 

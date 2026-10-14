@@ -1,4 +1,4 @@
-module github.com/gantoine/cmux-android/relay
+module github.com/gantoine/muxer/relay
 
 go 1.26.4
 

@@ -172,7 +172,7 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
             onDismissRequest = { removing = false },
             title = { Text("Remove ${mac.name}?") },
             text = {
-                Text("This phone forgets the computer. To also revoke its access on the computer, run `cmux-relay devices` and `cmux-relay revoke`.")
+                Text("This phone forgets the computer. To also revoke its access on the computer, run `muxer devices` and `muxer revoke`.")
             },
             confirmButton = {
                 TextButton(onClick = {

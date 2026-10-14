@@ -14,9 +14,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
-	"github.com/gantoine/cmux-android/relay/internal/devices"
-	"github.com/gantoine/cmux-android/relay/internal/screen"
+	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/screen"
 )
 
 type Intervals struct {
@@ -90,7 +90,7 @@ func newSession(server *Server, conn *websocket.Conn, device devices.Device) *se
 		server:         server,
 		conn:           conn,
 		device:         device,
-		clientID:       "cmux-android-" + device.ID,
+		clientID:       "muxer-" + device.ID,
 		workspacesWake: make(chan struct{}, 1),
 	}
 }

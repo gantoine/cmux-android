@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/cmux"
 )
 
 type fakeSource struct {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/gantoine/cmux-android/relay/internal/claude"
-	"github.com/gantoine/cmux-android/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/claude"
+	"github.com/gantoine/muxer/relay/internal/cmux"
 )
 
 const (

@@ -153,8 +153,8 @@ fun PairScreen(app: MuxerApplication, initialUrl: String, initialCode: String, o
                         }
                         AnimatedVisibility(visible = showSteps) {
                             Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                                Step(1, "Install the relay on your computer", "brew install gantoine/tap/cmux-relay")
-                                Step(2, "Start pairing", "cmux-relay pair")
+                                Step(1, "Install the relay on your computer", "brew install gantoine/tap/muxer")
+                                Step(2, "Start pairing", "muxer pair")
                                 Step(3, "Scan the QR code it shows, or type the address and code", null)
                             }
                         }

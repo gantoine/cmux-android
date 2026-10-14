@@ -72,7 +72,7 @@ fun QrScanner(onDismiss: () -> Unit, onScanned: (LaunchTarget.Pair) -> Unit) {
             }
         }
         Text(
-            if (rejected) "That isn't a cmux pairing code." else "Point at the QR code from cmux-relay pair",
+            if (rejected) "That isn't a cmux pairing code." else "Point at the QR code from muxer pair",
             color = Color.White,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
