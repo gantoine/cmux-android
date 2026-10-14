@@ -115,6 +115,12 @@ type CreatedWorkspace struct {
 	SurfaceID   string `json:"surface_id"`
 }
 
+type AgentSession struct {
+	Kind      string
+	SessionID string
+	Cwd       string
+}
+
 type Viewport struct {
 	ClientID   string
 	Columns    int
@@ -126,6 +132,22 @@ func (c *Client) Identify(ctx context.Context) (Identity, error) {
 	var identity Identity
 	err := c.Call(ctx, "system.identify", nil, &identity)
 	return identity, err
+}
+
+func (c *Client) AgentSession(ctx context.Context, workspaceID, surfaceID string) (AgentSession, error) {
+	var result struct {
+		ResumeBinding *struct {
+			Kind         string `json:"kind"`
+			CheckpointID string `json:"checkpoint_id"`
+			Cwd          string `json:"cwd"`
+		} `json:"resume_binding"`
+	}
+	err := c.Call(ctx, "surface.resume.get", map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID}, &result)
+	if err != nil || result.ResumeBinding == nil {
+		return AgentSession{}, err
+	}
+	binding := result.ResumeBinding
+	return AgentSession{Kind: binding.Kind, SessionID: binding.CheckpointID, Cwd: binding.Cwd}, nil
 }
 
 func (c *Client) Workspaces(ctx context.Context) ([]Workspace, error) {

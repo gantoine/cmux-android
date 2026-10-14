@@ -1,0 +1,121 @@
+package server
+
+import (
+	"context"
+	"time"
+
+	"github.com/gantoine/cmux-android/relay/internal/claude"
+	"github.com/gantoine/cmux-android/relay/internal/cmux"
+)
+
+const (
+	agentKindClaude   = "claude"
+	maxInitialEntries = 300
+	unsupportedMethod = "method_not_found"
+)
+
+type chatWatch struct {
+	sessionID  string
+	cwd        string
+	transcript *claude.Transcript
+	tail       *claude.Tail
+	sent       bool
+	sentEmpty  bool
+}
+
+func (s *session) watchChat(ctx context.Context, current *attachment) {
+	var watch chatWatch
+	announced := false
+	for {
+		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
+		agent, err := s.server.cmux.AgentSession(callCtx, current.workspaceID, current.surfaceID)
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		switch {
+		case cmux.ErrorCode(err) == unsupportedMethod:
+			return
+		case err != nil:
+		default:
+			sessionID := ""
+			if agent.Kind == agentKindClaude {
+				sessionID = agent.SessionID
+			}
+			if !announced || sessionID != watch.sessionID {
+				announced = true
+				watch = chatWatch{sessionID: sessionID, cwd: agent.Cwd}
+				s.sendChatSession(current, sessionID)
+			}
+			if sessionID != "" {
+				s.followTranscript(current, &watch)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(s.server.options.PollInterval.Chat):
+		}
+	}
+}
+
+func (s *session) followTranscript(current *attachment, watch *chatWatch) {
+	if watch.tail == nil {
+		path, ok := claude.FindTranscript(s.server.options.ClaudeConfigDir, watch.cwd, watch.sessionID)
+		if !ok {
+			if !watch.sentEmpty {
+				watch.sentEmpty = true
+				s.sendChat(current, watch.sessionID, nil, true)
+			}
+			return
+		}
+		watch.tail = claude.NewTail(path)
+		watch.transcript = claude.NewTranscript()
+	}
+	lines, restarted, err := watch.tail.Lines()
+	if err != nil {
+		s.server.logger.Warn("could not read the Claude transcript", "error", err)
+		return
+	}
+	if restarted {
+		watch.transcript = claude.NewTranscript()
+		watch.sent = false
+	}
+	var changed []claude.Entry
+	for _, line := range lines {
+		changed = append(changed, watch.transcript.Feed(line)...)
+	}
+	if !watch.sent {
+		entries := watch.transcript.Entries()
+		if len(entries) > maxInitialEntries {
+			entries = entries[len(entries)-maxInitialEntries:]
+		}
+		watch.sent = true
+		s.sendChat(current, watch.sessionID, entries, true)
+		return
+	}
+	if len(changed) > 0 {
+		s.sendChat(current, watch.sessionID, changed, false)
+	}
+}
+
+func (s *session) sendChatSession(current *attachment, sessionID string) {
+	var id any
+	if sessionID != "" {
+		id = sessionID
+	}
+	s.send(map[string]any{"type": "chat_session", "surface_id": current.surfaceID, "session_id": id})
+}
+
+func (s *session) sendChat(current *attachment, sessionID string, entries []claude.Entry, reset bool) {
+	if entries == nil {
+		entries = []claude.Entry{}
+	}
+	s.send(map[string]any{
+		"type":       "chat",
+		"surface_id": current.surfaceID,
+		"session_id": sessionID,
+		"reset":      reset,
+		"entries":    entries,
+	})
+}

@@ -1,5 +1,6 @@
 package dev.cmuxandroid.ui
 
+import dev.cmuxandroid.protocol.TerminalInfo
 import dev.cmuxandroid.protocol.WorkspaceInfo
 import java.time.Instant
 import java.time.ZoneId
@@ -56,8 +57,13 @@ object WorkspaceListing {
     fun needsYou(workspace: WorkspaceInfo): Boolean =
         workspace.unreadCount > 0 || workspace.hasUnread || agentStatus(workspace) is AgentStatus.NeedsYou
 
-    fun agentStatus(workspace: WorkspaceInfo): AgentStatus? {
-        val states = workspace.terminals.mapNotNull { it.agentState?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+    fun agentStatus(workspace: WorkspaceInfo): AgentStatus? =
+        agentStatus(workspace.terminals.mapNotNull { it.agentState?.trim()?.takeIf(String::isNotEmpty) }.distinct())
+
+    fun agentStatus(terminal: TerminalInfo): AgentStatus? =
+        agentStatus(listOfNotNull(terminal.agentState?.trim()?.takeIf(String::isNotEmpty)))
+
+    private fun agentStatus(states: List<String>): AgentStatus? {
         if (states.isEmpty()) return null
         states.firstOrNull { state -> attentionWords.any { state.contains(it, ignoreCase = true) } }
             ?.let { return AgentStatus.NeedsYou(humanize(it)) }

@@ -1,5 +1,9 @@
 package dev.cmuxandroid.net
 
+import dev.cmuxandroid.chat.ChatModel
+import dev.cmuxandroid.chat.ChatState
+import dev.cmuxandroid.protocol.ChatMessage
+import dev.cmuxandroid.protocol.ChatSessionMessage
 import dev.cmuxandroid.protocol.DetachedMessage
 import dev.cmuxandroid.protocol.HistoryResponse
 import dev.cmuxandroid.protocol.NotificationMessage
@@ -72,6 +76,9 @@ class RelayConnection(
 
     private val _screen = MutableStateFlow<TerminalScreen?>(null)
     val screen: StateFlow<TerminalScreen?> = _screen.asStateFlow()
+
+    private val _chat = MutableStateFlow<ChatState?>(null)
+    val chat: StateFlow<ChatState?> = _chat.asStateFlow()
 
     private val _detached = MutableSharedFlow<DetachedMessage>(extraBufferCapacity = 8)
     val detached: SharedFlow<DetachedMessage> = _detached.asSharedFlow()
@@ -193,11 +200,20 @@ class RelayConnection(
                 val next = TerminalModel.apply(_screen.value, frame)
                 if (next == null) send("resync") else _screen.value = next
             }
+            "chat_session" -> {
+                val session = RelayJson.decodeFromJsonElement(ChatSessionMessage.serializer(), message)
+                if (session.surfaceId == attachment?.surfaceId) _chat.value = ChatModel.startSession(_chat.value, session.sessionId)
+            }
+            "chat" -> {
+                val chat = RelayJson.decodeFromJsonElement(ChatMessage.serializer(), message)
+                if (chat.surfaceId == attachment?.surfaceId) _chat.value = ChatModel.apply(_chat.value, chat)
+            }
             "detached" -> {
                 val detached = RelayJson.decodeFromJsonElement(DetachedMessage.serializer(), message)
                 if (detached.surfaceId == attachment?.surfaceId) {
                     attachment = null
                     _screen.value = null
+                    _chat.value = null
                 }
                 _detached.tryEmit(detached)
             }
@@ -252,7 +268,10 @@ class RelayConnection(
 
     fun attach(workspaceId: String, surfaceId: String, fit: Pair<Int, Int>? = null): Long {
         val next = Attachment(nextAttachmentId.incrementAndGet(), workspaceId, surfaceId, fit)
-        if (attachment?.surfaceId != surfaceId) _screen.value = null
+        if (attachment?.surfaceId != surfaceId) {
+            _screen.value = null
+            _chat.value = null
+        }
         attachment = next
         sendAttach(next)
         return next.id
@@ -275,6 +294,7 @@ class RelayConnection(
         if (attachment?.id != attachmentId) return
         attachment = null
         _screen.value = null
+        _chat.value = null
         send("detach")
     }
 

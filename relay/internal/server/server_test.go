@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -28,6 +29,19 @@ type fakeCmux struct {
 	keys            []string
 	viewports       []string
 	historyRequests []string
+	agent           cmux.AgentSession
+}
+
+func (f *fakeCmux) AgentSession(context.Context, string, string) (cmux.AgentSession, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.agent, nil
+}
+
+func (f *fakeCmux) setAgent(agent cmux.AgentSession) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.agent = agent
 }
 
 func (f *fakeCmux) Identify(context.Context) (cmux.Identity, error) {
@@ -114,10 +128,11 @@ func (f *fakeCmux) snapshot() (inputs, keys, viewports []string) {
 }
 
 type testRelay struct {
-	url    string
-	cmux   *fakeCmux
-	store  *devices.Store
-	server *Server
+	url       string
+	cmux      *fakeCmux
+	store     *devices.Store
+	server    *Server
+	claudeDir string
 }
 
 func startRelay(t *testing.T) testRelay {
@@ -130,10 +145,12 @@ func startRelay(t *testing.T) testRelay {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	intervals := DefaultIntervals
 	intervals.Fast = 10 * time.Millisecond
-	relay := New(fake, store, nil, Options{MacName: "Test Mac", RelayVersion: "test", PollInterval: intervals}, logger)
+	intervals.Chat = 10 * time.Millisecond
+	claudeDir := t.TempDir()
+	relay := New(fake, store, nil, Options{MacName: "Test Mac", RelayVersion: "test", PollInterval: intervals, ClaudeConfigDir: claudeDir}, logger)
 	server := httptest.NewServer(relay.Handler())
 	t.Cleanup(server.Close)
-	return testRelay{url: server.URL, cmux: fake, store: store, server: relay}
+	return testRelay{url: server.URL, cmux: fake, store: store, server: relay, claudeDir: claudeDir}
 }
 
 func (r testRelay) pair(t *testing.T) string {
@@ -346,5 +363,57 @@ func TestClosingTheRelayGivesFittedTerminalsTheirSizeBack(t *testing.T) {
 
 	if _, _, viewports := relay.cmux.snapshot(); strings.Join(viewports, ",") != "set,clear" {
 		t.Fatalf("closing the relay must give the Mac its size back, viewports = %v", viewports)
+	}
+}
+
+func TestChatFollowsClaudeEnteringAndLeavingATerminal(t *testing.T) {
+	relay := startRelay(t)
+	token := relay.pair(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := relay.dial(t, ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+
+	transcript := filepath.Join(relay.claudeDir, "projects", "-Users-me-app", "s1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(transcript, []byte(`{"type":"user","uuid":"u1","message":{"role":"user","content":"hello"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1"})
+	if started := readUntil(t, ctx, conn, "chat_session"); started["session_id"] != nil {
+		t.Fatalf("a plain shell must not report a chat session: %v", started)
+	}
+
+	relay.cmux.setAgent(cmux.AgentSession{Kind: "claude", SessionID: "s1", Cwd: "/Users/me/app"})
+	if started := readUntil(t, ctx, conn, "chat_session"); started["session_id"] != "s1" || started["surface_id"] != "t1" {
+		t.Fatalf("entering Claude = %v", started)
+	}
+	first := readUntil(t, ctx, conn, "chat")
+	entries := first["entries"].([]any)
+	if first["reset"] != true || len(entries) != 1 || entries[0].(map[string]any)["text"] != "hello" {
+		t.Fatalf("first chat = %v", first)
+	}
+
+	file, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.WriteString(`{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"hi there"}]}}` + "\n")
+	file.Close()
+	update := readUntil(t, ctx, conn, "chat")
+	entries = update["entries"].([]any)
+	if update["reset"] != false || len(entries) != 1 || entries[0].(map[string]any)["text"] != "hi there" {
+		t.Fatalf("appended chat = %v", update)
+	}
+
+	relay.cmux.setAgent(cmux.AgentSession{})
+	if ended := readUntil(t, ctx, conn, "chat_session"); ended["session_id"] != nil {
+		t.Fatalf("leaving Claude = %v", ended)
 	}
 }

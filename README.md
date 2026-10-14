@@ -90,6 +90,7 @@ Pair as many computers as you like. Each one shows up in the app's **Computers**
 - **Copying:** long-press a word to select it, drag to extend the selection, then tap **Copy**. Selections can span history and the live screen.
 - **Typing:** tap the terminal and type. Every key goes straight to the computer, with autocorrect and suggestions turned off. A hardware keyboard works too, including Ctrl and Alt shortcuts. The key bar has sticky Ctrl, ⌥ (Option/Alt) and ⇧ (Shift) keys that apply to the next key, plus Esc, Tab, arrows, ^C, ^D, backspace, Enter, and paste.
 - **Messages:** tap the note icon in the key bar to open a message box with autocorrect and voice dictation. **Send** pastes the message and presses Enter, which suits writing to a coding agent.
+- **Claude Code as a chat:** open a terminal that runs Claude Code and the app shows the conversation as a chat instead of the terminal: your messages, Claude's replies, and each tool it runs (tap one to see its output). Type or dictate in the box at the bottom, and tap stop to interrupt Claude. When Claude needs an answer, such as a permission prompt, tap **Answer** to switch to the terminal. The app switches to the chat when Claude starts in that terminal and back to the terminal when it exits, whether you started or quit it on the phone or on the computer. The chat icon at the top switches by hand.
 - **Fit to phone:** while you view a terminal, cmux resizes it to the phone's screen, so lines wrap instead of running off the side. cmux gives the size back when you leave the terminal. Turn it off with the fit icon to see the terminal at its size on your computer; the app remembers your choice.
 - **Background notifications:** open a computer, tap the gear icon, and turn on **Notify me in the background**. The app then keeps a connection to that computer open in a foreground service, so its cmux notifications reach you while the app is closed. Each computer has its own switch, and a bell on the **Computers** list marks the ones that are on. Reading a notification on the computer removes it from the phone.
 - **Computer settings:** the same page lets you rename the computer, see its address and versions, and remove it.
@@ -127,6 +128,7 @@ The relay logs to `~/Library/Logs/cmux-relay.log`.
 - The relay uses cmux's `mobile.*` socket methods, which power the official iOS app. cmux does not document them, so a cmux update can break the relay. `cmux-relay doctor` and the relay log show what failed.
 - cmux has no way to push terminal output over its local socket, so the relay polls the terminal you are viewing: about 12 times a second while it changes, slowing to once a second when idle. It polls only while a phone has a terminal open.
 - History you scroll back through is loaded once. While you read it, the live screen keeps updating, but lines that scroll off the screen meanwhile are not added. Tap **Live** and scroll up again to reload it.
+- The chat view reads Claude Code's transcript files in `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`), and finds the session for a terminal through cmux. Claude Code does not document that file format, so a Claude Code update can break the chat view; the terminal view keeps working. It needs a `claude` started inside cmux, which tracks the session.
 - Background notifications need the foreground service. Without it, notifications that arrive while the app is closed are delivered the next time you open it.
 
 ## Development
@@ -168,7 +170,7 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 | `fit {columns, rows}` / `unfit` | Ask cmux to size the terminal for the phone. |
 | `create_workspace`, `rename_workspace`, `close_workspace`, `create_terminal` | Manage workspaces. |
 
-The relay sends `workspaces`, `screen` (row diffs with a style table), `detached`, `notification` and `result {id, ok, data | error}`. Add an `id` to any message to get a `result` back.
+The relay sends `workspaces`, `screen` (row diffs with a style table), `detached`, `notification` and `result {id, ok, data | error}`. For the attached terminal it also sends `chat_session {surface_id, session_id}`, with `session_id` null when no Claude Code session runs there, and `chat {surface_id, session_id, reset, entries}`, where each entry is a user message, an assistant reply, a tool call or a notice. `reset` replaces the conversation; otherwise entries with a known `id` replace the old ones and new ones are added at the end. Add an `id` to any message to get a `result` back.
 
 ## License
 

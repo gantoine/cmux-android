@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/gantoine/cmux-android/relay/internal/claude"
 	"github.com/gantoine/cmux-android/relay/internal/cmux"
 	"github.com/gantoine/cmux-android/relay/internal/devices"
 	"github.com/gantoine/cmux-android/relay/internal/notify"
@@ -35,12 +36,14 @@ type Cmux interface {
 	CloseWorkspace(ctx context.Context, workspaceID string, force bool) error
 	RenameWorkspace(ctx context.Context, workspaceID, title string) error
 	CreateTerminal(ctx context.Context, workspaceID string) (string, error)
+	AgentSession(ctx context.Context, workspaceID, surfaceID string) (cmux.AgentSession, error)
 }
 
 type Options struct {
-	MacName      string
-	RelayVersion string
-	PollInterval Intervals
+	MacName         string
+	RelayVersion    string
+	PollInterval    Intervals
+	ClaudeConfigDir string
 }
 
 type Server struct {
@@ -63,6 +66,12 @@ type Server struct {
 func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, logger *slog.Logger) *Server {
 	if options.PollInterval == (Intervals{}) {
 		options.PollInterval = DefaultIntervals
+	}
+	if options.PollInterval.Chat == 0 {
+		options.PollInterval.Chat = DefaultIntervals.Chat
+	}
+	if options.ClaudeConfigDir == "" {
+		options.ClaudeConfigDir = claude.ConfigDir()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	server := &Server{cmux: cmuxAPI, devices: store, hub: hub, options: options, logger: logger, ctx: ctx, cancel: cancel}

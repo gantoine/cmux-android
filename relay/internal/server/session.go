@@ -26,6 +26,7 @@ type Intervals struct {
 	IdleAfter  time.Duration
 	SlowAfter  time.Duration
 	Workspaces time.Duration
+	Chat       time.Duration
 }
 
 var DefaultIntervals = Intervals{
@@ -35,6 +36,7 @@ var DefaultIntervals = Intervals{
 	IdleAfter:  3 * time.Second,
 	SlowAfter:  time.Minute,
 	Workspaces: 2 * time.Second,
+	Chat:       500 * time.Millisecond,
 }
 
 const (
@@ -489,6 +491,7 @@ func (s *session) attach(workspaceID, surfaceID string) {
 	s.attached = current
 	s.mu.Unlock()
 	go s.pollTerminal(ctx, current)
+	go s.watchChat(ctx, current)
 }
 
 func (s *session) detach() {

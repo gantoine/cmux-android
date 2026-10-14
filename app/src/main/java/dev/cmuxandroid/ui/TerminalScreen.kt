@@ -9,7 +9,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -106,6 +108,7 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     val state by connection.state.collectAsState()
     val screen by connection.screen.collectAsState()
     val workspaces by connection.workspaces.collectAsState()
+    val chat by connection.chat.collectAsState()
     val terminal = workspaces?.firstOrNull { it.id == workspaceId }?.terminals?.firstOrNull { it.id == surfaceId }
     val workspace = workspaces?.firstOrNull { it.id == workspaceId }
     val snackbar = remember { SnackbarHostState() }
@@ -126,6 +129,8 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     var history by remember(surfaceId) { mutableStateOf<TerminalHistory?>(null) }
     var loadingHistory by remember(surfaceId) { mutableStateOf(false) }
     var inputView by remember { mutableStateOf<TerminalInputView?>(null) }
+    var showChat by remember(surfaceId) { mutableStateOf(false) }
+    LaunchedEffect(chat?.sessionId) { showChat = chat != null }
 
     LaunchedEffect(Unit) {
         val settings = app.store.settings.first()
@@ -186,6 +191,27 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
         }
     }
 
+    fun dictate() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        try {
+            dictation.launch(intent)
+        } catch (_: ActivityNotFoundException) {
+            scope.launch { snackbar.showSnackbar("No voice input is available on this phone.") }
+        }
+    }
+
+    fun sendMessage() {
+        val message = composerText.trim()
+        if (message.isEmpty()) return
+        if (!viewport.isLive) goLive()
+        perform("paste") {
+            put("text", message)
+            put("submit", true)
+        }
+        composerText = ""
+    }
+
     val sink = remember(connection) {
         object : TerminalInputSink {
             override fun text(text: String) {
@@ -215,11 +241,22 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
-                    IconToggleButton(checked = fitToPhone, onCheckedChange = {
-                        fitToPhone = it
-                        scope.launch { app.store.setFitToPhone(it) }
-                    }) {
-                        Icon(Icons.Filled.FitScreen, contentDescription = "Fit the terminal to this phone")
+                    if (chat != null) {
+                        IconButton(onClick = { showChat = !showChat }) {
+                            if (showChat) {
+                                Icon(Icons.Filled.Terminal, contentDescription = "Show the terminal")
+                            } else {
+                                Icon(Icons.AutoMirrored.Outlined.Chat, contentDescription = "Show the chat")
+                            }
+                        }
+                    }
+                    if (!showChat || chat == null) {
+                        IconToggleButton(checked = fitToPhone, onCheckedChange = {
+                            fitToPhone = it
+                            scope.launch { app.store.setFitToPhone(it) }
+                        }) {
+                            Icon(Icons.Filled.FitScreen, contentDescription = "Fit the terminal to this phone")
+                        }
                     }
                 },
             )
@@ -228,112 +265,109 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             AnimatedVisibility(visible = state !is ConnectionState.Connected) { ConnectionBanner(state) }
-            BoxWithConstraints(
-                Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background),
-            ) {
-                val measurer = rememberTextMeasurer()
-                val metrics = rememberCellMetrics(measurer, fontSize.sp)
-                val bottomPadding = with(LocalDensity.current) { TerminalBottomPadding.roundToPx() }
-                val grid = fittingGrid(constraints.maxWidth, constraints.maxHeight - bottomPadding, metrics)
-                LaunchedEffect(fitToPhone, grid) {
-                    if (fitToPhone) delay(FIT_SETTLE_MS)
-                    connection.setFit(if (fitToPhone) grid else null)
-                }
-                val current = screen
-                LaunchedEffect(current?.altScreen) {
-                    if (current?.altScreen == true) goLive()
-                }
-                if (current == null) {
-                    FullWidthMessage(if (state is ConnectionState.Connected) "Loading the terminal…" else describe(state))
-                } else {
-                    TerminalCanvas(
-                        content = TerminalContent(current, history),
-                        viewport = viewport,
-                        fontSize = fontSize,
-                        onFontSizeChange = { fontSize = it },
-                        onNeedHistory = ::loadHistory,
-                        onReturnToLive = ::goLive,
-                        onScrollProgram = { lines -> connection.send("scroll", buildJsonObject { put("lines", lines) }) },
-                        onTap = { inputView?.showKeyboard() },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    val selection = viewport.selection
-                    if (selection != null && !viewport.selecting) {
-                        SelectionBar(
-                            modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
-                            onCopy = {
-                                val text = TerminalContent(current, history).text(selection)
-                                clipboard.setText(AnnotatedString(text))
-                                viewport.selection = null
-                                scope.launch { snackbar.showSnackbar("Copied ${text.lines().size} line(s).") }
-                            },
-                            onCancel = { viewport.selection = null },
-                        )
+            val currentChat = chat
+            if (showChat && currentChat != null) {
+                ChatView(
+                    chat = currentChat,
+                    status = terminal?.let(WorkspaceListing::agentStatus),
+                    draft = composerText,
+                    onDraftChange = { composerText = it },
+                    onSend = ::sendMessage,
+                    onDictate = ::dictate,
+                    onStop = { connection.send("key", buildJsonObject { put("key", "escape") }) },
+                    onShowTerminal = { showChat = false },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            } else {
+                BoxWithConstraints(
+                    Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background),
+                ) {
+                    val measurer = rememberTextMeasurer()
+                    val metrics = rememberCellMetrics(measurer, fontSize.sp)
+                    val bottomPadding = with(LocalDensity.current) { TerminalBottomPadding.roundToPx() }
+                    val grid = fittingGrid(constraints.maxWidth, constraints.maxHeight - bottomPadding, metrics)
+                    LaunchedEffect(fitToPhone, grid) {
+                        if (fitToPhone) delay(FIT_SETTLE_MS)
+                        connection.setFit(if (fitToPhone) grid else null)
                     }
-                    if (!viewport.isLive) {
-                        SmallFloatingActionButton(
-                            onClick = ::goLive,
-                            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
-                        ) {
-                            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
-                                Text("Live")
+                    val current = screen
+                    LaunchedEffect(current?.altScreen) {
+                        if (current?.altScreen == true) goLive()
+                    }
+                    if (current == null) {
+                        FullWidthMessage(if (state is ConnectionState.Connected) "Loading the terminal…" else describe(state))
+                    } else {
+                        TerminalCanvas(
+                            content = TerminalContent(current, history),
+                            viewport = viewport,
+                            fontSize = fontSize,
+                            onFontSizeChange = { fontSize = it },
+                            onNeedHistory = ::loadHistory,
+                            onReturnToLive = ::goLive,
+                            onScrollProgram = { lines -> connection.send("scroll", buildJsonObject { put("lines", lines) }) },
+                            onTap = { inputView?.showKeyboard() },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        val selection = viewport.selection
+                        if (selection != null && !viewport.selecting) {
+                            SelectionBar(
+                                modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
+                                onCopy = {
+                                    val text = TerminalContent(current, history).text(selection)
+                                    clipboard.setText(AnnotatedString(text))
+                                    viewport.selection = null
+                                    scope.launch { snackbar.showSnackbar("Copied ${text.lines().size} line(s).") }
+                                },
+                                onCancel = { viewport.selection = null },
+                            )
+                        }
+                        if (!viewport.isLive) {
+                            SmallFloatingActionButton(
+                                onClick = ::goLive,
+                                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                            ) {
+                                Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
+                                    Text("Live")
+                                }
                             }
                         }
                     }
                 }
-            }
-            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding()) {
-                if (composerOpen) {
-                    Composer(
-                        text = composerText,
-                        onTextChange = { composerText = it },
-                        onDictate = {
-                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            try {
-                                dictation.launch(intent)
-                            } catch (_: ActivityNotFoundException) {
-                                scope.launch { snackbar.showSnackbar("No voice input is available on this phone.") }
-                            }
-                        },
-                        onSend = {
-                            val message = composerText.trim()
-                            if (message.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding()) {
+                    if (composerOpen) {
+                        Composer(
+                            text = composerText,
+                            onTextChange = { composerText = it },
+                            onDictate = ::dictate,
+                            onSend = ::sendMessage,
+                        )
+                    }
+                    KeyBar(
+                        modifiers = modifiers,
+                        onModifiers = { modifiers = it },
+                        onKey = sink::key,
+                        onKeyboard = { inputView?.showKeyboard() },
+                        composerOpen = composerOpen,
+                        onComposer = { composerOpen = !composerOpen },
+                        onPaste = {
+                            clipboard.getText()?.text?.takeIf { it.isNotEmpty() }?.let { pasted ->
                                 if (!viewport.isLive) goLive()
                                 perform("paste") {
-                                    put("text", message)
-                                    put("submit", true)
+                                    put("text", pasted)
+                                    put("submit", false)
                                 }
-                                composerText = ""
                             }
+                        },
+                        inputHost = {
+                            AndroidView(
+                                factory = { context -> TerminalInputView(context).also { inputView = it } },
+                                update = { view -> view.sink = sink },
+                                modifier = Modifier.size(1.dp),
+                            )
                         },
                     )
                 }
-                KeyBar(
-                    modifiers = modifiers,
-                    onModifiers = { modifiers = it },
-                    onKey = sink::key,
-                    onKeyboard = { inputView?.showKeyboard() },
-                    composerOpen = composerOpen,
-                    onComposer = { composerOpen = !composerOpen },
-                    onPaste = {
-                        clipboard.getText()?.text?.takeIf { it.isNotEmpty() }?.let { pasted ->
-                            if (!viewport.isLive) goLive()
-                            perform("paste") {
-                                put("text", pasted)
-                                put("submit", false)
-                            }
-                        }
-                    },
-                    inputHost = {
-                        AndroidView(
-                            factory = { context -> TerminalInputView(context).also { inputView = it } },
-                            update = { view -> view.sink = sink },
-                            modifier = Modifier.size(1.dp),
-                        )
-                    },
-                )
             }
         }
     }

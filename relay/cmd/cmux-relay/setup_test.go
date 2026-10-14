@@ -47,10 +47,10 @@ func TestInstallRecordsTheLinkThatSurvivesUpgrades(t *testing.T) {
 
 func TestFixPossessiveDropsTheSecondSAfterAnS(t *testing.T) {
 	cases := map[string]string{
-		"Georges's MacBook Pro":  "Georges' MacBook Pro",
+		"Georges's MacBook Pro":      "Georges' MacBook Pro",
 		"Georges\u2019s MacBook Pro": "Georges\u2019 MacBook Pro",
-		"Anna's MacBook Air":     "Anna's MacBook Air",
-		"M4":                     "M4",
+		"Anna's MacBook Air":         "Anna's MacBook Air",
+		"M4":                         "M4",
 	}
 	for input, want := range cases {
 		if got := fixPossessive(input); got != want {

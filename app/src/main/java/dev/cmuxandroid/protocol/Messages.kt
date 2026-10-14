@@ -134,3 +134,15 @@ data class ErrorResponse(val error: RequestError)
 
 @Serializable
 data class CreatedWorkspace(val workspaceId: String = "", val surfaceId: String = "")
+
+@Serializable
+data class ChatTool(val name: String, val summary: String? = null, val status: String = "running", val output: String? = null)
+
+@Serializable
+data class ChatEntry(val id: String, val kind: String, val text: String? = null, val tool: ChatTool? = null, val time: String? = null)
+
+@Serializable
+data class ChatSessionMessage(val surfaceId: String, val sessionId: String? = null)
+
+@Serializable
+data class ChatMessage(val surfaceId: String, val sessionId: String, val reset: Boolean = false, val entries: List<ChatEntry> = emptyList())
