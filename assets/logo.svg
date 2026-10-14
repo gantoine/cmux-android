@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="12 12 84 84">
-  <title>cmux for Android</title>
+  <title>Muxer</title>
   <defs>
     <linearGradient id="chevron" x1="35.25" y1="54" x2="62.51" y2="54" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#A8F5C8"/>

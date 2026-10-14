@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">cmux</string>
+    <string name="app_name">Muxer</string>
     <string name="channel_agents">Terminal notifications</string>
     <string name="channel_agents_description">Notifications from your cmux terminals and coding agents</string>
     <string name="channel_connection">Background connection</string>

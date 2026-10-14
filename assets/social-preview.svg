@@ -13,7 +13,7 @@
     <rect x="53.25" y="66.3" width="19.5" height="6.6" rx="3.3" fill="#E8EDF5"/>
   </g>
   <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
-    <text x="470" y="290" font-size="84" font-weight="700" fill="#C6D0F5">cmux for Android</text>
+    <text x="470" y="290" font-size="84" font-weight="700" fill="#C6D0F5">Muxer</text>
     <text x="472" y="360" font-size="36" fill="#A5ADCE">Your Mac's cmux terminals, on your phone.</text>
     <text x="472" y="410" font-size="36" fill="#A5ADCE">Any plan, no cloud, over Tailscale.</text>
     <text x="472" y="500" font-size="24" fill="#737994">Unofficial. Not affiliated with Manaflow or the cmux team.</text>

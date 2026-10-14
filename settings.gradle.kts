@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "cmux-android"
+rootProject.name = "muxer"
 include(":app")

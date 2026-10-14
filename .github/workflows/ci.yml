@@ -40,6 +40,6 @@ jobs:
       - run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
       - uses: actions/upload-artifact@v5
         with:
-          name: cmux-android-debug
+          name: muxer-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
