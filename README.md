@@ -6,7 +6,11 @@
 
 Watch and drive your [cmux](https://github.com/manaflow-ai/cmux) terminals from an Android phone. See every workspace, open a live terminal, type into it, and get notified when a coding agent needs you.
 
-It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own computer over [Tailscale](https://tailscale.com). There is no cloud service in the middle.
+It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own computer over [Tailscale](https://tailscale.com), with no cloud service in the middle.
+
+<p align="center">
+  <img src="assets/screenshots.png" alt="Muxer on Android: the Computers list, a computer's workspaces, a Claude Code session as a chat, and the same session as a terminal">
+</p>
 
 > This is an independent project. It is not made, endorsed, or supported by Manaflow or the cmux team.
 
