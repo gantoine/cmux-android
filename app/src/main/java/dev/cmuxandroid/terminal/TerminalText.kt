@@ -56,10 +56,23 @@ object TerminalText {
     private const val TEXT_STYLE = '\uFE0E'
     private const val EMOJI_STYLE = '\uFE0F'
 
+    private val lookAlikes = mapOf(
+        '\u23FA' to '\u25CF',
+        '\u23F5' to '\u25B8',
+        '\u23F4' to '\u25C2',
+        '\u23F9' to '\u25A0',
+        '\u23F8' to '\u2016',
+    )
+
     fun asText(text: String): String {
         if (text.none(::hasEmojiForm)) return text
         val builder = StringBuilder(text.length + 4)
         text.forEachIndexed { index, char ->
+            val lookAlike = lookAlikes[char]
+            if (lookAlike != null) {
+                builder.append(lookAlike)
+                return@forEachIndexed
+            }
             builder.append(char)
             val next = text.getOrNull(index + 1)
             if (hasEmojiForm(char) && next != TEXT_STYLE && next != EMOJI_STYLE) builder.append(TEXT_STYLE)

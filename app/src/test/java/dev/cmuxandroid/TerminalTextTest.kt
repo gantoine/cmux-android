@@ -86,8 +86,9 @@ class TerminalTextTest {
 
     @Test
     fun symbolsWithAnEmojiFormDrawAsText() {
-        assertEquals("\u23FA\uFE0E The workspace", TerminalText.asText("\u23FA The workspace"))
-        assertEquals("\u23F5\uFE0E\u23F5\uFE0E auto mode", TerminalText.asText("\u23F5\u23F5 auto mode"))
+        assertEquals("\u25CF The workspace", TerminalText.asText("\u23FA The workspace"))
+        assertEquals("\u25B8\u25B8 auto mode", TerminalText.asText("\u23F5\u23F5 auto mode"))
+        assertEquals("\u2192\uFE0E next", TerminalText.asText("\u2192 next"))
         assertEquals("\u2764\uFE0F", TerminalText.asText("\u2764\uFE0F"))
         assertEquals("plain text", TerminalText.asText("plain text"))
     }

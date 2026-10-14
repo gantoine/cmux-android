@@ -19,6 +19,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/gantoine/cmux-android/relay/internal/claude"
 	"github.com/gantoine/cmux-android/relay/internal/cmux"
 	"github.com/gantoine/cmux-android/relay/internal/devices"
 )
@@ -30,12 +31,25 @@ type fakeCmux struct {
 	viewports       []string
 	historyRequests []string
 	agent           cmux.AgentSession
+	running         claude.SessionRef
 }
 
 func (f *fakeCmux) AgentSession(context.Context, string, string) (cmux.AgentSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.agent, nil
+}
+
+func (f *fakeCmux) runningClaude(string) (claude.SessionRef, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.running, f.running.SessionID != ""
+}
+
+func (f *fakeCmux) setRunning(running claude.SessionRef) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.running = running
 }
 
 func (f *fakeCmux) setAgent(agent cmux.AgentSession) {
@@ -147,7 +161,10 @@ func startRelay(t *testing.T) testRelay {
 	intervals.Fast = 10 * time.Millisecond
 	intervals.Chat = 10 * time.Millisecond
 	claudeDir := t.TempDir()
-	relay := New(fake, store, nil, Options{MacName: "Test Mac", RelayVersion: "test", PollInterval: intervals, ClaudeConfigDir: claudeDir}, logger)
+	relay := New(fake, store, nil, Options{
+		MacName: "Test Mac", RelayVersion: "test", PollInterval: intervals, ClaudeConfigDir: claudeDir,
+		ClaudeSession: fake.runningClaude,
+	}, logger)
 	server := httptest.NewServer(relay.Handler())
 	t.Cleanup(server.Close)
 	return testRelay{url: server.URL, cmux: fake, store: store, server: relay, claudeDir: claudeDir}
@@ -415,5 +432,10 @@ func TestChatFollowsClaudeEnteringAndLeavingATerminal(t *testing.T) {
 	relay.cmux.setAgent(cmux.AgentSession{})
 	if ended := readUntil(t, ctx, conn, "chat_session"); ended["session_id"] != nil {
 		t.Fatalf("leaving Claude = %v", ended)
+	}
+
+	relay.cmux.setRunning(claude.SessionRef{SessionID: "s1", Cwd: "/Users/me/app"})
+	if found := readUntil(t, ctx, conn, "chat_session"); found["session_id"] != "s1" {
+		t.Fatalf("a Claude session cmux does not track must still be found: %v", found)
 	}
 }

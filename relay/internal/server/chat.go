@@ -38,13 +38,15 @@ func (s *session) watchChat(ctx context.Context, current *attachment) {
 			return
 		case err != nil:
 		default:
-			sessionID := ""
-			if agent.Kind == agentKindClaude {
-				sessionID = agent.SessionID
+			sessionID, cwd := "", ""
+			if agent.Kind == agentKindClaude && agent.SessionID != "" {
+				sessionID, cwd = agent.SessionID, agent.Cwd
+			} else if running, ok := s.server.options.ClaudeSession(current.surfaceID); ok {
+				sessionID, cwd = running.SessionID, running.Cwd
 			}
 			if !announced || sessionID != watch.sessionID {
 				announced = true
-				watch = chatWatch{sessionID: sessionID, cwd: agent.Cwd}
+				watch = chatWatch{sessionID: sessionID, cwd: cwd}
 				s.sendChatSession(current, sessionID)
 			}
 			if sessionID != "" {

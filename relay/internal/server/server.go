@@ -44,6 +44,7 @@ type Options struct {
 	RelayVersion    string
 	PollInterval    Intervals
 	ClaudeConfigDir string
+	ClaudeSession   func(surfaceID string) (claude.SessionRef, bool)
 }
 
 type Server struct {
@@ -72,6 +73,13 @@ func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, l
 	}
 	if options.ClaudeConfigDir == "" {
 		options.ClaudeConfigDir = claude.ConfigDir()
+	}
+	if options.ClaudeSession == nil {
+		configDir := options.ClaudeConfigDir
+		options.ClaudeSession = func(surfaceID string) (claude.SessionRef, bool) {
+			processes := claude.SystemProcesses{}
+			return claude.SessionForSurface(claude.RunningSessions(configDir, processes), surfaceID, processes)
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	server := &Server{cmux: cmuxAPI, devices: store, hub: hub, options: options, logger: logger, ctx: ctx, cancel: cancel}

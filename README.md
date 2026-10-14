@@ -128,7 +128,7 @@ The relay logs to `~/Library/Logs/cmux-relay.log`.
 - The relay uses cmux's `mobile.*` socket methods, which power the official iOS app. cmux does not document them, so a cmux update can break the relay. `cmux-relay doctor` and the relay log show what failed.
 - cmux has no way to push terminal output over its local socket, so the relay polls the terminal you are viewing: about 12 times a second while it changes, slowing to once a second when idle. It polls only while a phone has a terminal open.
 - History you scroll back through is loaded once. While you read it, the live screen keeps updating, but lines that scroll off the screen meanwhile are not added. Tap **Live** and scroll up again to reload it.
-- The chat view reads Claude Code's transcript files in `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`), and finds the session for a terminal through cmux. Claude Code does not document that file format, so a Claude Code update can break the chat view; the terminal view keeps working. It needs a `claude` started inside cmux, which tracks the session.
+- The chat view reads Claude Code's transcript files in `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`). It finds the session for a terminal through cmux, or else through the running sessions Claude Code lists in `~/.claude/sessions`, matched to the terminal by the `CMUX_SURFACE_ID` that cmux sets in its shells. Claude Code does not document these files, so a Claude Code update can break the chat view; the terminal view keeps working.
 - Background notifications need the foreground service. Without it, notifications that arrive while the app is closed are delivered the next time you open it.
 
 ## Development
