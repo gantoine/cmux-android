@@ -4,14 +4,18 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type fakeProcesses struct {
-	alive map[int]bool
-	env   map[int]string
+	started map[int]time.Time
+	env     map[int]string
 }
 
-func (f fakeProcesses) Alive(pid int) bool { return f.alive[pid] }
+func (f fakeProcesses) StartedAt(pid int) (time.Time, bool) {
+	started, ok := f.started[pid]
+	return started, ok
+}
 
 func (f fakeProcesses) Env(pid int, name string) string {
 	if name != surfaceEnv {
@@ -37,9 +41,10 @@ func TestSessionForSurfaceFollowsTheJobATerminalIsViewing(t *testing.T) {
 	writeSession(t, dir, "3.json", `{"pid":3,"sessionId":"spare","kind":"bg","jobId":"job3","spare":true}`)
 	writeSession(t, dir, "4.json", `{"pid":4,"sessionId":"other","cwd":"/c","kind":"interactive"}`)
 	writeSession(t, dir, "5.json", `{"pid":5,"sessionId":"dead","kind":"interactive"}`)
+	earlier := time.Now().Add(-time.Hour)
 	processes := fakeProcesses{
-		alive: map[int]bool{1: true, 2: true, 3: true, 4: true},
-		env:   map[int]string{1: "surface-a", 2: "surface-a", 3: "surface-a", 4: "surface-b", 5: "surface-c"},
+		started: map[int]time.Time{1: earlier, 2: earlier, 3: earlier, 4: earlier},
+		env:     map[int]string{1: "surface-a", 2: "surface-a", 3: "surface-a", 4: "surface-b", 5: "surface-c"},
 	}
 	sessions := RunningSessions(dir, processes)
 	if len(sessions) != 3 {
@@ -53,5 +58,33 @@ func TestSessionForSurfaceFollowsTheJobATerminalIsViewing(t *testing.T) {
 	}
 	if _, ok := SessionForSurface(sessions, "surface-c", processes); ok {
 		t.Error("a dead process must not count")
+	}
+	if _, ok := SessionForSurface(sessions, "", processes); ok {
+		t.Error("an empty surface must not match")
+	}
+}
+
+func TestRunningSessionsIgnoresAReusedPID(t *testing.T) {
+	dir := t.TempDir()
+	writeSession(t, dir, "7.json", `{"pid":7,"sessionId":"stale","kind":"interactive"}`)
+	processes := fakeProcesses{
+		started: map[int]time.Time{7: time.Now().Add(time.Hour)},
+		env:     map[int]string{7: "surface-a"},
+	}
+	if sessions := RunningSessions(dir, processes); len(sessions) != 0 {
+		t.Fatalf("a process started after its session file was written is not that session: %+v", sessions)
+	}
+}
+
+func TestSessionForSurfacePrefersTheNewestClaude(t *testing.T) {
+	dir := t.TempDir()
+	writeSession(t, dir, "10.json", `{"pid":10,"sessionId":"newer","kind":"interactive"}`)
+	writeSession(t, dir, "9.json", `{"pid":9,"sessionId":"older","kind":"interactive"}`)
+	processes := fakeProcesses{
+		started: map[int]time.Time{9: time.Now().Add(-2 * time.Hour), 10: time.Now().Add(-time.Hour)},
+		env:     map[int]string{9: "surface-a", 10: "surface-a"},
+	}
+	if ref, ok := SessionForSurface(RunningSessions(dir, processes), "surface-a", processes); !ok || ref.SessionID != "newer" {
+		t.Errorf("surface-a = %+v %v", ref, ok)
 	}
 }

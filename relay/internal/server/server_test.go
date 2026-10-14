@@ -31,13 +31,14 @@ type fakeCmux struct {
 	viewports       []string
 	historyRequests []string
 	agent           cmux.AgentSession
+	agentErr        error
 	running         claude.SessionRef
 }
 
 func (f *fakeCmux) AgentSession(context.Context, string, string) (cmux.AgentSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.agent, nil
+	return f.agent, f.agentErr
 }
 
 func (f *fakeCmux) runningClaude(string) (claude.SessionRef, bool) {
@@ -437,5 +438,24 @@ func TestChatFollowsClaudeEnteringAndLeavingATerminal(t *testing.T) {
 	relay.cmux.setRunning(claude.SessionRef{SessionID: "s1", Cwd: "/Users/me/app"})
 	if found := readUntil(t, ctx, conn, "chat_session"); found["session_id"] != "s1" {
 		t.Fatalf("a Claude session cmux does not track must still be found: %v", found)
+	}
+}
+
+func TestChatFindsClaudeWhenCmuxCannotReportAgents(t *testing.T) {
+	relay := startRelay(t)
+	relay.cmux.agentErr = &cmux.RPCError{Code: "method_not_found"}
+	relay.cmux.setRunning(claude.SessionRef{SessionID: "s1", Cwd: "/Users/me/app"})
+	token := relay.pair(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := relay.dial(t, ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1"})
+	if found := readUntil(t, ctx, conn, "chat_session"); found["session_id"] != "s1" {
+		t.Fatalf("a cmux without surface.resume.get must still find Claude: %v", found)
 	}
 }

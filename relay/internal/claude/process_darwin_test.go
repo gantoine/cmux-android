@@ -3,7 +3,9 @@ package claude
 import (
 	"encoding/binary"
 	"os"
+	"os/exec"
 	"testing"
+	"time"
 )
 
 func TestEnvFromProcArgsSkipsTheCommandLine(t *testing.T) {
@@ -18,12 +20,22 @@ func TestEnvFromProcArgsSkipsTheCommandLine(t *testing.T) {
 }
 
 func TestSystemProcessesReadsThisProcess(t *testing.T) {
-	t.Setenv("CLAUDE_RELAY_TEST_ENV", "x")
 	processes := SystemProcesses{}
-	if !processes.Alive(os.Getpid()) {
-		t.Fatal("this process is not alive")
+	started, ok := processes.StartedAt(os.Getpid())
+	if !ok || started.After(time.Now()) {
+		t.Fatalf("started at %v, alive %v", started, ok)
 	}
 	if got := processes.Env(os.Getpid(), "HOME"); got != os.Getenv("HOME") {
 		t.Errorf("HOME = %q", got)
+	}
+}
+
+func TestSystemProcessesReportsAnExitedProcessAsGone(t *testing.T) {
+	command := exec.Command("true")
+	if err := command.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := (SystemProcesses{}).StartedAt(command.Process.Pid); ok {
+		t.Error("an exited process must not count as running")
 	}
 }

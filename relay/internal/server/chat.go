@@ -26,18 +26,22 @@ type chatWatch struct {
 func (s *session) watchChat(ctx context.Context, current *attachment) {
 	var watch chatWatch
 	announced := false
+	cmuxTracksAgents := true
 	for {
-		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
-		agent, err := s.server.cmux.AgentSession(callCtx, current.workspaceID, current.surfaceID)
-		cancel()
-		if ctx.Err() != nil {
-			return
+		var agent cmux.AgentSession
+		var err error
+		if cmuxTracksAgents {
+			callCtx, cancel := context.WithTimeout(ctx, callTimeout)
+			agent, err = s.server.cmux.AgentSession(callCtx, current.workspaceID, current.surfaceID)
+			cancel()
+			if ctx.Err() != nil {
+				return
+			}
+			if cmux.ErrorCode(err) == unsupportedMethod {
+				cmuxTracksAgents, agent, err = false, cmux.AgentSession{}, nil
+			}
 		}
-		switch {
-		case cmux.ErrorCode(err) == unsupportedMethod:
-			return
-		case err != nil:
-		default:
+		if err == nil {
 			sessionID, cwd := "", ""
 			if agent.Kind == agentKindClaude && agent.SessionID != "" {
 				sessionID, cwd = agent.SessionID, agent.Cwd

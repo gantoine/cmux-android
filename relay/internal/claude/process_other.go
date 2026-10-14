@@ -2,8 +2,10 @@
 
 package claude
 
+import "time"
+
 type SystemProcesses struct{}
 
-func (SystemProcesses) Alive(int) bool { return false }
+func (SystemProcesses) StartedAt(int) (time.Time, bool) { return time.Time{}, false }
 
 func (SystemProcesses) Env(int, string) string { return "" }
