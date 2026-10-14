@@ -20,6 +20,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -96,14 +97,28 @@ fun TerminalCanvas(
 
     BoxWithConstraints(modifier = modifier.background(colors[screen.background] ?: Color.Black).clipToBounds()) {
         val viewportHeight = constraints.maxHeight.toFloat()
-        val viewportRows = (viewportHeight / metrics.height).coerceAtLeast(1f)
+        val bottomPadding = with(density) { TerminalBottomPadding.toPx() }
+        val viewportRows = ((viewportHeight - bottomPadding) / metrics.height).coerceAtLeast(1f)
         val cursorRow = screen.cursor?.row ?: 0
-        val liveOffset = (cursorRow + 2 - viewportRows).coerceIn(0f, (screen.rows - viewportRows).coerceAtLeast(0f))
-        val liveTop = content.historyRows + liveOffset
-        val linesAbove = viewport.linesAboveLive.coerceIn(0f, liveTop)
+        val fitsInView = screen.rows <= viewportRows
+        val usedRows = when {
+            screen.altScreen && fitsInView -> screen.rows
+            screen.altScreen -> cursorRow + 2
+            else -> maxOf(cursorRow + 2, screen.lastUsedRow + 1)
+        }
+        val history = content.historyRows.toFloat()
+        val highestTop = history + (screen.rows - viewportRows).coerceAtLeast(0f)
+        val anchoredTop = history + usedRows.coerceAtMost(screen.rows) - viewportRows
+        val liveTop = if (screen.altScreen && !fitsInView) anchoredTop.coerceIn(history, highestTop) else anchoredTop.coerceAtMost(highestTop)
+        val scrollableAbove = liveTop.coerceAtLeast(0f)
+        val blankBelow = !screen.altScreen && usedRows < viewportRows
+        LaunchedEffect(blankBelow, content.historyRows == 0) {
+            if (blankBelow && content.historyRows == 0) onNeedHistory()
+        }
+        val linesAbove = viewport.linesAboveLive.coerceIn(0f, scrollableAbove)
         val top = liveTop - linesAbove
 
-        val currentLiveTop = rememberUpdatedState(liveTop)
+        val currentLiveTop = rememberUpdatedState(scrollableAbove)
         val currentTop = rememberUpdatedState(top)
         val currentContent = rememberUpdatedState(content)
         val currentMetrics = rememberUpdatedState(metrics)
@@ -137,7 +152,7 @@ fun TerminalCanvas(
             val currentMetrics = currentMetrics.value
             val terminal = currentContent.value
             val column = ((position.x + horizontal.value) / currentMetrics.width).toInt().coerceIn(0, terminal.columns - 1)
-            val row = (currentTop.value + position.y / currentMetrics.height).toInt().coerceIn(0, terminal.rowCount - 1)
+            val row = floor(currentTop.value + position.y / currentMetrics.height).toInt().coerceIn(0, terminal.rowCount - 1)
             return CellPosition(row, column)
         }
 
@@ -207,13 +222,14 @@ private fun DrawScope.drawTerminal(
     val defaultForeground = colors[screen.foreground] ?: Color.White
     drawRect(defaultBackground, size = size)
 
-    val firstRow = floor(top).toInt().coerceAtLeast(0)
+    val firstRow = floor(top).toInt()
     val offsetY = -(top - firstRow) * metrics.height
     val visibleRows = (size.height / metrics.height).toInt() + 2
 
     for (index in 0 until visibleRows) {
         val row = firstRow + index
         if (row >= content.rowCount) break
+        if (row < 0) continue
         val y = offsetY + index * metrics.height
         val styles = content.styles(row)
         for (span in content.spans(row)) {
@@ -230,7 +246,7 @@ private fun DrawScope.drawTerminal(
             if (style?.faint == true) foreground = foreground.copy(alpha = 0.6f)
             drawText(
                 textMeasurer = measurer,
-                text = span.text,
+                text = TerminalText.asText(span.text),
                 topLeft = Offset(left, y),
                 style = textStyle(style, foreground, fontSize),
                 softWrap = false,
@@ -293,6 +309,8 @@ fun parseHexColor(hex: String): Color? {
 
 fun fittingGrid(widthPx: Int, heightPx: Int, metrics: CellMetrics): Pair<Int, Int> =
     (widthPx / metrics.width).toInt().coerceIn(20, 300) to (heightPx / metrics.height).toInt().coerceIn(5, 120)
+
+val TerminalBottomPadding = 4.dp
 
 const val MIN_FONT_SIZE = 6f
 const val MAX_FONT_SIZE = 24f

@@ -142,7 +142,7 @@ cd relay && go test -race ./... && go build ./cmd/cmux-relay
 To run the relay next to an installed copy, give it its own state directory and port:
 
 ```sh
-CMUX_RELAY_STATE_DIR=/tmp/relay-dev go run ./relay/cmd/cmux-relay serve --listen 127.0.0.1:18765
+cd relay && CMUX_RELAY_STATE_DIR=/tmp/relay-dev go run ./cmd/cmux-relay serve --listen 127.0.0.1:18765
 ```
 
 On the Android emulator the computer is `http://10.0.2.2:18765`. Debug builds allow plain HTTP to that address only.

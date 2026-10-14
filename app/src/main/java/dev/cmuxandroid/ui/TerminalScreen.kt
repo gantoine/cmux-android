@@ -65,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,6 +78,7 @@ import dev.cmuxandroid.CmuxApplication
 import dev.cmuxandroid.data.MacStore
 import dev.cmuxandroid.net.ConnectionState
 import dev.cmuxandroid.net.VisibleTerminal
+import dev.cmuxandroid.terminal.TerminalBottomPadding
 import dev.cmuxandroid.terminal.TerminalCanvas
 import dev.cmuxandroid.terminal.TerminalContent
 import dev.cmuxandroid.terminal.TerminalHistory
@@ -231,7 +233,8 @@ fun TerminalScreen(app: CmuxApplication, macId: String, workspaceId: String, sur
             ) {
                 val measurer = rememberTextMeasurer()
                 val metrics = rememberCellMetrics(measurer, fontSize.sp)
-                val grid = fittingGrid(constraints.maxWidth, constraints.maxHeight, metrics)
+                val bottomPadding = with(LocalDensity.current) { TerminalBottomPadding.roundToPx() }
+                val grid = fittingGrid(constraints.maxWidth, constraints.maxHeight - bottomPadding, metrics)
                 LaunchedEffect(fitToPhone, grid) {
                     if (fitToPhone) delay(FIT_SETTLE_MS)
                     connection.setFit(if (fitToPhone) grid else null)

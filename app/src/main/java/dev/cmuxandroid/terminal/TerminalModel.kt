@@ -16,6 +16,11 @@ data class TerminalScreen(
     val lines: List<List<Span>>,
     val altScreen: Boolean = false,
 ) {
+    val lastUsedRow: Int by lazy {
+        val lastText = lines.indexOfLast { line -> line.any { it.text.isNotBlank() } }
+        maxOf(lastText, cursor?.row ?: 0)
+    }
+
     fun text(row: Int): String {
         val builder = StringBuilder()
         for (span in lines.getOrNull(row).orEmpty()) {

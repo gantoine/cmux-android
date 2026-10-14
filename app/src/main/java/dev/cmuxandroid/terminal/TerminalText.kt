@@ -53,6 +53,22 @@ class TerminalContent(val screen: TerminalScreen, history: TerminalHistory?) {
 
 object TerminalText {
     const val CONTINUATION = ""
+    private const val TEXT_STYLE = '\uFE0E'
+    private const val EMOJI_STYLE = '\uFE0F'
+
+    fun asText(text: String): String {
+        if (text.none(::hasEmojiForm)) return text
+        val builder = StringBuilder(text.length + 4)
+        text.forEachIndexed { index, char ->
+            builder.append(char)
+            val next = text.getOrNull(index + 1)
+            if (hasEmojiForm(char) && next != TEXT_STYLE && next != EMOJI_STYLE) builder.append(TEXT_STYLE)
+        }
+        return builder.toString()
+    }
+
+    private fun hasEmojiForm(char: Char): Boolean =
+        char in '\u2190'..'\u21FF' || char in '\u2300'..'\u23FF' || char in '\u25A0'..'\u27BF' || char in '\u2B00'..'\u2BFF'
 
     fun cells(spans: List<Span>, columns: Int): Array<String?> {
         val cells = arrayOfNulls<String>(columns)

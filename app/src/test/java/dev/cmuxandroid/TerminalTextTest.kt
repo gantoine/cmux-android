@@ -8,6 +8,7 @@ import dev.cmuxandroid.terminal.TerminalContent
 import dev.cmuxandroid.terminal.TerminalHistory
 import dev.cmuxandroid.terminal.TerminalKeys
 import dev.cmuxandroid.terminal.TerminalScreen
+import dev.cmuxandroid.terminal.TerminalText
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -81,5 +82,13 @@ class TerminalTextTest {
             ),
             TerminalKeys.splitText("ls\n\tx"),
         )
+    }
+
+    @Test
+    fun symbolsWithAnEmojiFormDrawAsText() {
+        assertEquals("\u23FA\uFE0E The workspace", TerminalText.asText("\u23FA The workspace"))
+        assertEquals("\u23F5\uFE0E\u23F5\uFE0E auto mode", TerminalText.asText("\u23F5\u23F5 auto mode"))
+        assertEquals("\u2764\uFE0F", TerminalText.asText("\u2764\uFE0F"))
+        assertEquals("plain text", TerminalText.asText("plain text"))
     }
 }
