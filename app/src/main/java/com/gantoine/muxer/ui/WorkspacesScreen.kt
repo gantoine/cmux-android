@@ -318,14 +318,12 @@ fun WorkspacesScreen(
                                         onToggle = { toggle(line.entry.group) },
                                         modifier = modifier,
                                     )
-                                    is WorkspaceLine.Anchor -> WorkspaceRow(
+                                    is WorkspaceLine.Anchor -> GroupTerminalsRow(
                                         workspace = line.workspace,
                                         shape = shape,
                                         onOpen = { open(line.workspace) },
                                         onLongPress = { dialog = WorkspaceDialog.Actions(line.workspace, line.group) },
                                         modifier = modifier,
-                                        title = WorkspaceListing.anchorTitle(line.group, line.workspace),
-                                        color = groupColor(line.workspace),
                                     )
                                 }
                             }
@@ -462,8 +460,6 @@ private fun WorkspaceRow(
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = workspace.title.ifBlank { "Untitled" },
-    color: Color? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val status = WorkspaceListing.agentStatus(workspace)
@@ -484,7 +480,7 @@ private fun WorkspaceRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WorkspaceTile(workspace, status = status, color = color)
+        WorkspaceTile(workspace, status = status)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -498,7 +494,7 @@ private fun WorkspaceRow(
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
-                    title,
+                    workspace.title.ifBlank { "Untitled" },
                     style = MaterialTheme.typography.titleMediumEmphasized,
                     fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1,
@@ -622,9 +618,51 @@ private fun GroupHeaderRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun groupColor(anchor: WorkspaceInfo): Color =
-    anchor.customColor?.let(::parseHexColor) ?: MaterialTheme.colorScheme.primaryContainer
+private fun GroupTerminalsRow(
+    workspace: WorkspaceInfo,
+    shape: androidx.compose.ui.graphics.Shape,
+    onOpen: () -> Unit,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalHapticFeedback.current
+    val unread = workspace.unreadCount > 0 || workspace.hasUnread
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                if (WorkspaceListing.isAgent(workspace)) Icons.Filled.AutoAwesome else Icons.Filled.Terminal,
+                contentDescription = WorkspaceListing.agentStatus(workspace)?.label,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Box(Modifier.weight(1f)) {
+            SubtitleLine(
+                WorkspaceListing.subtitle(workspace),
+                WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt),
+                highlightTime = unread,
+            )
+        }
+    }
+}
 
 @Composable
 fun WorkspaceTile(
@@ -696,7 +734,7 @@ private const val WORKING_HOLD_MILLIS = 8_000L
 @Composable
 private fun WorkspaceHeader(workspace: WorkspaceInfo, group: WorkspaceGroupInfo? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        WorkspaceTile(workspace, size = 44.dp)
+        WorkspaceTile(workspace, size = 44.dp, color = group?.let { MaterialTheme.colorScheme.primaryContainer })
         Spacer(Modifier.width(16.dp))
         Column {
             Text(group?.let { WorkspaceListing.anchorTitle(it, workspace) } ?: workspace.title.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
