@@ -17,14 +17,16 @@ sealed interface AgentStatus {
 
     data class NeedsYou(override val label: String) : AgentStatus
     data class Working(override val label: String) : AgentStatus
+    data class Idle(override val label: String) : AgentStatus
     data class Other(override val label: String) : AgentStatus
 }
 
 object WorkspaceListing {
     val fallbackColors = listOf("#8CAAEE", "#A6D189", "#EF9F76", "#CA9EE6", "#81C8BE", "#E5C890", "#F4B8E4", "#99D1DB")
 
-    private val attentionWords = listOf("wait", "input", "attention", "permission", "approv", "question", "blocked", "need", "review")
+    private val attentionWords = listOf("input", "attention", "permission", "approv", "question", "blocked", "need", "review")
     private val workingWords = listOf("run", "work", "think", "busy", "generat", "active", "progress", "tool")
+    private val idleWords = listOf("wait", "idle")
     private val terminalPromptWords = listOf("permission", "approv", "question")
 
     fun needsTerminalAnswer(status: AgentStatus?): Boolean =
@@ -73,6 +75,7 @@ object WorkspaceListing {
             ?.let { return AgentStatus.NeedsYou(humanize(it)) }
         states.firstOrNull { state -> workingWords.any { state.contains(it, ignoreCase = true) } }
             ?.let { return AgentStatus.Working(humanize(it)) }
+        if (states.any { state -> idleWords.any { state.contains(it, ignoreCase = true) } }) return AgentStatus.Idle("Idle")
         return AgentStatus.Other(humanize(states.first()))
     }
 

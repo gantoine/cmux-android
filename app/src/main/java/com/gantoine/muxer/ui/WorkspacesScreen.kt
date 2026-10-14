@@ -1,11 +1,7 @@
 package com.gantoine.muxer.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -65,28 +61,25 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -105,6 +98,7 @@ import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.terminal.parseHexColor
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -452,58 +446,64 @@ private fun WorkspaceRow(
 @Composable
 fun WorkspaceTile(workspace: WorkspaceInfo, size: Dp = 48.dp, status: AgentStatus? = null) {
     val accent = parseHexColor(WorkspaceListing.color(workspace)) ?: MaterialTheme.colorScheme.primary
-    val highlight = lerp(accent, Color.White, 0.55f)
     val corner = size * 0.3f
-    val orbit by rememberInfiniteTransition(label = "tile").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
-        label = "orbit",
-    )
-    val settled by animateFloatAsState(if (status is AgentStatus.NeedsYou) 1f else 0f, tween(500), label = "settled")
-    val ring = remember { Path() }
-    val segment = remember { Path() }
-    val measure = remember { PathMeasure() }
+    val shown = rememberSettledStatus(status)
+    val working by animateFloatAsState(if (shown is AgentStatus.Working) 1f else 0f, tween(600), label = "working")
+    val waiting by animateFloatAsState(if (shown is AgentStatus.NeedsYou) 1f else 0f, tween(600), label = "waiting")
+    val idle by animateFloatAsState(if (shown is AgentStatus.Idle) 1f else 0f, tween(600), label = "idle")
+    val animating = working > 0f || waiting > 0f || idle > 0f
+    var seconds by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(animating) {
+        if (!animating) return@LaunchedEffect
+        val start = withFrameNanos { it }
+        while (true) withFrameNanos { seconds = (it - start) / 1_000_000_000f }
+    }
+    val motion = remember(accent) { TileMotion(accent) }
+    val agent = WorkspaceListing.isAgent(workspace)
     Box(
         Modifier
             .size(size)
             .then(if (status != null) Modifier.semantics { contentDescription = status.label } else Modifier)
             .drawBehind {
-                if (status !is AgentStatus.Working && settled == 0f) return@drawBehind
-                val stroke = Stroke(3.dp.toPx(), cap = StrokeCap.Round)
-                val inset = -(4.dp.toPx() + stroke.width / 2)
-                ring.reset()
-                ring.addRoundRect(
-                    RoundRect(
-                        Rect(inset, inset, this.size.width - inset, this.size.height - inset),
-                        CornerRadius(corner.toPx() - inset),
-                    ),
-                )
-                if (status is AgentStatus.Working) {
-                    drawPath(ring, accent.copy(alpha = 0.35f), style = stroke)
-                    measure.setPath(ring, false)
-                    val length = measure.length
-                    val start = orbit * length
-                    val stop = start + length * 0.3f
-                    segment.reset()
-                    measure.getSegment(start, minOf(stop, length), segment, true)
-                    if (stop > length) measure.getSegment(0f, stop - length, segment, true)
-                    drawPath(segment, highlight, style = stroke)
-                } else {
-                    drawPath(ring, highlight.copy(alpha = settled), style = stroke)
-                }
+                if (waiting > 0f) motion.drawRipples(this, seconds, corner.toPx(), waiting)
+                if (working > 0f) motion.drawHalo(this, seconds, corner.toPx(), working)
             }
-            .background(accent, RoundedCornerShape(corner)),
+            .graphicsLayer {
+                val beat = if (waiting > 0f) motion.heartbeat(seconds) * waiting else 0f
+                scaleX = 1f + beat
+                scaleY = 1f + beat
+            }
+            .drawBehind {
+                drawRoundRect(if (idle > 0f) motion.idleFill(seconds, idle) else accent, cornerRadius = CornerRadius(corner.toPx()))
+                if (working > 0f) motion.drawAurora(this, seconds, corner.toPx(), working)
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            if (WorkspaceListing.isAgent(workspace)) Icons.Filled.AutoAwesome else Icons.Filled.Terminal,
+            if (agent) Icons.Filled.AutoAwesome else Icons.Filled.Terminal,
             contentDescription = null,
             tint = Color.White,
-            modifier = Modifier.size(size / 2),
+            modifier = Modifier.size(size / 2).graphicsLayer {
+                val breathe = if (working > 0f) motion.breathe(seconds) * working else 0f
+                val doze = if (idle > 0f) motion.doze(seconds) * idle else 0f
+                scaleX = 1f + 0.05f * breathe + 0.05f * doze
+                scaleY = 1f + 0.05f * breathe + 0.05f * doze
+            },
         )
     }
 }
+
+@Composable
+private fun rememberSettledStatus(status: AgentStatus?): AgentStatus? {
+    var shown by remember { mutableStateOf(status) }
+    LaunchedEffect(status) {
+        if (shown is AgentStatus.Working && status !is AgentStatus.NeedsYou) delay(WORKING_HOLD_MILLIS)
+        shown = status
+    }
+    return shown
+}
+
+private const val WORKING_HOLD_MILLIS = 8_000L
 
 @Composable
 private fun WorkspaceHeader(workspace: WorkspaceInfo) {

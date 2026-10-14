@@ -69,6 +69,8 @@ class WorkspaceFilteringTest {
     fun agentStatesAreClassifiedAndHumanized() {
         assertEquals(AgentStatus.NeedsYou("Waiting for input"), WorkspaceListing.agentStatus(waiting))
         assertEquals(AgentStatus.Working("Running"), WorkspaceListing.agentStatus(working))
+        assertEquals(AgentStatus.Idle("Idle"), WorkspaceListing.agentStatus(working.copy(terminals = listOf(TerminalInfo(id = "t6", agentState = "Waiting")))))
+        assertEquals(AgentStatus.NeedsYou("Permission request"), WorkspaceListing.agentStatus(working.copy(terminals = listOf(TerminalInfo(id = "t7", agentState = "permission_request")))))
         assertNull(WorkspaceListing.agentStatus(plain))
         assertEquals(AgentStatus.Other("Done"), WorkspaceListing.agentStatus(plain.copy(terminals = listOf(TerminalInfo(id = "t5", agentState = "done")))))
     }
