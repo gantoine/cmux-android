@@ -74,7 +74,8 @@ jobs:
           SIGNING_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" ./gradlew :app:assembleRelease \
             -PversionName="$VERSION" -PversionCode="$VERSION_CODE"
           rm "$RUNNER_TEMP/release.jks"
-          cp app/build/outputs/apk/release/app-release.apk "relay/dist/cmux-android-${VERSION}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "relay/dist/muxer-${VERSION}.apk"
+          cp app/build/outputs/mapping/release/mapping.txt "relay/dist/muxer-${VERSION}-mapping.txt"
 
       - name: Checksums
         working-directory: relay/dist

@@ -1,0 +1,254 @@
+package com.gantoine.muxer.ui
+
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.gantoine.muxer.MuxerApplication
+import com.gantoine.muxer.data.Mac
+import com.gantoine.muxer.net.ConnectionState
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit, onRemoved: () -> Unit) {
+    val macs by app.store.macs.collectAsState(initial = null)
+    val mac = macs?.firstOrNull { it.id == macId }
+    val connections by app.connections.connectionsFlow.collectAsState()
+    val state by (connections[macId]?.state ?: flowOf(ConnectionState.Stopped)).collectAsState(initial = ConnectionState.Stopped)
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var renaming by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf(false) }
+
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        app.notificationPermissionChanged()
+        if (granted) {
+            scope.launch { app.store.setBackgroundNotifications(macId, true) }
+        } else {
+            scope.launch { snackbar.showSnackbar("Allow notifications for cmux in Android settings to get alerts.") }
+        }
+    }
+
+    fun setBackground(enabled: Boolean) {
+        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !app.notifier.canNotify()) {
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        scope.launch { app.store.setBackgroundNotifications(macId, enabled) }
+    }
+
+    Scaffold(
+        topBar = {
+            CmuxTopBar(
+                title = mac?.name ?: "Settings",
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                },
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        if (mac == null) {
+            if (macs != null) FullWidthMessage("This computer is not paired anymore.", Modifier.padding(padding))
+            return@Scaffold
+        }
+        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp)) {
+            SectionLabel("Notifications")
+            SettingsGroup {
+                SettingsRow(
+                    index = 0,
+                    count = 1,
+                    headline = "Notify me in the background",
+                    supporting = "Keeps a connection to this computer open so agent and terminal alerts arrive while the app is closed. Uses some battery.",
+                    onClick = { setBackground(!mac.backgroundNotifications) },
+                    trailing = { Switch(checked = mac.backgroundNotifications, onCheckedChange = ::setBackground) },
+                )
+            }
+
+            SectionLabel("This computer")
+            val welcome = (state as? ConnectionState.Connected)?.welcome
+            val rows = 3 + if (welcome != null) 1 else 0
+            SettingsGroup {
+                SettingsRow(
+                    index = 0,
+                    count = rows,
+                    headline = "Name",
+                    supporting = mac.name,
+                    onClick = { renaming = true },
+                    trailing = {
+                        Icon(
+                            Icons.Outlined.DriveFileRenameOutline,
+                            contentDescription = "Rename",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+                SettingsRow(index = 1, count = rows, headline = "Address", supporting = mac.url)
+                SettingsRow(
+                    index = 2,
+                    count = rows,
+                    headline = "Status",
+                    supporting = if (state is ConnectionState.Connected) "Connected" else describe(state),
+                    supportingIcon = { StatusDot(state) },
+                )
+                if (welcome != null) {
+                    SettingsRow(
+                        index = 3,
+                        count = rows,
+                        headline = "Versions",
+                        supporting = "cmux ${welcome.cmuxVersion} · relay ${welcome.relayVersion}",
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+            SettingsGroup {
+                SettingsRow(
+                    index = 0,
+                    count = 1,
+                    headline = "Remove this computer",
+                    supporting = "This phone forgets the computer and stops connecting to it.",
+                    tint = MaterialTheme.colorScheme.error,
+                    leading = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = { removing = true },
+                )
+            }
+        }
+    }
+
+    if (renaming && mac != null) RenameDialog(mac, onDismiss = { renaming = false }) { name ->
+        renaming = false
+        scope.launch { app.store.rename(mac.id, name) }
+    }
+
+    if (removing && mac != null) {
+        AlertDialog(
+            onDismissRequest = { removing = false },
+            title = { Text("Remove ${mac.name}?") },
+            text = {
+                Text("This phone forgets the computer. To also revoke its access on the computer, run `cmux-relay devices` and `cmux-relay revoke`.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = false
+                    scope.launch {
+                        app.store.remove(mac.id)
+                        onRemoved()
+                    }
+                }) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { removing = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+    ) { content() }
+}
+
+@Composable
+private fun SettingsRow(
+    index: Int,
+    count: Int,
+    headline: String,
+    supporting: String,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    supportingIcon: (@Composable () -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    val base = Modifier
+        .fillMaxWidth()
+        .clip(groupedShape(index, count))
+        .background(MaterialTheme.colorScheme.surfaceContainer)
+    ListItem(
+        headlineContent = { Text(headline, color = tint) },
+        supportingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (supportingIcon != null) {
+                    supportingIcon()
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(supporting, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        leadingContent = leading,
+        trailingContent = trailing,
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = if (onClick != null) base.clickable(onClick = onClick) else base,
+    )
+}
+
+@Composable
+private fun RenameDialog(mac: Mac, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    var name by remember { mutableStateOf(mac.name) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename computer") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(60) },
+                singleLine = true,
+                label = { Text("Name") },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onRename(name.trim()) }, enabled = name.isNotBlank()) { Text("Rename") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.svg" width="128" height="128" alt="cmux for Android logo: a green gradient chevron and a light cursor">
+  <img src="assets/logo.svg" width="128" height="128" alt="Muxer logo: a green gradient chevron and a light cursor">
 </p>
 
-# cmux for Android
+# Muxer
 
 Watch and drive your [cmux](https://github.com/manaflow-ai/cmux) terminals from an Android phone. See every workspace, open a live terminal, type into it, and get notified when a coding agent needs you.
 
@@ -66,7 +66,7 @@ You need cmux 0.65 or later and Tailscale signed in on the computer and on the p
 
 ## Pair your phone
 
-Install the APK from the [releases page](../../releases). To check it first, run `apksigner verify --print-certs cmux-android-<version>.apk` and compare the SHA-256 certificate fingerprint with this one:
+Install the APK from the [releases page](../../releases). To check it first, run `apksigner verify --print-certs muxer-<version>.apk` and compare the SHA-256 certificate fingerprint with this one:
 
 ```
 B7:33:F8:8D:CD:BE:D3:93:F7:1B:FA:A3:75:5D:AD:E3:DB:C4:0B:F6:D6:B2:39:29:BB:6E:CB:BA:56:FB:AD:2D
