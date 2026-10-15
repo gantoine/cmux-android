@@ -11,3 +11,4 @@ captures/
 *.keystore
 relay/dist/
 .DS_Store
+site/dist/

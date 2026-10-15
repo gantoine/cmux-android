@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Muxer: cmux on your phone</title>
+  <meta name="description" content="Watch and drive your cmux terminals from any Android device. Runs on your own network with any cmux plan.">
+  <meta name="theme-color" content="#1E1F29">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/logo.png" type="image/png">
+  <link rel="canonical" href="{{SITE_URL}}/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Muxer">
+  <meta property="og:description" content="Watch and drive your cmux terminals from any Android device.">
+  <meta property="og:url" content="{{SITE_URL}}/">
+  <meta property="og:image" content="{{SITE_URL}}/assets/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9"/><path d="M2.5 16h19l.9 2.1a1 1 0 0 1-.9 1.4H2.5a1 1 0 0 1-.9-1.4z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M12 .5A11.5 11.5 0 0 0 .5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.75.11 3.04.74.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></symbol>
+  </svg>
+
+  <header class="nav">
+    <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="28" height="28">Muxer</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#setup">Set up</a>
+      <a href="#security">Security</a>
+      <a class="gh" href="https://github.com/gantoine/muxer"><svg class="icon fill" aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <img class="hero-logo" src="assets/logo.svg" alt="Muxer logo" width="96" height="96">
+      <h1>Your cmux terminals,<br><span class="shine">in your pocket.</span></h1>
+      <p class="lede">Watch and drive your <a href="https://cmux.com/">cmux</a> terminals from any Android device.<br>See every workspace, open a live terminal, type into it, and get notified when a coding agent needs you.</p>
+      <div class="cta">
+        <a class="button primary" href="https://github.com/gantoine/muxer/releases/latest"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Download the APK</a>
+        <a class="button" href="https://github.com/gantoine/muxer"><svg class="icon fill" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+      </div>
+      <p class="fine">Works with any cmux plan, with no sign-in or cloud required</p>
+    </section>
+
+    <section class="shots" role="img" aria-label="Muxer on Android: the Computers list, a computer's workspaces, a Claude Code session as a chat, and the same session as a terminal">
+      <div class="phones">
+        <figure class="phone" style="--i:0"><img src="assets/screenshots.png" width="2160" height="1200" alt=""></figure>
+        <figure class="phone" style="--i:1"><img src="assets/screenshots.png" width="2160" height="1200" alt=""></figure>
+        <figure class="phone" style="--i:2"><img src="assets/screenshots.png" width="2160" height="1200" alt=""></figure>
+        <figure class="phone" style="--i:3"><img src="assets/screenshots.png" width="2160" height="1200" alt=""></figure>
+      </div>
+    </section>
+
+    <section id="features" class="section">
+      <h2>What it does</h2>
+      <div class="grid">
+        <article>
+          <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg></span>
+          <h3>A real terminal</h3>
+          <p>A live view of any terminal. Pinch to zoom, scroll back through 2,000 lines of history, select and copy, and type with sticky Ctrl, Option and Shift keys.</p>
+        </article>
+        <article>
+          <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg></span>
+          <h3>Claude Code as a chat</h3>
+          <p>Terminals running Claude Code show up as a conversation, with each tool call you can tap open. Type or dictate a reply, or interrupt Claude.</p>
+        </article>
+        <article>
+          <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></span>
+          <h3>Notifications</h3>
+          <p>cmux notifications such as "Claude is waiting for your input" reach your phone, even while the app is closed.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section how">
+      <h2>How it works</h2>
+      <div class="flow" role="img" aria-label="The Android app talks over HTTPS and WebSocket on your private network to muxer on your computer, which talks to cmux over a Unix socket">
+        <div class="peer"><span class="device"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg><img src="assets/logo.svg" alt="" width="16" height="16"></span>Android</div>
+        <div class="link"><span>HTTPS + WebSocket<br>over your private network</span></div>
+        <div class="peer"><img class="muxer-logo" src="assets/logo.svg" alt="" width="40" height="40">muxer</div>
+        <div class="link"><span>Unix socket</span></div>
+        <div class="peer"><img class="cmux-logo" src="assets/cmux-logo.png" alt="" width="46" height="46">cmux</div>
+      </div>
+      <p><code>muxer</code> is a small relay that runs on your Mac. It talks to cmux through its local control socket and listens on <code>127.0.0.1</code> only. Your phone reaches it through an HTTPS proxy that only your devices can reach. <a href="https://tailscale.com">Tailscale</a> is the easiest way; another VPN, a trusted local network, or a Cloudflare Tunnel behind Cloudflare Access also work.</p>
+    </section>
+
+    <section id="setup" class="section">
+      <h2>Set up</h2>
+      <p class="muted">You need cmux 0.65 or later on a Mac, and a way for your Android device to reach it over HTTPS.<br>The steps below use Tailscale, signed in on both.</p>
+      <ol class="steps">
+        <li>
+          <h3>Install the relay</h3>
+          <pre><code>brew install gantoine/tap/muxer</code></pre>
+        </li>
+        <li>
+          <h3>Let the relay talk to cmux</h3>
+          <p>In cmux, open <b>Settings › Automation</b>, set socket access to <b>Password</b>, and set a password.</p>
+        </li>
+        <li>
+          <h3>Start it at login and make it reachable</h3>
+          <pre><code>muxer install
+tailscale serve --bg --https=8765 http://127.0.0.1:8765
+muxer doctor</code></pre>
+        </li>
+        <li>
+          <h3>Pair your phone</h3>
+          <p>Install the APK from the <a href="https://github.com/gantoine/muxer/releases/latest">releases page</a>, then scan the QR code this prints:</p>
+          <pre><code>muxer pair</code></pre>
+        </li>
+      </ol>
+    </section>
+
+    <section id="security" class="section">
+      <h2>Security</h2>
+      <ul class="checks">
+        <li>The relay listens on <code>127.0.0.1</code> and forwards only the cmux commands the app uses.</li>
+        <li>Each phone gets its own random token. The computer stores only its SHA-256 hash; the phone keeps it encrypted in the Android Keystore.</li>
+        <li>Pairing codes work once, expire after 10 minutes, and stop after 10 wrong guesses.</li>
+        <li>The app accepts only HTTPS with certificates from a public authority.</li>
+        <li>Revoke a lost phone with <code>muxer revoke</code>.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>Muxer is an independent, MIT-licensed project. It is not made, endorsed, or supported by Manaflow or the cmux team.</p>
+    <p><a href="https://github.com/gantoine/muxer">GitHub</a> · <a href="https://github.com/gantoine/muxer/releases">Releases</a> · <a href="https://github.com/gantoine/muxer/issues">Issues</a></p>
+  </footer>
+
+  <script>
+    const nav = document.querySelector(".nav");
+    const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > 8);
+    onScroll();
+    addEventListener("scroll", onScroll, { passive: true });
+
+    if (navigator.clipboard) {
+      for (const pre of document.querySelectorAll("pre")) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "copy";
+        button.setAttribute("aria-label", "Copy to clipboard");
+        button.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><svg class="icon done" aria-hidden="true"><use href="#i-check"/></svg>';
+        button.addEventListener("click", async () => {
+          await navigator.clipboard.writeText(pre.querySelector("code").textContent);
+          button.classList.add("copied");
+          setTimeout(() => button.classList.remove("copied"), 1600);
+        });
+        const wrapper = document.createElement("div");
+        wrapper.className = "code";
+        pre.replaceWith(wrapper);
+        wrapper.append(pre, button);
+      }
+    }
+  </script>
+</body>
+</html>
