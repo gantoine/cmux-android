@@ -1,8 +1,10 @@
 package com.gantoine.muxer
 
 import com.gantoine.muxer.protocol.TerminalInfo
+import com.gantoine.muxer.protocol.WorkspaceGroupInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.ui.AgentStatus
+import com.gantoine.muxer.ui.WorkspaceEntry
 import com.gantoine.muxer.ui.WorkspaceFilter
 import com.gantoine.muxer.ui.WorkspaceListing
 import org.junit.Assert.assertEquals
@@ -82,7 +84,7 @@ class WorkspaceFilteringTest {
         assertEquals(listOf(waiting, unread), all.filter { WorkspaceListing.passes(it, WorkspaceFilter.NeedsYou) })
         assertEquals(listOf(waiting, working), all.filter { WorkspaceListing.passes(it, WorkspaceFilter.Agents) })
         assertEquals(listOf(plain), all.filter { WorkspaceListing.passes(it, WorkspaceFilter.Pinned) })
-        assertEquals(2, WorkspaceListing.count(all, WorkspaceFilter.NeedsYou))
+        assertEquals(2, WorkspaceListing.count(all, emptyList(), WorkspaceFilter.NeedsYou))
     }
 
     @Test
@@ -91,5 +93,36 @@ class WorkspaceFilteringTest {
         assertEquals("~/fun/cmux", WorkspaceListing.subtitle(waiting))
         assertEquals("2 terminals", WorkspaceListing.subtitle(plain))
         assertEquals("Terminal", WorkspaceListing.subtitle(plain.copy(terminals = emptyList())))
+    }
+
+    @Test
+    fun groupsCollectTheirMembersUnderTheAnchorInCmuxOrder() {
+        val anchor = WorkspaceInfo(id = "g-anchor", title = "Q4", groupId = "g", terminals = listOf(TerminalInfo(id = "t8")))
+        val first = working.copy(id = "m1", title = "merge queue", groupId = "g")
+        val second = plain.copy(id = "m2", title = "ci", groupId = "g", isPinned = false)
+        val group = WorkspaceGroupInfo(id = "g", name = "Q4", anchorWorkspaceId = "g-anchor", memberWorkspaceIds = listOf("g-anchor", "m2", "m1"))
+        val all = listOf(plain, anchor, first, second, unread)
+
+        assertEquals(
+            listOf(WorkspaceEntry.Single(plain), WorkspaceEntry.Group(group, anchor, listOf(second, first)), WorkspaceEntry.Single(unread)),
+            WorkspaceListing.entries(all, listOf(group)),
+        )
+        assertEquals(
+            listOf(WorkspaceEntry.Group(group, anchor, listOf(first), showAnchor = false)),
+            WorkspaceListing.entries(all, listOf(group), WorkspaceFilter.Agents),
+        )
+        assertEquals(
+            listOf(WorkspaceEntry.Group(group, anchor, listOf(second, first))),
+            WorkspaceListing.entries(all, listOf(group), query = "q4"),
+        )
+        val pinnedGroup = group.copy(isPinned = true)
+        assertEquals(
+            listOf(WorkspaceEntry.Single(plain), WorkspaceEntry.Group(pinnedGroup, anchor, listOf(second, first))),
+            WorkspaceListing.entries(all, listOf(pinnedGroup), WorkspaceFilter.Pinned),
+        )
+        assertEquals(4, WorkspaceListing.count(all, listOf(pinnedGroup), WorkspaceFilter.Pinned))
+        assertEquals("Q4 terminals", WorkspaceListing.anchorTitle(group, anchor))
+        assertEquals("api", WorkspaceListing.anchorTitle(group, anchor.copy(title = "api")))
+        assertEquals(listOf(WorkspaceEntry.Single(first.copy(groupId = "missing"))), WorkspaceListing.entries(listOf(first.copy(groupId = "missing")), emptyList()))
     }
 }

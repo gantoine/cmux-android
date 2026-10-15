@@ -23,7 +23,7 @@ const ProtocolVersion = 1
 
 type Cmux interface {
 	Identify(ctx context.Context) (cmux.Identity, error)
-	Workspaces(ctx context.Context) ([]cmux.Workspace, error)
+	Workspaces(ctx context.Context) (cmux.WorkspaceList, error)
 	Replay(ctx context.Context, workspaceID, surfaceID string) (cmux.Replay, error)
 	History(ctx context.Context, workspaceID, surfaceID string, maxRows int) (cmux.Replay, error)
 	Input(ctx context.Context, workspaceID, surfaceID, text string) error

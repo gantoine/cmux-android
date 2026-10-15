@@ -100,7 +100,7 @@ Then pair with that address using `muxer pair --url`.
 
 ## Using the app
 
-- **Workspaces:** each workspace shows its color, a robot icon when an agent runs in it, and when it was last active. Type in the search box to filter by name, folder, or terminal. Tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace.
+- **Workspaces:** each workspace shows its color, a robot icon when an agent runs in it, and when it was last active. Type in the search box to filter by name, folder, or terminal. Tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace. Workspace groups from cmux show as their own card: tap the group's header to open the group's own terminals, and tap the arrow to fold its workspaces away.
 - **Terminal:** pinch to zoom and drag sideways to pan.
 - **Scrolling back:** swipe down to read earlier output. The phone loads up to 2,000 lines of history and scrolls it locally, so the view on your computer does not move. Tap **Live** or scroll to the bottom to follow the terminal again. In full-screen programs such as vim or Claude Code, swiping scrolls inside the program on the computer instead.
 - **Copying:** long-press a word to select it, drag to extend the selection, then tap **Copy**. Selections can span history and the live screen.
@@ -188,7 +188,7 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 | `fit {columns, rows}` / `unfit` | Ask cmux to size the terminal for the phone. |
 | `create_workspace`, `rename_workspace`, `close_workspace`, `create_terminal` | Manage workspaces. |
 
-The relay sends `workspaces`, `screen` (row diffs with a style table), `detached`, `notification` and `result {id, ok, data | error}`. For the attached terminal it also sends `chat_session {surface_id, session_id}`, with `session_id` null when no Claude Code session runs there, and `chat {surface_id, session_id, reset, entries}`, where each entry is a user message, an assistant reply, a tool call or a notice. `reset` replaces the conversation; otherwise entries with a known `id` replace the old ones and new ones are added at the end. Add an `id` to any message to get a `result` back.
+The relay sends `workspaces` (with the workspace `groups`, each naming its anchor workspace and members), `screen` (row diffs with a style table), `detached`, `notification` and `result {id, ok, data | error}`. For the attached terminal it also sends `chat_session {surface_id, session_id}`, with `session_id` null when no Claude Code session runs there, and `chat {surface_id, session_id, reset, entries}`, where each entry is a user message, an assistant reply, a tool call or a notice. `reset` replaces the conversation; otherwise entries with a known `id` replace the old ones and new ones are added at the end. Add an `id` to any message to get a `result` back.
 
 ## License
 

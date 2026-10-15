@@ -34,8 +34,18 @@ type Workspace struct {
 	Terminals        []Terminal `json:"terminals"`
 }
 
+type WorkspaceGroup struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	AnchorWorkspaceID  *string  `json:"anchor_workspace_id"`
+	MemberWorkspaceIDs []string `json:"member_workspace_ids"`
+	IsCollapsed        bool     `json:"is_collapsed"`
+	IsPinned           bool     `json:"is_pinned"`
+}
+
 type WorkspaceList struct {
-	Workspaces []Workspace `json:"workspaces"`
+	Workspaces []Workspace      `json:"workspaces"`
+	Groups     []WorkspaceGroup `json:"groups"`
 }
 
 type Cursor struct {
@@ -150,10 +160,16 @@ func (c *Client) AgentSession(ctx context.Context, workspaceID, surfaceID string
 	return AgentSession{Kind: binding.Kind, SessionID: binding.CheckpointID, Cwd: binding.Cwd}, nil
 }
 
-func (c *Client) Workspaces(ctx context.Context) ([]Workspace, error) {
+func (c *Client) Workspaces(ctx context.Context) (WorkspaceList, error) {
 	var list WorkspaceList
 	err := c.Call(ctx, "mobile.workspace.list", nil, &list)
-	return list.Workspaces, err
+	if list.Workspaces == nil {
+		list.Workspaces = []Workspace{}
+	}
+	if list.Groups == nil {
+		list.Groups = []WorkspaceGroup{}
+	}
+	return list, err
 }
 
 func (c *Client) Replay(ctx context.Context, workspaceID, surfaceID string) (Replay, error) {

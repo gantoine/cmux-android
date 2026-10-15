@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +38,8 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
@@ -81,6 +84,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -96,6 +100,7 @@ import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.protocol.CreatedWorkspace
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.TerminalInfo
+import com.gantoine.muxer.protocol.WorkspaceGroupInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.terminal.parseHexColor
 import kotlinx.coroutines.delay
@@ -106,9 +111,51 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
+private sealed interface WorkspaceLine {
+    val key: String
+
+    data class Plain(val workspace: WorkspaceInfo) : WorkspaceLine {
+        override val key get() = workspace.id
+    }
+
+    data class Header(val entry: WorkspaceEntry.Group, val collapsed: Boolean) : WorkspaceLine {
+        override val key get() = entry.key
+    }
+
+    data class Anchor(val group: WorkspaceGroupInfo, val workspace: WorkspaceInfo) : WorkspaceLine {
+        override val key get() = workspace.id
+    }
+
+    data class Member(val workspace: WorkspaceInfo) : WorkspaceLine {
+        override val key get() = workspace.id
+    }
+}
+
+private fun cards(entries: List<WorkspaceEntry>, collapsed: (WorkspaceGroupInfo) -> Boolean): List<List<WorkspaceLine>> {
+    val cards = mutableListOf<MutableList<WorkspaceLine>>()
+    entries.forEach { entry ->
+        when (entry) {
+            is WorkspaceEntry.Single -> {
+                val open = cards.lastOrNull()?.takeIf { it.first() is WorkspaceLine.Plain }
+                if (open != null) open += WorkspaceLine.Plain(entry.workspace) else cards += mutableListOf<WorkspaceLine>(WorkspaceLine.Plain(entry.workspace))
+            }
+            is WorkspaceEntry.Group -> {
+                val folded = collapsed(entry.group)
+                val card = mutableListOf<WorkspaceLine>(WorkspaceLine.Header(entry, folded))
+                if (!folded) {
+                    if (entry.showAnchor && entry.anchor != null) card += WorkspaceLine.Anchor(entry.group, entry.anchor)
+                    entry.members.forEach { card += WorkspaceLine.Member(it) }
+                }
+                cards += card
+            }
+        }
+    }
+    return cards
+}
+
 private sealed interface WorkspaceDialog {
     data object Create : WorkspaceDialog
-    data class Actions(val workspace: WorkspaceInfo) : WorkspaceDialog
+    data class Actions(val workspace: WorkspaceInfo, val group: WorkspaceGroupInfo? = null) : WorkspaceDialog
     data class Rename(val workspace: WorkspaceInfo) : WorkspaceDialog
     data class Close(val workspace: WorkspaceInfo, val force: Boolean) : WorkspaceDialog
     data class PickTerminal(val workspace: WorkspaceInfo) : WorkspaceDialog
@@ -131,6 +178,7 @@ fun WorkspacesScreen(
     var dialog by remember { mutableStateOf<WorkspaceDialog?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(WorkspaceFilter.All) }
+    var toggledGroups by rememberSaveable { mutableStateOf(listOf<String>()) }
     val scope = rememberCoroutineScope()
 
     fun run(action: suspend RelayConnection.() -> Result<*>, onSuccess: () -> Unit = {}) {
@@ -165,6 +213,7 @@ fun WorkspacesScreen(
 
     val state by (connection?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
     val workspaces by (connection?.workspaces ?: remember { kotlinx.coroutines.flow.MutableStateFlow(null) }).collectAsState()
+    val groups by (connection?.groups ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList()) }).collectAsState()
 
     Scaffold(
         topBar = {
@@ -216,7 +265,13 @@ fun WorkspacesScreen(
                     }
                 }
                 else -> {
-                    val list = all.filter { WorkspaceListing.passes(it, filter) && WorkspaceListing.matches(it, query) }
+                    val narrowed = filter != WorkspaceFilter.All || query.isNotBlank()
+                    val cards = cards(WorkspaceListing.entries(all, groups, filter, query)) { group ->
+                        !narrowed && group.isCollapsed != (group.id in toggledGroups)
+                    }
+                    fun toggle(group: WorkspaceGroupInfo) {
+                        toggledGroups = if (group.id in toggledGroups) toggledGroups - group.id else toggledGroups + group.id
+                    }
                     LazyColumn(
                         Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 112.dp),
@@ -225,8 +280,8 @@ fun WorkspacesScreen(
                         item(key = "banner") {
                             AnimatedVisibility(visible = state !is ConnectionState.Connected) { ConnectionBanner(state) }
                         }
-                        item(key = "filters") { FilterRow(all, filter, onSelect = { filter = it }) }
-                        if (list.isEmpty()) {
+                        item(key = "filters") { FilterRow(all, groups, filter, onSelect = { filter = it }) }
+                        if (cards.isEmpty()) {
                             item(key = "empty") {
                                 FullWidthMessage(
                                     if (query.isNotBlank()) "No workspaces match \"${query.trim()}\"." else "Nothing here right now.",
@@ -234,14 +289,44 @@ fun WorkspacesScreen(
                                 )
                             }
                         }
-                        itemsIndexed(list, key = { _, workspace -> workspace.id }) { index, workspace ->
-                            WorkspaceRow(
-                                workspace = workspace,
-                                shape = groupedShape(index, list.size),
-                                onOpen = { open(workspace) },
-                                onLongPress = { dialog = WorkspaceDialog.Actions(workspace) },
-                                modifier = Modifier.animateItem(),
-                            )
+                        cards.forEachIndexed { cardIndex, card ->
+                            itemsIndexed(card, key = { _, line -> line.key }) { index, line ->
+                                val shape = groupedShape(index, card.size)
+                                val modifier = Modifier.animateItem().then(
+                                    if (index == 0 && cardIndex > 0) Modifier.padding(top = 12.dp) else Modifier,
+                                )
+                                when (line) {
+                                    is WorkspaceLine.Plain -> WorkspaceRow(
+                                        workspace = line.workspace,
+                                        shape = shape,
+                                        onOpen = { open(line.workspace) },
+                                        onLongPress = { dialog = WorkspaceDialog.Actions(line.workspace) },
+                                        modifier = modifier,
+                                    )
+                                    is WorkspaceLine.Member -> WorkspaceRow(
+                                        workspace = line.workspace,
+                                        shape = shape,
+                                        onOpen = { open(line.workspace) },
+                                        onLongPress = { dialog = WorkspaceDialog.Actions(line.workspace) },
+                                        modifier = modifier,
+                                    )
+                                    is WorkspaceLine.Header -> GroupHeaderRow(
+                                        entry = line.entry,
+                                        collapsed = line.collapsed,
+                                        canCollapse = !narrowed,
+                                        shape = shape,
+                                        onToggle = { toggle(line.entry.group) },
+                                        modifier = modifier,
+                                    )
+                                    is WorkspaceLine.Anchor -> GroupTerminalsRow(
+                                        workspace = line.workspace,
+                                        shape = shape,
+                                        onOpen = { open(line.workspace) },
+                                        onLongPress = { dialog = WorkspaceDialog.Actions(line.workspace, line.group) },
+                                        modifier = modifier,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -278,16 +363,18 @@ fun WorkspacesScreen(
         }
         is WorkspaceDialog.Actions -> ActionSheet(
             onDismiss = { dialog = null },
-            header = { WorkspaceHeader(current.workspace) },
+            header = { WorkspaceHeader(current.workspace, current.group) },
         ) {
             SheetAction(Icons.AutoMirrored.Filled.OpenInNew, "Open") { dialog = null; open(current.workspace) }
             SheetAction(Icons.Filled.Add, "New terminal") {
                 dialog = null
                 run({ request("create_terminal", buildJsonObject { put("workspace_id", current.workspace.id) }) })
             }
-            SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename") { dialog = WorkspaceDialog.Rename(current.workspace) }
-            SheetAction(Icons.Filled.Close, "Close workspace", destructive = true) {
-                dialog = WorkspaceDialog.Close(current.workspace, force = false)
+            if (current.group == null) {
+                SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename") { dialog = WorkspaceDialog.Rename(current.workspace) }
+                SheetAction(Icons.Filled.Close, "Close workspace", destructive = true) {
+                    dialog = WorkspaceDialog.Close(current.workspace, force = false)
+                }
             }
         }
         is WorkspaceDialog.Rename -> TextInputDialog(
@@ -340,14 +427,14 @@ fun WorkspacesScreen(
 }
 
 @Composable
-private fun FilterRow(all: List<WorkspaceInfo>, selected: WorkspaceFilter, onSelect: (WorkspaceFilter) -> Unit) {
+private fun FilterRow(all: List<WorkspaceInfo>, groups: List<WorkspaceGroupInfo>, selected: WorkspaceFilter, onSelect: (WorkspaceFilter) -> Unit) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         WorkspaceFilter.entries.forEach { filter ->
-            val count = WorkspaceListing.count(all, filter)
+            val count = WorkspaceListing.count(all, groups, filter)
             if (filter == WorkspaceFilter.All || count > 0 || filter == selected) {
                 val active = filter == selected
                 FilterChip(
@@ -412,40 +499,179 @@ private fun WorkspaceRow(
                     fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f),
                 )
+                when {
+                    workspace.unreadCount > 0 -> Badge(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(start = 12.dp),
+                    ) { Text("${workspace.unreadCount}", modifier = Modifier.padding(horizontal = 2.dp)) }
+                    workspace.hasUnread -> Box(
+                        Modifier.padding(start = 12.dp).size(10.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
+                    )
+                }
             }
-            Text(
+            SubtitleLine(
                 WorkspaceListing.subtitle(workspace),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt),
+                highlightTime = unread,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt)?.let { time ->
-                Text(
-                    time,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            when {
-                workspace.unreadCount > 0 -> Badge(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) { Text("${workspace.unreadCount}", modifier = Modifier.padding(horizontal = 2.dp)) }
-                workspace.hasUnread -> Box(Modifier.size(10.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-            }
         }
     }
 }
 
 @Composable
-fun WorkspaceTile(workspace: WorkspaceInfo, size: Dp = 48.dp, status: AgentStatus? = null) {
-    val accent = parseHexColor(WorkspaceListing.color(workspace)) ?: MaterialTheme.colorScheme.primary
+private fun SubtitleLine(subtitle: String, time: String?, highlightTime: Boolean = false, maxLines: Int = 1) {
+    Row {
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).alignByBaseline(),
+        )
+        if (time != null) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                time,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (highlightTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.alignByBaseline(),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun GroupHeaderRow(
+    entry: WorkspaceEntry.Group,
+    collapsed: Boolean,
+    canCollapse: Boolean,
+    shape: androidx.compose.ui.graphics.Shape,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val count = entry.members.size
+    val background = MaterialTheme.colorScheme.surfaceContainerHigh
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(shape)
+            .background(background)
+            .then(
+                if (canCollapse) {
+                    Modifier.clickable(onClickLabel = if (collapsed) "Show workspaces" else "Hide workspaces", onClick = onToggle)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.width(48.dp).semantics { contentDescription = if (count == 1) "1 workspace" else "$count workspaces" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+            Text(
+                "$count",
+                color = background,
+                fontSize = with(LocalDensity.current) { 10.dp.toSp() },
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        if (entry.group.isPinned) {
+            Icon(
+                Icons.Filled.PushPin,
+                contentDescription = "Pinned",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            entry.group.name.ifBlank { entry.anchor?.title?.ifBlank { null } ?: "Group" },
+            style = MaterialTheme.typography.titleMediumEmphasized,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (canCollapse) {
+            val rotation by animateFloatAsState(if (collapsed) 0f else 180f, tween(200), label = "chevron")
+            Icon(
+                Icons.Filled.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.graphicsLayer { rotationZ = rotation },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GroupTerminalsRow(
+    workspace: WorkspaceInfo,
+    shape: androidx.compose.ui.graphics.Shape,
+    onOpen: () -> Unit,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalHapticFeedback.current
+    val unread = workspace.unreadCount > 0 || workspace.hasUnread
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                if (WorkspaceListing.isAgent(workspace)) Icons.Filled.AutoAwesome else Icons.Filled.Terminal,
+                contentDescription = WorkspaceListing.agentStatus(workspace)?.label,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Box(Modifier.weight(1f)) {
+            SubtitleLine(
+                WorkspaceListing.subtitle(workspace),
+                WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt),
+                highlightTime = unread,
+            )
+        }
+    }
+}
+
+@Composable
+fun WorkspaceTile(
+    workspace: WorkspaceInfo,
+    size: Dp = 48.dp,
+    status: AgentStatus? = null,
+    color: Color? = null,
+) {
+    val accent = color ?: parseHexColor(WorkspaceListing.color(workspace)) ?: MaterialTheme.colorScheme.primary
     val corner = size * 0.3f
     val shown = rememberSettledStatus(status)
     val working by animateFloatAsState(if (shown is AgentStatus.Working) 1f else 0f, tween(600), label = "working")
@@ -506,12 +732,12 @@ private fun rememberSettledStatus(status: AgentStatus?): AgentStatus? {
 private const val WORKING_HOLD_MILLIS = 8_000L
 
 @Composable
-private fun WorkspaceHeader(workspace: WorkspaceInfo) {
+private fun WorkspaceHeader(workspace: WorkspaceInfo, group: WorkspaceGroupInfo? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        WorkspaceTile(workspace, size = 44.dp)
+        WorkspaceTile(workspace, size = 44.dp, color = group?.let { MaterialTheme.colorScheme.primaryContainer })
         Spacer(Modifier.width(16.dp))
         Column {
-            Text(workspace.title.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(group?.let { WorkspaceListing.anchorTitle(it, workspace) } ?: workspace.title.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 workspace.currentDirectory?.let(WorkspaceListing::shortPath) ?: WorkspaceListing.subtitle(workspace),
                 style = MaterialTheme.typography.bodyMedium,

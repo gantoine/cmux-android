@@ -63,8 +63,11 @@ func (f *fakeCmux) Identify(context.Context) (cmux.Identity, error) {
 	return cmux.Identity{Version: "0.65.1"}, nil
 }
 
-func (f *fakeCmux) Workspaces(context.Context) ([]cmux.Workspace, error) {
-	return []cmux.Workspace{{ID: "w1", Title: "api", Terminals: []cmux.Terminal{{ID: "t1", Title: "zsh"}}}}, nil
+func (f *fakeCmux) Workspaces(context.Context) (cmux.WorkspaceList, error) {
+	return cmux.WorkspaceList{
+		Workspaces: []cmux.Workspace{{ID: "w1", Title: "api", Terminals: []cmux.Terminal{{ID: "t1", Title: "zsh"}}}},
+		Groups:     []cmux.WorkspaceGroup{{ID: "g1", Name: "Q4", MemberWorkspaceIDs: []string{"w1"}}},
+	}, nil
 }
 
 func (f *fakeCmux) Replay(_ context.Context, workspaceID, surfaceID string) (cmux.Replay, error) {
@@ -234,6 +237,9 @@ func TestPairedPhoneCanWatchAndTypeIntoATerminal(t *testing.T) {
 	workspaces := readUntil(t, ctx, conn, "workspaces")
 	if len(workspaces["workspaces"].([]any)) != 1 {
 		t.Fatalf("unexpected workspaces: %v", workspaces)
+	}
+	if groups := workspaces["groups"].([]any); len(groups) != 1 || groups[0].(map[string]any)["name"] != "Q4" {
+		t.Fatalf("unexpected groups: %v", workspaces["groups"])
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1", "fit": map[string]int{"columns": 40, "rows": 20}})

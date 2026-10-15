@@ -13,6 +13,7 @@ import com.gantoine.muxer.protocol.RequestError
 import com.gantoine.muxer.protocol.ScreenFrame
 import com.gantoine.muxer.protocol.Welcome
 import com.gantoine.muxer.protocol.WorkspaceInfo
+import com.gantoine.muxer.protocol.WorkspaceGroupInfo
 import com.gantoine.muxer.protocol.WorkspacesMessage
 import com.gantoine.muxer.terminal.TerminalModel
 import com.gantoine.muxer.terminal.TerminalScreen
@@ -73,6 +74,9 @@ class RelayConnection(
 
     private val _workspaces = MutableStateFlow<List<WorkspaceInfo>?>(null)
     val workspaces: StateFlow<List<WorkspaceInfo>?> = _workspaces.asStateFlow()
+
+    private val _groups = MutableStateFlow<List<WorkspaceGroupInfo>>(emptyList())
+    val groups: StateFlow<List<WorkspaceGroupInfo>> = _groups.asStateFlow()
 
     private val _screen = MutableStateFlow<TerminalScreen?>(null)
     val screen: StateFlow<TerminalScreen?> = _screen.asStateFlow()
@@ -193,7 +197,11 @@ class RelayConnection(
         val message = runCatching { RelayJson.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         when (message["type"]?.jsonPrimitive?.contentOrNull) {
             "result" -> completeRequest(message)
-            "workspaces" -> _workspaces.value = RelayJson.decodeFromJsonElement(WorkspacesMessage.serializer(), message).workspaces
+            "workspaces" -> {
+                val listing = RelayJson.decodeFromJsonElement(WorkspacesMessage.serializer(), message)
+                _groups.value = listing.groups
+                _workspaces.value = listing.workspaces
+            }
             "screen" -> {
                 val frame = RelayJson.decodeFromJsonElement(ScreenFrame.serializer(), message)
                 if (frame.surfaceId != attachment?.surfaceId) return
