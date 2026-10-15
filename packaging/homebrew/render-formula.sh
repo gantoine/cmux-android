@@ -36,7 +36,7 @@ class Muxer < Formula
     <<~EOS
       Set up the relay:
         muxer install
-        tailscale serve --bg --https=8765 http://127.0.0.1:8765
+        tailscale serve --bg --https=8765 http://127.0.0.1:8765   # or another HTTPS proxy, see the README
         muxer doctor
         muxer pair
 

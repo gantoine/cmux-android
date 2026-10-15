@@ -33,7 +33,7 @@ Usage:
   muxer pair [--url URL] [--listen ADDR]        Show a QR code and pairing code for a new phone
   muxer devices                                 List paired phones
   muxer revoke DEVICE_ID                        Remove a paired phone
-  muxer doctor                                  Check cmux, socket access, and Tailscale setup
+  muxer doctor                                  Check cmux, socket access, and the relay setup
   muxer serve [--listen ADDR] [--name NAME]     Run the relay in the foreground
   muxer version
 `
@@ -76,7 +76,7 @@ func main() {
 
 func serveFlags(name string, args []string) (listen, macName string, err error) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	flags.StringVar(&listen, "listen", defaultListenAddress, "address to listen on; keep it on loopback and expose it with tailscale serve")
+	flags.StringVar(&listen, "listen", defaultListenAddress, "address to listen on; keep it on loopback behind an HTTPS proxy such as tailscale serve")
 	flags.StringVar(&macName, "name", defaultMacName(), "name the phone shows for this computer")
 	err = flags.Parse(args)
 	return listen, macName, err

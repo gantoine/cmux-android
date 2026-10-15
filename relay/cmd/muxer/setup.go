@@ -179,9 +179,11 @@ func runInstall(args []string) error {
 	fmt.Println("Log file:", p.log)
 	fmt.Println()
 	fmt.Println("Next:")
-	fmt.Println("  1. Let the phone reach it over Tailscale:  " + tailscaleServeCommand(listen))
-	fmt.Println("  2. Check the setup:                        muxer doctor")
-	fmt.Println("  3. Pair your phone:                        muxer pair")
+	fmt.Println("  1. Let the phone reach it over HTTPS, for example with Tailscale:")
+	fmt.Println("       " + tailscaleServeCommand(listen))
+	fmt.Println("     For a VPN, your local network, or Cloudflare Tunnel, see the README.")
+	fmt.Println("  2. Check the setup:  muxer doctor")
+	fmt.Println("  3. Pair your phone:  muxer pair  (add --url when you don't use Tailscale)")
 	return nil
 }
 
@@ -309,6 +311,13 @@ func runDoctor(args []string) error {
 		problems++
 		fmt.Println("  ✗ " + bad)
 	}
+	note := func(ok bool, good, other string) {
+		if ok {
+			fmt.Println("  ✓ " + good)
+			return
+		}
+		fmt.Println("  · " + other)
+	}
 
 	fmt.Println("cmux")
 	socketPath := cmux.DefaultSocketPath()
@@ -340,15 +349,16 @@ func runDoctor(args []string) error {
 	_, adminErr := server.CallAdmin(p.admin, server.AdminRequest{Command: "devices"})
 	check(adminErr == nil, "relay is running", "relay is not running; run `muxer install`")
 
-	fmt.Println("Tailscale")
+	fmt.Println("Tailscale (optional)")
 	binary, tailscaleErr := tailscaleBinary()
-	check(tailscaleErr == nil, "tailscale found", "tailscale is not installed; install it from https://tailscale.com/download")
+	note(tailscaleErr == nil, "tailscale found",
+		"tailscale is not installed; make sure the phone reaches the relay over HTTPS another way")
 	if tailscaleErr == nil {
 		output, err := exec.Command(binary, "serve", "status", "--json").Output()
 		target := "127.0.0.1:" + listenPort(listen)
-		check(err == nil && bytes.Contains(output, []byte(target)),
+		note(err == nil && bytes.Contains(output, []byte(target)),
 			"tailscale serve forwards to "+target,
-			"tailscale serve is not forwarding to the relay; run: "+tailscaleServeCommand(listen))
+			"tailscale serve is not forwarding to the relay; to use Tailscale, run: "+tailscaleServeCommand(listen))
 	}
 
 	fmt.Println()

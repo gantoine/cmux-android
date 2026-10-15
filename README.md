@@ -6,7 +6,7 @@
 
 Watch and drive your [cmux](https://github.com/manaflow-ai/cmux) terminals from an Android phone. See every workspace, open a live terminal, type into it, and get notified when a coding agent needs you.
 
-It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own computer over [Tailscale](https://tailscale.com), with no cloud service in the middle.
+It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own computer, over a private network you control, with no cloud service in the middle. [Tailscale](https://tailscale.com) is the easiest way to set that up. Another VPN, a trusted local network, or a Cloudflare Tunnel behind Cloudflare Access also work.
 
 <p align="center">
   <img src="assets/screenshots.png" alt="Muxer on Android: the Computers list, a computer's workspaces, a Claude Code session as a chat, and the same session as a terminal">
@@ -17,7 +17,7 @@ It works with any cmux plan, and you don't need to sign in to cmux. Everything r
 ## How it works
 
 ```
-Android app ──HTTPS + WebSocket over Tailscale──▶ muxer (on your computer) ──Unix socket──▶ cmux
+Android app ──HTTPS + WebSocket over your private network──▶ muxer (on your computer) ──Unix socket──▶ cmux
 ```
 
 `muxer` is a small program that runs on your computer. It talks to cmux through cmux's local control socket and gives the phone:
@@ -26,11 +26,11 @@ Android app ──HTTPS + WebSocket over Tailscale──▶ muxer (on your compu
 - a live view of one terminal, sent as changed rows only, and the keys you type,
 - cmux notifications (for example "Claude is waiting for your input"), with their text.
 
-The phone only reaches the relay through `tailscale serve`, which gives it HTTPS on your private tailnet. The relay itself listens on `127.0.0.1`.
+The relay itself listens on `127.0.0.1`. The phone reaches it through an HTTPS proxy in front of it that only your devices can reach, such as `tailscale serve`. See [Reaching the relay](#reaching-the-relay) for the options.
 
 ## Set up your computer
 
-You need cmux 0.65 or later and Tailscale signed in on the computer and on the phone.
+You need cmux 0.65 or later on the computer, and a way for the phone to reach the computer over HTTPS. The steps below use Tailscale, signed in on the computer and on the phone. For other setups, see [Reaching the relay](#reaching-the-relay).
 
 1. **Install the relay** with [Homebrew](https://brew.sh):
 
@@ -56,7 +56,7 @@ You need cmux 0.65 or later and Tailscale signed in on the computer and on the p
    muxer install
    ```
 
-4. **Make it reachable from your tailnet only.**
+4. **Make it reachable from your phone only.** With Tailscale:
 
    ```sh
    tailscale serve --bg --https=8765 http://127.0.0.1:8765
@@ -82,9 +82,21 @@ Then run this on your computer:
 muxer pair
 ```
 
+`muxer pair` uses the computer's Tailscale name. If the phone reaches the relay another way, pass that address: `muxer pair --url https://muxer.example.com`.
+
 Scan the QR code with your phone's camera, or tap **Pair a computer** in the app and type the address and code. The code works once and expires after 10 minutes.
 
 Pair as many computers as you like. Each one shows up in the app's **Computers** list.
+
+## Reaching the relay
+
+The phone talks to the relay over HTTPS, and the app only accepts certificates from a public certificate authority. It refuses plain HTTP and self-signed certificates. Keep the relay on `127.0.0.1` and put something in front of it that adds HTTPS and lets only your own devices through:
+
+- **Tailscale:** `tailscale serve` does both. It adds a certificate for the computer's tailnet name and keeps the relay inside your tailnet. `muxer pair` and `muxer doctor` set it up for you.
+- **Another VPN** (WireGuard, ZeroTier and so on) **or your local network:** run a reverse proxy such as [Caddy](https://caddyserver.com) on the computer. Point a domain you own at the computer's private address and get a Let's Encrypt certificate with a DNS challenge. Only do this on a network where you trust every device.
+- **Cloudflare Tunnel:** put the relay behind Cloudflare Access so only your devices get through. The app cannot complete a browser sign-in, so Access has to recognize the phone another way, for example through the Cloudflare One (WARP) client enrolled in your Zero Trust organization.
+
+Then pair with that address using `muxer pair --url`.
 
 ## Using the app
 
@@ -125,7 +137,7 @@ The relay logs to `~/Library/Logs/muxer.log`.
 - The phone can do what you can do in cmux: read every terminal and type into it. Pair only phones you control, and revoke lost ones.
 - Each phone gets its own random token. The computer stores only a SHA-256 hash of it, in `~/Library/Application Support/muxer/devices.json` (mode 0600). The phone keeps it encrypted with a key in the Android Keystore.
 - Pairing codes are single-use, expire after 10 minutes, and stop working after 10 wrong guesses.
-- The relay listens on `127.0.0.1` only. `tailscale serve` adds TLS and keeps it inside your tailnet. Never expose it with `tailscale funnel` or a public port.
+- The relay listens on `127.0.0.1` only. Put it behind an HTTPS proxy that only your devices can reach, such as `tailscale serve`. Never expose it with `tailscale funnel`, an open port, or a tunnel without access control.
 - Pairing, listing, and revoking use a Unix socket that only your user can open, never the network.
 - The relay only forwards the commands listed in the protocol below. It is not a general cmux socket proxy.
 
