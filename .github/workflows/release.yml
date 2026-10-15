@@ -123,3 +123,36 @@ jobs:
             git commit -m "muxer ${VERSION}"
             git push origin HEAD:main
           fi
+
+  virustotal:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ github.event.release.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Download the release files
+        run: |
+          gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.apk' --pattern '*.tar.gz' --dir "$RUNNER_TEMP/assets"
+
+      - name: Scan with VirusTotal
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: packaging/virustotal/scan.sh "$RUNNER_TEMP"/assets/* > "$RUNNER_TEMP/virustotal.md"
+
+      - name: Add the results to the release notes
+        run: |
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+            | awk '/^<!-- virustotal -->$/ { skip = 1 } !skip { print } /^<!-- \/virustotal -->$/ { skip = 0 }' \
+            | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$RUNNER_TEMP/notes.md"
+          {
+            echo
+            echo '<!-- virustotal -->'
+            cat "$RUNNER_TEMP/virustotal.md"
+            echo '<!-- /virustotal -->'
+          } >> "$RUNNER_TEMP/notes.md"
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
