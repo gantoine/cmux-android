@@ -97,7 +97,7 @@ class ConversationShortcuts(private val context: Context) {
             .setIntent(openIntent(shortcut))
             .setLongLived(true)
             .setPerson(agent)
-            .setCategories(setOf(CONVERSATION_CATEGORY))
+            .setCategories(ShortcutPlan.categories(shortcut))
             .setRank(rank)
             .build()
     }
@@ -134,7 +134,6 @@ class ConversationShortcuts(private val context: Context) {
     private fun appIcon(): IconCompat = IconCompat.createWithResource(context, R.mipmap.ic_launcher)
 
     companion object {
-        const val CONVERSATION_CATEGORY = "android.shortcut.conversation"
         private const val STATIC_SHORTCUTS = 1
         private const val SYNC_DEBOUNCE_MS = 1_000L
         private const val ADAPTIVE_ICON_DP = 108

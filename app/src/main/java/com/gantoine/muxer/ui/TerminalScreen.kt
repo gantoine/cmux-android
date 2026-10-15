@@ -104,7 +104,14 @@ import kotlinx.serialization.json.put
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, surfaceId: String, onBack: () -> Unit) {
+fun TerminalScreen(
+    app: MuxerApplication,
+    macId: String,
+    workspaceId: String,
+    surfaceId: String,
+    onBack: () -> Unit,
+    initialMessage: String = "",
+) {
     val connections by app.connections.connectionsFlow.collectAsState()
     val connection = connections[macId]
     if (connection == null) {
@@ -137,8 +144,8 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
     var fontSizeLoaded by remember { mutableStateOf(false) }
     var fitToPhone by remember { mutableStateOf(false) }
     var modifiers by remember { mutableStateOf(StickyModifiers()) }
-    var composerOpen by remember { mutableStateOf(false) }
-    var composerText by rememberSaveable { mutableStateOf("") }
+    var composerOpen by remember { mutableStateOf(initialMessage.isNotEmpty()) }
+    var composerText by rememberSaveable { mutableStateOf(initialMessage) }
     val dictation = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (!spoken.isNullOrBlank()) composerText = listOf(composerText.trimEnd(), spoken).filter { it.isNotEmpty() }.joinToString(" ")
