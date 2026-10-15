@@ -287,6 +287,59 @@ func (c *Client) Notifications(ctx context.Context) ([]Notification, error) {
 	return list.Notifications, err
 }
 
+type FeedOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+type FeedQuestion struct {
+	ID          string       `json:"id"`
+	Header      string       `json:"header"`
+	Prompt      string       `json:"prompt"`
+	MultiSelect bool         `json:"multi_select"`
+	Options     []FeedOption `json:"options"`
+}
+
+type FeedItem struct {
+	ID        string         `json:"id"`
+	Kind      string         `json:"kind"`
+	Status    string         `json:"status"`
+	RequestID string         `json:"request_id"`
+	Source    string         `json:"source"`
+	Title     string         `json:"title"`
+	ToolName  string         `json:"tool_name"`
+	ToolInput string         `json:"tool_input"`
+	Questions []FeedQuestion `json:"questions"`
+	Plan      string         `json:"plan"`
+	Cwd       string         `json:"cwd"`
+	CreatedAt string         `json:"created_at"`
+}
+
+func (c *Client) FeedItems(ctx context.Context) ([]FeedItem, error) {
+	var list struct {
+		Items []FeedItem `json:"items"`
+	}
+	err := c.Call(ctx, "feed.list", nil, &list)
+	return list.Items, err
+}
+
+func (c *Client) ReplyPermission(ctx context.Context, requestID, mode string) error {
+	return c.Call(ctx, "feed.permission.reply", map[string]any{"request_id": requestID, "mode": mode}, nil)
+}
+
+func (c *Client) ReplyExitPlan(ctx context.Context, requestID, mode, feedback string) error {
+	params := map[string]any{"request_id": requestID, "mode": mode}
+	if feedback != "" {
+		params["feedback"] = feedback
+	}
+	return c.Call(ctx, "feed.exit_plan.reply", params, nil)
+}
+
+func (c *Client) ReplyQuestion(ctx context.Context, requestID string, selections []string) error {
+	return c.Call(ctx, "feed.question.reply", map[string]any{"request_id": requestID, "selections": selections}, nil)
+}
+
 type Event struct {
 	Type        string          `json:"type"`
 	Seq         int64           `json:"seq"`

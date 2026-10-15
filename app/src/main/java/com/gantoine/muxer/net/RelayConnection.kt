@@ -2,6 +2,8 @@ package com.gantoine.muxer.net
 
 import com.gantoine.muxer.chat.ChatModel
 import com.gantoine.muxer.chat.ChatState
+import com.gantoine.muxer.protocol.Approval
+import com.gantoine.muxer.protocol.ApprovalsMessage
 import com.gantoine.muxer.protocol.ChatMessage
 import com.gantoine.muxer.protocol.ChatSessionMessage
 import com.gantoine.muxer.protocol.DetachedMessage
@@ -39,6 +41,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -84,6 +88,9 @@ class RelayConnection(
     private val _chat = MutableStateFlow<ChatState?>(null)
     val chat: StateFlow<ChatState?> = _chat.asStateFlow()
 
+    private val _approvals = MutableStateFlow<List<Approval>>(emptyList())
+    val approvals: StateFlow<List<Approval>> = _approvals.asStateFlow()
+
     private val _detached = MutableSharedFlow<DetachedMessage>(extraBufferCapacity = 8)
     val detached: SharedFlow<DetachedMessage> = _detached.asSharedFlow()
 
@@ -113,6 +120,7 @@ class RelayConnection(
         socket?.close(1000, "closing")
         socket = null
         failPending("The connection closed.")
+        _approvals.value = emptyList()
         _state.value = ConnectionState.Stopped
     }
 
@@ -141,6 +149,7 @@ class RelayConnection(
                 return
             }
             if (reason.wasConnected) backoffMs = 1_000L
+            _approvals.value = emptyList()
             _state.value = ConnectionState.Disconnected(reason.message)
             delay(backoffMs)
             backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
@@ -224,6 +233,9 @@ class RelayConnection(
                     _chat.value = null
                 }
                 _detached.tryEmit(detached)
+            }
+            "approvals" -> {
+                _approvals.value = RelayJson.decodeFromJsonElement(ApprovalsMessage.serializer(), message).approvals
             }
             "notification" -> {
                 notifications.trySend(RelayJson.decodeFromJsonElement(NotificationMessage.serializer(), message).notification)
@@ -312,6 +324,29 @@ class RelayConnection(
         request("history", buildJsonObject { put("lines", lines) }).mapCatching { data ->
             data?.let { RelayJson.decodeFromJsonElement(HistoryResponse.serializer(), it) } ?: HistoryResponse()
         }
+
+    suspend fun allow(approvalId: String, mode: String): Result<Unit> =
+        request("answer_approval", buildJsonObject {
+            put("approval_id", approvalId)
+            put("mode", mode)
+        }).map { forget(approvalId) }
+
+    suspend fun decidePlan(approvalId: String, mode: String, feedback: String? = null): Result<Unit> =
+        request("answer_approval", buildJsonObject {
+            put("approval_id", approvalId)
+            put("mode", mode)
+            if (!feedback.isNullOrBlank()) put("feedback", feedback)
+        }).map { forget(approvalId) }
+
+    suspend fun answer(approvalId: String, answers: List<String>): Result<Unit> =
+        request("answer_approval", buildJsonObject {
+            put("approval_id", approvalId)
+            putJsonArray("answers") { answers.forEach { add(it) } }
+        }).map { forget(approvalId) }
+
+    private fun forget(approvalId: String) {
+        _approvals.value = _approvals.value.filterNot { it.id == approvalId }
+    }
 
     private fun sendAttach(target: Attachment) {
         send("attach", buildJsonObject {

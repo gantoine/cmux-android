@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/gantoine/muxer/relay/internal/approvals"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
 	"github.com/gantoine/muxer/relay/internal/screen"
@@ -368,6 +369,26 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		terminalID, err := s.server.cmux.CreateTerminal(ctx, request.WorkspaceID)
 		s.wakeWorkspaces()
 		return map[string]string{"surface_id": terminalID}, err
+	case "answer_approval":
+		var request struct {
+			ApprovalID string `json:"approval_id"`
+			approvals.Answer
+		}
+		if err := json.Unmarshal(raw, &request); err != nil || request.ApprovalID == "" {
+			return nil, &requestError{Code: "invalid_params", Message: "answer_approval needs approval_id and either mode or answers."}
+		}
+		if s.server.options.Approvals == nil {
+			return nil, &requestError{Code: "unsupported", Message: "This relay can't answer agent requests."}
+		}
+		err := s.server.options.Approvals.Answer(ctx, request.ApprovalID, request.Answer)
+		if errors.Is(err, approvals.ErrNotPending) {
+			return nil, &requestError{Code: "not_pending", Message: "That request was already answered or timed out."}
+		}
+		var rpcErr *cmux.RPCError
+		if err != nil && !errors.As(err, &rpcErr) {
+			return nil, &requestError{Code: "invalid_params", Message: err.Error()}
+		}
+		return nil, err
 	default:
 		return nil, &requestError{Code: "unknown_type", Message: fmt.Sprintf("Unknown message type %q.", kind)}
 	}
@@ -395,6 +416,7 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 	if !alreadyStarted {
 		go s.watchWorkspaces()
 		go s.forwardNotifications(notificationsAfter)
+		go s.forwardApprovals()
 	}
 	return welcome, nil
 }
@@ -438,6 +460,27 @@ func (s *session) forwardNotifications(after int64) {
 			return
 		case notification := <-updates:
 			s.send(map[string]any{"type": "notification", "notification": notification})
+		}
+	}
+}
+
+func (s *session) forwardApprovals() {
+	tracker := s.server.options.Approvals
+	if tracker == nil {
+		return
+	}
+	changes, unsubscribe := tracker.Subscribe()
+	defer unsubscribe()
+	for {
+		pending := tracker.Pending()
+		if pending == nil {
+			pending = []approvals.Approval{}
+		}
+		s.send(map[string]any{"type": "approvals", "approvals": pending})
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-changes:
 		}
 	}
 }

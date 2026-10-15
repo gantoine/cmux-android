@@ -1,0 +1,261 @@
+package com.gantoine.muxer.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.dp
+import com.gantoine.muxer.protocol.Approval
+import com.gantoine.muxer.protocol.ApprovalQuestion
+import kotlinx.coroutines.delay
+import java.time.Instant
+
+sealed interface ApprovalReply {
+    data class Permission(val mode: String) : ApprovalReply
+    data class Answers(val answers: List<String>) : ApprovalReply
+    data class Plan(val mode: String, val feedback: String? = null) : ApprovalReply
+}
+
+object Approvals {
+    const val MODE_ONCE = "once"
+    const val MODE_ALWAYS = "always"
+    const val MODE_DENY = "deny"
+    const val PLAN_MANUAL = "manual"
+    const val PLAN_AUTO_ACCEPT = "autoAccept"
+    const val PLAN_DENY = "deny"
+    private const val ANSWER_WINDOW_SECONDS = 120L
+
+    fun agentName(approval: Approval): String =
+        approval.agent?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "The agent"
+
+    fun title(approval: Approval): String = when {
+        approval.isPermission -> "${agentName(approval)} wants to use ${approval.tool ?: "a tool"}"
+        approval.isPlan -> "${agentName(approval)} has a plan ready"
+        approval.questions.size == 1 -> "${agentName(approval)} is asking"
+        else -> "${agentName(approval)} has ${approval.questions.size} questions"
+    }
+
+    fun summary(approval: Approval): String = when {
+        approval.isPermission -> approval.detail ?: approval.description.orEmpty()
+        approval.isPlan -> approval.plan.orEmpty().lineSequence().map { it.trim().trimStart('#').trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+        else -> approval.questions.firstOrNull()?.prompt.orEmpty()
+    }
+
+    fun secondsLeft(approval: Approval, now: Instant): Long? {
+        val created = approval.createdAt?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return null
+        return (ANSWER_WINDOW_SECONDS - (now.epochSecond - created.epochSecond)).coerceAtLeast(0)
+    }
+
+    fun answer(question: ApprovalQuestion, chosen: Set<Int>): String =
+        question.options.filterIndexed { index, _ -> index in chosen }.joinToString(", ") { it.label }
+}
+
+@Composable
+fun ApprovalCard(
+    approval: Approval,
+    sending: Boolean,
+    onReply: (ApprovalReply) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(Approvals.title(approval), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                TimeLeft(approval)
+            }
+            when {
+                approval.isPermission -> PermissionBody(approval, sending, onReply)
+                approval.isPlan -> PlanBody(approval, sending, onReply)
+                else -> QuestionBody(approval, sending, onReply)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeLeft(approval: Approval) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(approval.id) {
+        while (true) {
+            delay(1_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    val seconds = Approvals.secondsLeft(approval, Instant.ofEpochMilli(now)) ?: return
+    Text(
+        if (seconds == 0L) "Answer in the terminal" else "%d:%02d".format(seconds / 60, seconds % 60),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f),
+    )
+}
+
+@Composable
+private fun PermissionBody(approval: Approval, sending: Boolean, onReply: (ApprovalReply) -> Unit) {
+    approval.description?.takeIf { it.isNotBlank() && it != approval.detail }?.let {
+        Text(it, style = MaterialTheme.typography.bodyMedium)
+    }
+    approval.detail?.takeIf { it.isNotBlank() }?.let { detail ->
+        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 160.dp)
+                    .verticalScroll(rememberScrollState())
+                    .horizontalScroll(rememberScrollState())
+                    .padding(10.dp),
+            )
+        }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Button(onClick = { onReply(ApprovalReply.Permission(Approvals.MODE_ONCE)) }, enabled = !sending) { Text("Allow") }
+        OutlinedButton(onClick = { onReply(ApprovalReply.Permission(Approvals.MODE_ALWAYS)) }, enabled = !sending) { Text("Always allow") }
+        TextButton(onClick = { onReply(ApprovalReply.Permission(Approvals.MODE_DENY)) }, enabled = !sending) { Text("Deny") }
+    }
+}
+
+@Composable
+private fun PlanBody(approval: Approval, sending: Boolean, onReply: (ApprovalReply) -> Unit) {
+    var revising by remember(approval.id) { mutableStateOf(false) }
+    var feedback by remember(approval.id) { mutableStateOf("") }
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
+            MarkdownText(approval.plan.orEmpty())
+        }
+    }
+    if (revising) {
+        OutlinedTextField(
+            value = feedback,
+            onValueChange = { feedback = it },
+            placeholder = { Text("What should change?") },
+            maxLines = 5,
+            enabled = !sending,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Button(
+                onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_MANUAL, feedback.trim())) },
+                enabled = feedback.isNotBlank() && !sending,
+            ) { Text("Send changes") }
+            TextButton(onClick = { revising = false }, enabled = !sending) { Text("Cancel") }
+        }
+    } else {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Button(onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_MANUAL)) }, enabled = !sending) { Text("Approve") }
+            OutlinedButton(onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_AUTO_ACCEPT)) }, enabled = !sending) { Text("Approve, auto-edit") }
+            TextButton(onClick = { revising = true }, enabled = !sending) { Text("Revise") }
+            TextButton(onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_DENY)) }, enabled = !sending) { Text("Reject") }
+        }
+    }
+}
+
+@Composable
+private fun QuestionBody(approval: Approval, sending: Boolean, onReply: (ApprovalReply) -> Unit) {
+    var chosen by remember(approval.id) { mutableStateOf(approval.questions.map { emptySet<Int>() }) }
+    Column(
+        Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        approval.questions.forEachIndexed { questionIndex, question ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                question.header?.takeIf { it.isNotBlank() && approval.questions.size > 1 }?.let {
+                    Text(it, style = MaterialTheme.typography.labelLarge)
+                }
+                Text(question.prompt, style = MaterialTheme.typography.bodyMedium)
+                question.options.forEachIndexed { optionIndex, option ->
+                    val selected = optionIndex in chosen[questionIndex]
+                    fun choose() {
+                        val current = chosen[questionIndex]
+                        val next = when {
+                            !question.multiSelect -> setOf(optionIndex)
+                            selected -> current - optionIndex
+                            else -> current + optionIndex
+                        }
+                        chosen = chosen.toMutableList().also { it[questionIndex] = next }
+                    }
+                    val selection = if (question.multiSelect) {
+                        Modifier.toggleable(value = selected, enabled = !sending, role = Role.Checkbox, onValueChange = { choose() })
+                    } else {
+                        Modifier.selectable(selected = selected, enabled = !sending, role = Role.RadioButton, onClick = ::choose)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(12.dp)).then(selection),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (question.multiSelect) {
+                            Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+                        } else {
+                            RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(12.dp))
+                        }
+                        Column(Modifier.padding(end = 12.dp, top = 6.dp, bottom = 6.dp)) {
+                            Text(option.label, style = MaterialTheme.typography.bodyLarge)
+                            option.description?.takeIf { it.isNotBlank() }?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    val complete = chosen.all { it.isNotEmpty() }
+    Button(
+        onClick = { onReply(ApprovalReply.Answers(approval.questions.mapIndexed { index, question -> Approvals.answer(question, chosen[index]) })) },
+        enabled = complete && !sending,
+    ) { Text("Send answer") }
+}
+
+@Composable
+fun ApprovalCards(
+    approvals: List<Approval>,
+    sending: Set<String>,
+    onReply: (Approval, ApprovalReply) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (approvals.isEmpty()) return
+    Column(modifier) {
+        approvals.forEach { approval ->
+            ApprovalCard(approval, sending = approval.id in sending, onReply = { reply -> onReply(approval, reply) })
+        }
+    }
+}

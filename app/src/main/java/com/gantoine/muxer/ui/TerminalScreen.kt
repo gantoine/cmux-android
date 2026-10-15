@@ -80,6 +80,7 @@ import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.MacStore
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.VisibleTerminal
+import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.terminal.TerminalBottomPadding
 import com.gantoine.muxer.terminal.TerminalCanvas
 import com.gantoine.muxer.terminal.TerminalContent
@@ -109,6 +110,9 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
     val screen by connection.screen.collectAsState()
     val workspaces by connection.workspaces.collectAsState()
     val chat by connection.chat.collectAsState()
+    val allApprovals by connection.approvals.collectAsState()
+    val approvals = allApprovals.filter { it.surfaceId == surfaceId }
+    var sendingApprovals by remember { mutableStateOf(emptySet<String>()) }
     val terminal = workspaces?.firstOrNull { it.id == workspaceId }?.terminals?.firstOrNull { it.id == surfaceId }
     val workspace = workspaces?.firstOrNull { it.id == workspaceId }
     val snackbar = remember { SnackbarHostState() }
@@ -168,6 +172,19 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
             connection.request(type, buildJsonObject(build)).onFailure {
                 snackbar.showSnackbar(it.message ?: "The computer did not accept that.")
             }
+        }
+    }
+
+    fun reply(approval: Approval, reply: ApprovalReply) {
+        sendingApprovals = sendingApprovals + approval.id
+        scope.launch {
+            val result = when (reply) {
+                is ApprovalReply.Permission -> connection.allow(approval.id, reply.mode)
+                is ApprovalReply.Answers -> connection.answer(approval.id, reply.answers)
+                is ApprovalReply.Plan -> connection.decidePlan(approval.id, reply.mode, reply.feedback)
+            }
+            sendingApprovals = sendingApprovals - approval.id
+            result.onFailure { snackbar.showSnackbar(it.message ?: "Could not send your answer.") }
         }
     }
 
@@ -265,11 +282,13 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             AnimatedVisibility(visible = state !is ConnectionState.Connected) { ConnectionBanner(state) }
+            ApprovalCards(approvals, sending = sendingApprovals, onReply = ::reply)
             val currentChat = chat
             if (showChat && currentChat != null) {
                 ChatView(
                     chat = currentChat,
                     status = terminal?.let(WorkspaceListing::agentStatus),
+                    answeringHere = approvals.isNotEmpty(),
                     draft = composerText,
                     onDraftChange = { composerText = it },
                     onSend = ::sendMessage,

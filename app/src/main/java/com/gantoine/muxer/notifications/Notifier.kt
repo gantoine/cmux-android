@@ -14,7 +14,9 @@ import androidx.core.content.ContextCompat
 import com.gantoine.muxer.MainActivity
 import com.gantoine.muxer.R
 import com.gantoine.muxer.data.Mac
+import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
+import com.gantoine.muxer.ui.Approvals
 
 class Notifier(private val context: Context) {
     fun createChannels() {
@@ -57,21 +59,88 @@ class Notifier(private val context: Context) {
         NotificationManagerCompat.from(context).cancel(notification.id.hashCode())
     }
 
-    private fun openTerminalIntent(macId: String, notification: RelayNotification): PendingIntent {
+    fun showApproval(mac: Mac, approval: Approval) {
+        if (!canNotify()) return
+        val summary = Approvals.summary(approval)
+        val body = listOfNotNull(
+            approval.description?.takeIf { approval.isPermission && it.isNotBlank() && it != approval.detail },
+            summary,
+        ).joinToString("\n")
+        val builder = NotificationCompat.Builder(context, AGENT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(Approvals.title(approval))
+            .setSubText(mac.name)
+            .setContentText(summary)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setGroup(mac.id)
+            .setContentIntent(openTerminalIntent(mac.id, approval.workspaceId, approval.surfaceId, approvalNotificationId(approval.id)))
+        approvalActions(mac.id, approval).forEach { (label, intent) -> builder.addAction(0, label, intent) }
+        @Suppress("MissingPermission")
+        NotificationManagerCompat.from(context).notify(approvalNotificationId(approval.id), builder.build())
+    }
+
+    fun showApprovalFailed(macName: String, approval: ApprovalTarget, message: String) {
+        if (!canNotify()) return
+        val built = NotificationCompat.Builder(context, AGENT_CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Your answer didn't reach $macName")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$message\nOpen the terminal to answer there."))
+            .setAutoCancel(true)
+            .setGroup(approval.macId)
+            .setContentIntent(openTerminalIntent(approval.macId, approval.workspaceId, approval.surfaceId, approvalNotificationId(approval.approvalId)))
+            .build()
+        @Suppress("MissingPermission")
+        NotificationManagerCompat.from(context).notify(approvalNotificationId(approval.approvalId), built)
+    }
+
+    fun dismissApproval(approvalId: String) {
+        NotificationManagerCompat.from(context).cancel(approvalNotificationId(approvalId))
+    }
+
+    private fun approvalActions(macId: String, approval: Approval): List<Pair<String, PendingIntent>> {
+        val target = ApprovalTarget(macId, approval.id, approval.workspaceId, approval.surfaceId)
+        if (approval.isPermission) {
+            return listOf(
+                "Allow" to ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ONCE),
+                "Always allow" to ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ALWAYS),
+                "Deny" to ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_DENY),
+            )
+        }
+        if (approval.isPlan) {
+            return listOf(
+                "Approve" to ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_MANUAL, plan = true),
+                "Auto-edit" to ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_AUTO_ACCEPT, plan = true),
+                "Reject" to ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_DENY, plan = true),
+            )
+        }
+        val question = approval.questions.singleOrNull() ?: return emptyList()
+        if (question.multiSelect || question.options.size !in 1..MAX_NOTIFICATION_ACTIONS) return emptyList()
+        return question.options.map { option -> option.label to ApprovalActionReceiver.intent(context, target, answer = option.label) }
+    }
+
+    private fun openTerminalIntent(macId: String, notification: RelayNotification): PendingIntent =
+        openTerminalIntent(macId, notification.workspaceId, notification.surfaceId, notification.id.hashCode())
+
+    private fun openTerminalIntent(macId: String, workspaceId: String?, surfaceId: String?, requestCode: Int): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             action = ACTION_OPEN_TERMINAL
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_MAC_ID, macId)
-            putExtra(EXTRA_WORKSPACE_ID, notification.workspaceId)
-            putExtra(EXTRA_SURFACE_ID, notification.surfaceId)
+            putExtra(EXTRA_WORKSPACE_ID, workspaceId)
+            putExtra(EXTRA_SURFACE_ID, surfaceId)
         }
         return PendingIntent.getActivity(
             context,
-            notification.id.hashCode(),
+            requestCode,
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
     }
+
+    private fun approvalNotificationId(approvalId: String): Int = "approval:$approvalId".hashCode()
 
     companion object {
         const val AGENT_CHANNEL = "agents"
@@ -80,5 +149,6 @@ class Notifier(private val context: Context) {
         const val EXTRA_MAC_ID = "mac_id"
         const val EXTRA_WORKSPACE_ID = "workspace_id"
         const val EXTRA_SURFACE_ID = "surface_id"
+        private const val MAX_NOTIFICATION_ACTIONS = 3
     }
 }

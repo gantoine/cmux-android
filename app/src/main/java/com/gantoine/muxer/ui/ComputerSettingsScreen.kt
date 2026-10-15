@@ -103,11 +103,24 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
             SettingsGroup {
                 SettingsRow(
                     index = 0,
-                    count = 1,
+                    count = 2,
                     headline = "Notify me in the background",
                     supporting = "Keeps a connection to this computer open so agent and terminal alerts arrive while the app is closed. Uses some battery.",
                     onClick = { setBackground(!mac.backgroundNotifications) },
                     trailing = { Switch(checked = mac.backgroundNotifications, onCheckedChange = ::setBackground) },
+                )
+                SettingsRow(
+                    index = 1,
+                    count = 2,
+                    headline = "Tell me when an agent finishes",
+                    supporting = "Sends a notification with the agent's last message when it completes a task.",
+                    onClick = { scope.launch { app.store.setCompletionNotifications(macId, !mac.completionNotifications) } },
+                    trailing = {
+                        Switch(
+                            checked = mac.completionNotifications,
+                            onCheckedChange = { enabled -> scope.launch { app.store.setCompletionNotifications(macId, enabled) } },
+                        )
+                    },
                 )
             }
 

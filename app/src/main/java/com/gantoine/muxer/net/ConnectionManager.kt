@@ -2,9 +2,12 @@ package com.gantoine.muxer.net
 
 import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.data.MacStore
+import com.gantoine.muxer.notifications.NotificationFilter
+import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.Welcome
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,8 +24,11 @@ class ConnectionManager(
     private val scope: CoroutineScope,
     private val notify: (Mac, RelayNotification) -> Unit,
     private val dismiss: (RelayNotification) -> Unit,
+    private val notifyApproval: (Mac, Approval) -> Unit,
+    private val dismissApproval: (String) -> Unit,
 ) {
     private val connections = mutableMapOf<String, RelayConnection>()
+    private val approvalWatchers = mutableMapOf<String, Job>()
     private val _connectionsFlow = MutableStateFlow<Map<String, RelayConnection>>(emptyMap())
     val connectionsFlow: StateFlow<Map<String, RelayConnection>> = _connectionsFlow.asStateFlow()
 
@@ -45,7 +51,10 @@ class ConnectionManager(
     private fun reconcile(macs: List<Mac>, appVisible: Boolean) {
         synchronized(connections) {
             val ids = macs.map { it.id }.toSet()
-            connections.keys.filterNot { it in ids }.forEach { connections.remove(it)?.stop() }
+            connections.keys.filterNot { it in ids }.forEach {
+                connections.remove(it)?.stop()
+                approvalWatchers.remove(it)?.cancel()
+            }
             for (mac in macs) {
                 val existing = connections[mac.id]
                 if (existing == null) {
@@ -59,7 +68,7 @@ class ConnectionManager(
                         notificationsAfter = { store.current().firstOrNull { it.id == mac.id }?.lastNotificationSeq ?: 0 },
                         onNotification = ::handleNotification,
                         onWelcome = ::handleWelcome,
-                    )
+                    ).also { approvalWatchers[mac.id] = scope.launch { watchApprovals(mac.id, it) } }
                 }
             }
             for (mac in macs) {
@@ -67,6 +76,30 @@ class ConnectionManager(
                 if (appVisible || mac.backgroundNotifications) connection.start() else connection.stop()
             }
             _connectionsFlow.value = connections.toMap()
+        }
+    }
+
+    private fun isLookingAt(macId: String, surfaceId: String?): Boolean {
+        val visible = visibleTerminal.value
+        return appVisible.value && visible?.macId == macId && visible.surfaceId == surfaceId
+    }
+
+    private suspend fun watchApprovals(macId: String, connection: RelayConnection) {
+        var shown = emptySet<String>()
+        try {
+            connection.approvals.collect { approvals ->
+                val ids = approvals.map { it.id }.toSet()
+                (shown - ids).forEach(dismissApproval)
+                val mac = store.current().firstOrNull { it.id == macId }
+                if (mac != null) {
+                    approvals
+                        .filter { it.id !in shown && !isLookingAt(macId, it.surfaceId) }
+                        .forEach { notifyApproval(mac, it) }
+                }
+                shown = ids
+            }
+        } finally {
+            shown.forEach(dismissApproval)
         }
     }
 
@@ -81,9 +114,9 @@ class ConnectionManager(
         store.recordNotificationSeq(macId, notification.seq)
         when (notification.kind) {
             "created" -> {
-                val visible = visibleTerminal.value
-                val looking = appVisible.value && visible?.macId == macId && visible.surfaceId == notification.surfaceId
-                if (!looking) notify(mac, notification)
+                val answerableHere = connection(macId)?.approvals?.value.orEmpty().any { it.surfaceId == notification.surfaceId }
+                val wanted = NotificationFilter.shouldShow(mac, notification)
+                if (wanted && !isLookingAt(macId, notification.surfaceId) && !answerableHere) notify(mac, notification)
             }
             "dismissed" -> dismiss(notification)
         }
