@@ -371,3 +371,30 @@ func (c *Client) Events(ctx context.Context, afterSeq *int64, categories []strin
 		return handle(event)
 	})
 }
+
+type AgentMessage struct {
+	ID                 string   `json:"id"`
+	ThreadID           string   `json:"thread_id"`
+	SenderName         string   `json:"sender_name"`
+	RecipientSurfaceID string   `json:"recipient_surface_id"`
+	Body               string   `json:"body"`
+	State              string   `json:"state"`
+	CreatedAt          float64  `json:"created_at"`
+	DeliveredAt        *float64 `json:"delivered_at"`
+	ReadAt             *float64 `json:"read_at"`
+	FailureReason      string   `json:"failure_reason"`
+}
+
+func (c *Client) SendAgentMessage(ctx context.Context, target, from, body string) (AgentMessage, error) {
+	var message AgentMessage
+	err := c.Call(ctx, "agent.message.send", map[string]any{"target": target, "from": from, "body": body}, &message)
+	return message, err
+}
+
+func (c *Client) AgentMessages(ctx context.Context, surfaceID string, limit int) ([]AgentMessage, error) {
+	var list struct {
+		Messages []AgentMessage `json:"messages"`
+	}
+	err := c.Call(ctx, "agent.message.list", map[string]any{"surface": surfaceID, "limit": limit}, &list)
+	return list.Messages, err
+}

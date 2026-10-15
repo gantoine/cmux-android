@@ -17,6 +17,7 @@ import (
 
 	"github.com/mdp/qrterminal/v3"
 
+	"github.com/gantoine/muxer/relay/internal/agents"
 	"github.com/gantoine/muxer/relay/internal/approvals"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
@@ -115,6 +116,8 @@ func runServe(args []string) error {
 	go hub.Run(ctx)
 	approvalTracker := approvals.NewTracker(client, logger)
 	go approvalTracker.Run(ctx)
+	agentTracker := agents.NewTracker(client, logger)
+	go agentTracker.Run(ctx)
 	adminErr := make(chan error, 1)
 	go func() {
 		if err := server.ServeAdmin(ctx, paths.admin, store); err != nil {
@@ -123,7 +126,7 @@ func runServe(args []string) error {
 		}
 	}()
 
-	relay := server.New(client, store, hub, server.Options{MacName: macName, RelayVersion: version, Approvals: approvalTracker}, logger)
+	relay := server.New(client, store, hub, server.Options{MacName: macName, RelayVersion: version, Approvals: approvalTracker, Agents: agentTracker}, logger)
 	httpServer := &http.Server{
 		Addr:              listen,
 		Handler:           relay.Handler(),

@@ -28,7 +28,8 @@ class ConnectionManager(
     private val dismissApproval: (String) -> Unit,
 ) {
     private val connections = mutableMapOf<String, RelayConnection>()
-    private val approvalWatchers = mutableMapOf<String, Job>()
+    private val watchers = mutableMapOf<String, Job>()
+    private val shownBySurface = mutableMapOf<Pair<String, String>, List<RelayNotification>>()
     private val _connectionsFlow = MutableStateFlow<Map<String, RelayConnection>>(emptyMap())
     val connectionsFlow: StateFlow<Map<String, RelayConnection>> = _connectionsFlow.asStateFlow()
 
@@ -53,7 +54,7 @@ class ConnectionManager(
             val ids = macs.map { it.id }.toSet()
             connections.keys.filterNot { it in ids }.forEach {
                 connections.remove(it)?.stop()
-                approvalWatchers.remove(it)?.cancel()
+                watchers.remove(it)?.cancel()
             }
             for (mac in macs) {
                 val existing = connections[mac.id]
@@ -68,7 +69,12 @@ class ConnectionManager(
                         notificationsAfter = { store.current().firstOrNull { it.id == mac.id }?.lastNotificationSeq ?: 0 },
                         onNotification = ::handleNotification,
                         onWelcome = ::handleWelcome,
-                    ).also { approvalWatchers[mac.id] = scope.launch { watchApprovals(mac.id, it) } }
+                    ).also { connection ->
+                        watchers[mac.id] = scope.launch {
+                            launch { watchApprovals(mac.id, connection) }
+                            launch { watchRetries(mac.id, connection) }
+                        }
+                    }
                 }
             }
             for (mac in macs) {
@@ -103,6 +109,34 @@ class ConnectionManager(
         }
     }
 
+    private suspend fun watchRetries(macId: String, connection: RelayConnection) {
+        connection.retries.collect { retries ->
+            retries.forEach { retry -> dismissShown(macId, retry.surfaceId) }
+        }
+    }
+
+    private fun dismissShown(macId: String, surfaceId: String) {
+        val shown = synchronized(shownBySurface) { shownBySurface.remove(macId to surfaceId) }.orEmpty()
+        shown.forEach(dismiss)
+    }
+
+    private fun recordShown(macId: String, notification: RelayNotification) {
+        val surfaceId = notification.surfaceId ?: return
+        synchronized(shownBySurface) {
+            val key = macId to surfaceId
+            shownBySurface[key] = (shownBySurface[key].orEmpty() + notification).takeLast(MAX_TRACKED_PER_TERMINAL)
+        }
+    }
+
+    private fun forgetShown(macId: String, notification: RelayNotification) {
+        synchronized(shownBySurface) {
+            shownBySurface.keys.filter { it.first == macId }.forEach { key ->
+                val remaining = shownBySurface[key].orEmpty().filterNot { it.id == notification.id }
+                if (remaining.isEmpty()) shownBySurface.remove(key) else shownBySurface[key] = remaining
+            }
+        }
+    }
+
     private suspend fun handleWelcome(macId: String, welcome: Welcome) {
         val mac = store.current().firstOrNull { it.id == macId } ?: return
         if (mac.lastNotificationSeq == 0L) store.recordNotificationSeq(macId, welcome.notificationSeq)
@@ -114,11 +148,23 @@ class ConnectionManager(
         store.recordNotificationSeq(macId, notification.seq)
         when (notification.kind) {
             "created" -> {
-                val answerableHere = connection(macId)?.approvals?.value.orEmpty().any { it.surfaceId == notification.surfaceId }
+                val connection = connection(macId)
+                val answerableHere = connection?.approvals?.value.orEmpty().any { it.surfaceId == notification.surfaceId }
+                val retrying = connection?.retries?.value.orEmpty().any { it.surfaceId == notification.surfaceId }
                 val wanted = NotificationFilter.shouldShow(mac, notification)
-                if (wanted && !isLookingAt(macId, notification.surfaceId) && !answerableHere) notify(mac, notification)
+                if (wanted && !isLookingAt(macId, notification.surfaceId) && !answerableHere && !retrying) {
+                    notify(mac, notification)
+                    recordShown(macId, notification)
+                }
             }
-            "dismissed" -> dismiss(notification)
+            "dismissed" -> {
+                dismiss(notification)
+                forgetShown(macId, notification)
+            }
         }
+    }
+
+    private companion object {
+        const val MAX_TRACKED_PER_TERMINAL = 10
     }
 }

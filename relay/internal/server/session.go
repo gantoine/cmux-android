@@ -14,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/gantoine/muxer/relay/internal/agents"
 	"github.com/gantoine/muxer/relay/internal/approvals"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
@@ -389,6 +390,27 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			return nil, &requestError{Code: "invalid_params", Message: err.Error()}
 		}
 		return nil, err
+	case "send_agent_message":
+		var request struct {
+			Text string `json:"text"`
+		}
+		_ = json.Unmarshal(raw, &request)
+		if s.server.options.Agents == nil {
+			return nil, &requestError{Code: "unsupported", Message: "This relay can't message agents."}
+		}
+		var sent cmux.AgentMessage
+		err := s.withTerminal(func(current *attachment) error {
+			var err error
+			sent, err = s.server.options.Agents.Send(ctx, current.surfaceID, s.device.Name, request.Text)
+			return err
+		})
+		if errors.Is(err, agents.ErrInvalidMessage) {
+			return nil, &requestError{Code: "invalid_params", Message: "Write a message of up to 32 KB."}
+		}
+		if err != nil {
+			return nil, err
+		}
+		return sent, nil
 	default:
 		return nil, &requestError{Code: "unknown_type", Message: fmt.Sprintf("Unknown message type %q.", kind)}
 	}
@@ -417,6 +439,7 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 		go s.watchWorkspaces()
 		go s.forwardNotifications(notificationsAfter)
 		go s.forwardApprovals()
+		go s.forwardAgentActivity()
 	}
 	return welcome, nil
 }
@@ -485,6 +508,53 @@ func (s *session) forwardApprovals() {
 	}
 }
 
+func (s *session) forwardAgentActivity() {
+	tracker := s.server.options.Agents
+	if tracker == nil {
+		return
+	}
+	changes, unsubscribe := tracker.SubscribeActivity()
+	defer unsubscribe()
+	for {
+		s.send(map[string]any{"type": "agent_activity", "retries": tracker.Retries(), "busy": tracker.Busy()})
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-changes:
+		}
+	}
+}
+
+func (s *session) watchAgentMessages(ctx context.Context, current *attachment) {
+	tracker := s.server.options.Agents
+	if tracker == nil {
+		return
+	}
+	changes, unsubscribe := tracker.SubscribeMessages(current.surfaceID)
+	defer unsubscribe()
+	for {
+		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
+		messages, err := tracker.Messages(callCtx, current.surfaceID)
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			s.server.logger.Warn("could not list agent messages", "error", err)
+		} else {
+			if messages == nil {
+				messages = []cmux.AgentMessage{}
+			}
+			s.send(map[string]any{"type": "agent_messages", "surface_id": current.surfaceID, "messages": messages})
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-changes:
+		}
+	}
+}
+
 func (s *session) wakeWorkspaces() {
 	select {
 	case s.workspacesWake <- struct{}{}:
@@ -532,6 +602,7 @@ func (s *session) attach(workspaceID, surfaceID string) {
 	s.mu.Unlock()
 	go s.pollTerminal(ctx, current)
 	go s.watchChat(ctx, current)
+	go s.watchAgentMessages(ctx, current)
 }
 
 func (s *session) detach() {

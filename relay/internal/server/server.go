@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/gantoine/muxer/relay/internal/agents"
 	"github.com/gantoine/muxer/relay/internal/approvals"
 	"github.com/gantoine/muxer/relay/internal/claude"
 	"github.com/gantoine/muxer/relay/internal/cmux"
@@ -46,6 +47,15 @@ type Approvals interface {
 	Answer(ctx context.Context, id string, answer approvals.Answer) error
 }
 
+type Agents interface {
+	Retries() []agents.Retry
+	Busy() []string
+	SubscribeActivity() (<-chan struct{}, func())
+	SubscribeMessages(surfaceID string) (<-chan struct{}, func())
+	Send(ctx context.Context, surfaceID, deviceName, body string) (cmux.AgentMessage, error)
+	Messages(ctx context.Context, surfaceID string) ([]cmux.AgentMessage, error)
+}
+
 type Options struct {
 	MacName         string
 	RelayVersion    string
@@ -53,6 +63,7 @@ type Options struct {
 	ClaudeConfigDir string
 	ClaudeSession   func(surfaceID string) (claude.SessionRef, bool)
 	Approvals       Approvals
+	Agents          Agents
 }
 
 type Server struct {

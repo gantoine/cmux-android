@@ -79,8 +79,10 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.MacStore
 import com.gantoine.muxer.net.ConnectionState
+import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.net.VisibleTerminal
 import com.gantoine.muxer.protocol.Approval
+import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.terminal.TerminalBottomPadding
 import com.gantoine.muxer.terminal.TerminalCanvas
 import com.gantoine.muxer.terminal.TerminalContent
@@ -113,8 +115,17 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
     val allApprovals by connection.approvals.collectAsState()
     val approvals = allApprovals.filter { it.surfaceId == surfaceId }
     var sendingApprovals by remember { mutableStateOf(emptySet<String>()) }
+    val retries by connection.retries.collectAsState()
+    val retry = retries.firstOrNull { it.surfaceId == surfaceId }
+    val agentMessages by connection.agentMessages.collectAsState()
+    val busySurfaces by connection.busySurfaces.collectAsState()
+    val midTurn = surfaceId in busySurfaces
     val terminal = workspaces?.firstOrNull { it.id == workspaceId }?.terminals?.firstOrNull { it.id == surfaceId }
     val workspace = workspaces?.firstOrNull { it.id == workspaceId }
+    val agentStatus = terminal?.let(WorkspaceListing::agentStatus)
+    val messagingAgent = AgentMessaging.shouldMessage(agentStatus, approvals.isNotEmpty())
+    val waitingOnYou = approvals.isNotEmpty() || agentStatus is AgentStatus.NeedsYou
+    val questionOpen = approvals.any { it.isQuestion }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -218,15 +229,32 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
         }
     }
 
-    fun sendMessage() {
-        val message = composerText.trim()
-        if (message.isEmpty()) return
+    fun pasteMessage(message: String) {
         if (!viewport.isLive) goLive()
         perform("paste") {
             put("text", message)
             put("submit", true)
         }
+    }
+
+    fun sendMessage() {
+        val message = composerText.trim()
+        if (message.isEmpty()) return
         composerText = ""
+        if (!messagingAgent) {
+            pasteMessage(message)
+            return
+        }
+        scope.launch {
+            connection.sendAgentMessage(message).onFailure { error ->
+                if (error is RelayException && error.code in AgentMessaging.relayCannotMessage) {
+                    pasteMessage(message)
+                } else {
+                    if (composerText.isBlank()) composerText = message
+                    snackbar.showSnackbar(error.message ?: "The message didn't reach the agent.")
+                }
+            }
+        }
     }
 
     val sink = remember(connection) {
@@ -282,13 +310,17 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             AnimatedVisibility(visible = state !is ConnectionState.Connected) { ConnectionBanner(state) }
-            ApprovalCards(approvals, sending = sendingApprovals, onReply = ::reply)
             val currentChat = chat
             if (showChat && currentChat != null) {
                 ChatView(
                     chat = currentChat,
-                    status = terminal?.let(WorkspaceListing::agentStatus),
+                    status = agentStatus,
+                    midTurn = midTurn,
                     answeringHere = approvals.isNotEmpty(),
+                    agentMessages = agentMessages,
+                    messagingAgent = messagingAgent,
+                    waitingOnYou = waitingOnYou,
+                    showComposer = !questionOpen,
                     draft = composerText,
                     onDraftChange = { composerText = it },
                     onSend = ::sendMessage,
@@ -296,6 +328,7 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
                     onStop = { connection.send("key", buildJsonObject { put("key", "escape") }) },
                     onShowTerminal = { showChat = false },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
+                    overlay = { AgentPrompts(retry, approvals, sendingApprovals, ::reply) },
                 )
             } else {
                 BoxWithConstraints(
@@ -354,9 +387,12 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
                     }
                 }
                 Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding()) {
-                    if (composerOpen) {
+                    AgentPrompts(retry, approvals, sendingApprovals, ::reply, Modifier.padding(top = 8.dp))
+                    AgentMessageReceipts(agentMessages, waitingOnYou)
+                    if (composerOpen && !questionOpen) {
                         Composer(
                             text = composerText,
+                            messagingAgent = messagingAgent,
                             onTextChange = { composerText = it },
                             onDictate = ::dictate,
                             onSend = ::sendMessage,
@@ -389,6 +425,20 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AgentPrompts(
+    retry: Retry?,
+    approvals: List<Approval>,
+    sending: Set<String>,
+    onReply: (Approval, ApprovalReply) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.padding(bottom = 4.dp)) {
+        AnimatedVisibility(visible = retry != null) { retry?.let { RetryBanner(it) } }
+        ApprovalCards(approvals, sending = sending, onReply = onReply)
     }
 }
 
@@ -452,7 +502,7 @@ private fun ModifierButton(label: String, active: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun Composer(text: String, onTextChange: (String) -> Unit, onDictate: () -> Unit, onSend: () -> Unit) {
+private fun Composer(text: String, messagingAgent: Boolean, onTextChange: (String) -> Unit, onDictate: () -> Unit, onSend: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 6.dp),
         verticalAlignment = Alignment.Bottom,
@@ -460,7 +510,7 @@ private fun Composer(text: String, onTextChange: (String) -> Unit, onDictate: ()
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
-            placeholder = { Text("Message") },
+            placeholder = { Text(if (messagingAgent) "Send message after you answer" else "Message") },
             maxLines = 5,
             shape = RoundedCornerShape(24.dp),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = true),

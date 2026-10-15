@@ -197,3 +197,35 @@ data class ChatSessionMessage(val surfaceId: String, val sessionId: String? = nu
 
 @Serializable
 data class ChatMessage(val surfaceId: String, val sessionId: String, val reset: Boolean = false, val entries: List<ChatEntry> = emptyList())
+
+@Serializable
+data class Retry(
+    val surfaceId: String,
+    val workspaceId: String? = null,
+    val agent: String? = null,
+    val attempt: Int = 1,
+    val dueAt: String,
+)
+
+@Serializable
+data class AgentActivityMessage(val retries: List<Retry> = emptyList(), val busy: List<String> = emptyList())
+
+@Serializable
+data class AgentMessage(
+    val id: String,
+    val senderName: String = "",
+    val body: String = "",
+    val state: String,
+    val createdAt: Double = 0.0,
+    val failureReason: String? = null,
+) {
+    companion object {
+        const val QUEUED = "queued"
+        const val DELIVERED = "delivered"
+        const val READ = "read"
+        const val FAILED = "failed"
+    }
+}
+
+@Serializable
+data class AgentMessagesMessage(val surfaceId: String, val messages: List<AgentMessage> = emptyList())

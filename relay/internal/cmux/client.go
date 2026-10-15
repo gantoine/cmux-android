@@ -52,6 +52,7 @@ var readOnlyMethods = map[string]bool{
 	"mobile.terminal.replay": true,
 	"notification.list":      true,
 	"feed.list":              true,
+	"agent.message.list":     true,
 }
 
 func isConnectionError(err error) bool {

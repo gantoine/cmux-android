@@ -2,6 +2,9 @@ package com.gantoine.muxer.net
 
 import com.gantoine.muxer.chat.ChatModel
 import com.gantoine.muxer.chat.ChatState
+import com.gantoine.muxer.protocol.AgentActivityMessage
+import com.gantoine.muxer.protocol.AgentMessage
+import com.gantoine.muxer.protocol.AgentMessagesMessage
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.ApprovalsMessage
 import com.gantoine.muxer.protocol.ChatMessage
@@ -12,6 +15,7 @@ import com.gantoine.muxer.protocol.NotificationMessage
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.RequestError
+import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.ScreenFrame
 import com.gantoine.muxer.protocol.Welcome
 import com.gantoine.muxer.protocol.WorkspaceInfo
@@ -91,6 +95,15 @@ class RelayConnection(
     private val _approvals = MutableStateFlow<List<Approval>>(emptyList())
     val approvals: StateFlow<List<Approval>> = _approvals.asStateFlow()
 
+    private val _retries = MutableStateFlow<List<Retry>>(emptyList())
+    val retries: StateFlow<List<Retry>> = _retries.asStateFlow()
+
+    private val _busySurfaces = MutableStateFlow<Set<String>>(emptySet())
+    val busySurfaces: StateFlow<Set<String>> = _busySurfaces.asStateFlow()
+
+    private val _agentMessages = MutableStateFlow<List<AgentMessage>>(emptyList())
+    val agentMessages: StateFlow<List<AgentMessage>> = _agentMessages.asStateFlow()
+
     private val _detached = MutableSharedFlow<DetachedMessage>(extraBufferCapacity = 8)
     val detached: SharedFlow<DetachedMessage> = _detached.asSharedFlow()
 
@@ -121,6 +134,8 @@ class RelayConnection(
         socket = null
         failPending("The connection closed.")
         _approvals.value = emptyList()
+        _retries.value = emptyList()
+        _busySurfaces.value = emptySet()
         _state.value = ConnectionState.Stopped
     }
 
@@ -150,6 +165,8 @@ class RelayConnection(
             }
             if (reason.wasConnected) backoffMs = 1_000L
             _approvals.value = emptyList()
+            _retries.value = emptyList()
+            _busySurfaces.value = emptySet()
             _state.value = ConnectionState.Disconnected(reason.message)
             delay(backoffMs)
             backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
@@ -229,13 +246,21 @@ class RelayConnection(
                 val detached = RelayJson.decodeFromJsonElement(DetachedMessage.serializer(), message)
                 if (detached.surfaceId == attachment?.surfaceId) {
                     attachment = null
-                    _screen.value = null
-                    _chat.value = null
+                    clearTerminalState()
                 }
                 _detached.tryEmit(detached)
             }
             "approvals" -> {
                 _approvals.value = RelayJson.decodeFromJsonElement(ApprovalsMessage.serializer(), message).approvals
+            }
+            "agent_activity" -> {
+                val activity = RelayJson.decodeFromJsonElement(AgentActivityMessage.serializer(), message)
+                _retries.value = activity.retries
+                _busySurfaces.value = activity.busy.toSet()
+            }
+            "agent_messages" -> {
+                val listing = RelayJson.decodeFromJsonElement(AgentMessagesMessage.serializer(), message)
+                if (listing.surfaceId == attachment?.surfaceId) _agentMessages.value = listing.messages
             }
             "notification" -> {
                 notifications.trySend(RelayJson.decodeFromJsonElement(NotificationMessage.serializer(), message).notification)
@@ -288,10 +313,7 @@ class RelayConnection(
 
     fun attach(workspaceId: String, surfaceId: String, fit: Pair<Int, Int>? = null): Long {
         val next = Attachment(nextAttachmentId.incrementAndGet(), workspaceId, surfaceId, fit)
-        if (attachment?.surfaceId != surfaceId) {
-            _screen.value = null
-            _chat.value = null
-        }
+        if (attachment?.surfaceId != surfaceId) clearTerminalState()
         attachment = next
         sendAttach(next)
         return next.id
@@ -313,9 +335,14 @@ class RelayConnection(
     fun detach(attachmentId: Long) {
         if (attachment?.id != attachmentId) return
         attachment = null
+        clearTerminalState()
+        send("detach")
+    }
+
+    private fun clearTerminalState() {
         _screen.value = null
         _chat.value = null
-        send("detach")
+        _agentMessages.value = emptyList()
     }
 
     fun resync() = send("resync")
@@ -343,6 +370,13 @@ class RelayConnection(
             put("approval_id", approvalId)
             putJsonArray("answers") { answers.forEach { add(it) } }
         }).map { forget(approvalId) }
+
+    suspend fun sendAgentMessage(text: String): Result<AgentMessage> =
+        request("send_agent_message", buildJsonObject { put("text", text) }).mapCatching { data ->
+            val sent = RelayJson.decodeFromJsonElement(AgentMessage.serializer(), data ?: error("The computer did not confirm the message."))
+            if (_agentMessages.value.none { it.id == sent.id }) _agentMessages.value = listOf(sent) + _agentMessages.value
+            sent
+        }
 
     private fun forget(approvalId: String) {
         _approvals.value = _approvals.value.filterNot { it.id == approvalId }

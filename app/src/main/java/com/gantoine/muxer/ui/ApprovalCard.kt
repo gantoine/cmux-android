@@ -1,5 +1,6 @@
 package com.gantoine.muxer.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -78,8 +79,16 @@ object Approvals {
         return (ANSWER_WINDOW_SECONDS - (now.epochSecond - created.epochSecond)).coerceAtLeast(0)
     }
 
-    fun answer(question: ApprovalQuestion, chosen: Set<Int>): String =
-        question.options.filterIndexed { index, _ -> index in chosen }.joinToString(", ") { it.label }
+    fun otherIndex(question: ApprovalQuestion): Int = question.options.size
+
+    fun answer(question: ApprovalQuestion, chosen: Set<Int>, typed: String = ""): String {
+        val labels = question.options.filterIndexed { index, _ -> index in chosen }.map { it.label }
+        val other = typed.trim().takeIf { otherIndex(question) in chosen && it.isNotEmpty() }
+        return (labels + listOfNotNull(other)).joinToString(", ")
+    }
+
+    fun isAnswered(question: ApprovalQuestion, chosen: Set<Int>, typed: String): Boolean =
+        chosen.isNotEmpty() && (otherIndex(question) !in chosen || typed.isNotBlank())
 }
 
 @Composable
@@ -91,13 +100,25 @@ fun ApprovalCard(
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 8.dp,
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(Approvals.title(approval), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                val leadingQuestion = approval.questions.firstOrNull()?.takeIf { approval.isQuestion }
+                if (leadingQuestion != null) {
+                    Text(leadingQuestion.prompt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                } else {
+                    Text(
+                        Approvals.title(approval),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 TimeLeft(approval)
             }
             when {
@@ -122,7 +143,7 @@ private fun TimeLeft(approval: Approval) {
     Text(
         if (seconds == 0L) "Answer in the terminal" else "%d:%02d".format(seconds / 60, seconds % 60),
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
@@ -132,7 +153,7 @@ private fun PermissionBody(approval: Approval, sending: Boolean, onReply: (Appro
         Text(it, style = MaterialTheme.typography.bodyMedium)
     }
     approval.detail?.takeIf { it.isNotBlank() }?.let { detail ->
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest, contentColor = MaterialTheme.colorScheme.onSurface) {
             Text(
                 detail,
                 style = MaterialTheme.typography.bodySmall,
@@ -157,7 +178,7 @@ private fun PermissionBody(approval: Approval, sending: Boolean, onReply: (Appro
 private fun PlanBody(approval: Approval, sending: Boolean, onReply: (ApprovalReply) -> Unit) {
     var revising by remember(approval.id) { mutableStateOf(false) }
     var feedback by remember(approval.id) { mutableStateOf("") }
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest, contentColor = MaterialTheme.colorScheme.onSurface) {
         Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()).padding(12.dp)) {
             MarkdownText(approval.plan.orEmpty())
         }
@@ -192,57 +213,102 @@ private fun PlanBody(approval: Approval, sending: Boolean, onReply: (ApprovalRep
 @Composable
 private fun QuestionBody(approval: Approval, sending: Boolean, onReply: (ApprovalReply) -> Unit) {
     var chosen by remember(approval.id) { mutableStateOf(approval.questions.map { emptySet<Int>() }) }
+    var typed by remember(approval.id) { mutableStateOf(approval.questions.map { "" }) }
     Column(
-        Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+        Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         approval.questions.forEachIndexed { questionIndex, question ->
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                question.header?.takeIf { it.isNotBlank() && approval.questions.size > 1 }?.let {
-                    Text(it, style = MaterialTheme.typography.labelLarge)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (questionIndex > 0) {
+                    question.header?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.labelLarge)
+                    }
+                    Text(question.prompt, style = MaterialTheme.typography.bodyMedium)
                 }
-                Text(question.prompt, style = MaterialTheme.typography.bodyMedium)
+                fun choose(optionIndex: Int) {
+                    val current = chosen[questionIndex]
+                    val next = when {
+                        !question.multiSelect -> setOf(optionIndex)
+                        optionIndex in current -> current - optionIndex
+                        else -> current + optionIndex
+                    }
+                    chosen = chosen.toMutableList().also { it[questionIndex] = next }
+                }
                 question.options.forEachIndexed { optionIndex, option ->
-                    val selected = optionIndex in chosen[questionIndex]
-                    fun choose() {
-                        val current = chosen[questionIndex]
-                        val next = when {
-                            !question.multiSelect -> setOf(optionIndex)
-                            selected -> current - optionIndex
-                            else -> current + optionIndex
-                        }
-                        chosen = chosen.toMutableList().also { it[questionIndex] = next }
-                    }
-                    val selection = if (question.multiSelect) {
-                        Modifier.toggleable(value = selected, enabled = !sending, role = Role.Checkbox, onValueChange = { choose() })
-                    } else {
-                        Modifier.selectable(selected = selected, enabled = !sending, role = Role.RadioButton, onClick = ::choose)
-                    }
-                    Row(
-                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(12.dp)).then(selection),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (question.multiSelect) {
-                            Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.padding(12.dp))
-                        } else {
-                            RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(12.dp))
-                        }
-                        Column(Modifier.padding(end = 12.dp, top = 6.dp, bottom = 6.dp)) {
-                            Text(option.label, style = MaterialTheme.typography.bodyLarge)
-                            option.description?.takeIf { it.isNotBlank() }?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f))
-                            }
-                        }
-                    }
+                    OptionRow(
+                        label = option.label,
+                        description = option.description,
+                        selected = optionIndex in chosen[questionIndex],
+                        multiSelect = question.multiSelect,
+                        enabled = !sending,
+                        onClick = { choose(optionIndex) },
+                    )
+                }
+                val otherIndex = Approvals.otherIndex(question)
+                val typing = otherIndex in chosen[questionIndex]
+                OptionRow(
+                    label = "Type something",
+                    description = null,
+                    selected = typing,
+                    multiSelect = question.multiSelect,
+                    enabled = !sending,
+                    onClick = { choose(otherIndex) },
+                )
+                if (typing) {
+                    OutlinedTextField(
+                        value = typed[questionIndex],
+                        onValueChange = { text -> typed = typed.toMutableList().also { it[questionIndex] = text } },
+                        placeholder = { Text("Your answer") },
+                        maxLines = 4,
+                        enabled = !sending,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
         }
     }
-    val complete = chosen.all { it.isNotEmpty() }
+    val complete = approval.questions.indices.all { Approvals.isAnswered(approval.questions[it], chosen[it], typed[it]) }
     Button(
-        onClick = { onReply(ApprovalReply.Answers(approval.questions.mapIndexed { index, question -> Approvals.answer(question, chosen[index]) })) },
+        onClick = {
+            onReply(ApprovalReply.Answers(approval.questions.mapIndexed { index, question -> Approvals.answer(question, chosen[index], typed[index]) }))
+        },
         enabled = complete && !sending,
     ) { Text("Send answer") }
+}
+
+@Composable
+private fun OptionRow(
+    label: String,
+    description: String?,
+    selected: Boolean,
+    multiSelect: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val selection = if (multiSelect) {
+        Modifier.toggleable(value = selected, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() })
+    } else {
+        Modifier.selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+    }
+    val background = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+    Row(
+        Modifier.fillMaxWidth().background(background, RoundedCornerShape(12.dp)).then(selection),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (multiSelect) {
+            Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+        } else {
+            RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(12.dp))
+        }
+        Column(Modifier.padding(end = 12.dp, top = 6.dp, bottom = 6.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            description?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
 @Composable

@@ -43,11 +43,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -62,6 +65,7 @@ import com.gantoine.muxer.chat.ChatMarkdown
 import com.gantoine.muxer.chat.ChatState
 import com.gantoine.muxer.chat.InlineSpan
 import com.gantoine.muxer.chat.MarkdownBlock
+import com.gantoine.muxer.protocol.AgentMessage
 import com.gantoine.muxer.protocol.ChatEntry
 import com.gantoine.muxer.protocol.ChatTool
 
@@ -69,7 +73,12 @@ import com.gantoine.muxer.protocol.ChatTool
 fun ChatView(
     chat: ChatState,
     status: AgentStatus?,
+    midTurn: Boolean,
     answeringHere: Boolean,
+    agentMessages: List<AgentMessage>,
+    messagingAgent: Boolean,
+    waitingOnYou: Boolean,
+    showComposer: Boolean,
     draft: String,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -77,9 +86,12 @@ fun ChatView(
     onStop: () -> Unit,
     onShowTerminal: () -> Unit,
     modifier: Modifier = Modifier,
+    overlay: @Composable () -> Unit = {},
 ) {
-    val working = status is AgentStatus.Working
+    val working = midTurn || status is AgentStatus.Working
     val listState = rememberLazyListState()
+    var overlayHeight by remember { mutableIntStateOf(0) }
+    val overlayInset = with(LocalDensity.current) { overlayHeight.toDp() }
     LaunchedEffect(chat.entries.lastOrNull()?.id) {
         if (listState.firstVisibleItemIndex <= 1) listState.animateScrollToItem(0)
     }
@@ -92,7 +104,7 @@ fun ChatView(
                     Modifier.fillMaxSize(),
                     state = listState,
                     reverseLayout = true,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp + overlayInset),
                     verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Bottom),
                 ) {
                     items(chat.entries.asReversed(), key = { it.id }) { entry ->
@@ -100,14 +112,26 @@ fun ChatView(
                     }
                 }
             }
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .onSizeChanged { overlayHeight = it.height },
+            ) { overlay() }
         }
+        AgentMessageReceipts(agentMessages, waitingOnYou)
         AnimatedVisibility(visible = !answeringHere && WorkspaceListing.needsTerminalAnswer(status)) {
             NeedsYouCard(status?.label.orEmpty(), onShowTerminal)
+        }
+        if (!showComposer) {
+            Spacer(Modifier.navigationBarsPadding())
+            return@Column
         }
         ChatComposer(
             draft = draft,
             onDraftChange = onDraftChange,
             working = working,
+            messagingAgent = messagingAgent,
             onSend = onSend,
             onDictate = onDictate,
             onStop = onStop,
@@ -274,6 +298,7 @@ private fun ChatComposer(
     draft: String,
     onDraftChange: (String) -> Unit,
     working: Boolean,
+    messagingAgent: Boolean,
     onSend: () -> Unit,
     onDictate: () -> Unit,
     onStop: () -> Unit,
@@ -289,7 +314,7 @@ private fun ChatComposer(
         OutlinedTextField(
             value = draft,
             onValueChange = onDraftChange,
-            placeholder = { Text("Message Claude") },
+            placeholder = { Text(if (messagingAgent) "Send message after you answer" else "Message Claude") },
             maxLines = 6,
             shape = RoundedCornerShape(24.dp),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = true),

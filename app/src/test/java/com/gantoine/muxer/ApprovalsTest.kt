@@ -24,6 +24,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -127,6 +128,11 @@ class ApprovalsTest {
         val asking = Approval(id = "q1", kind = "question", workspaceId = "w1", surfaceId = "t1", questions = listOf(question))
         assertEquals("The agent is asking", Approvals.title(asking))
         assertEquals("A, C", Approvals.answer(question, setOf(0, 2)))
+        assertEquals("A, use the staging db", Approvals.answer(question, setOf(0, 3), "  use the staging db "))
+        assertEquals("Mine", Approvals.answer(question.copy(multiSelect = false), setOf(3), "Mine"))
+        assertTrue(Approvals.isAnswered(question, setOf(1), ""))
+        assertFalse(Approvals.isAnswered(question, setOf(3), "  "))
+        assertFalse(Approvals.isAnswered(question, emptySet(), ""))
 
         val plan = Approval(id = "p1", kind = "plan", agent = "claude", workspaceId = "w1", surfaceId = "t1", plan = "\n## Add approvals\n1. Relay")
         assertEquals("Claude has a plan ready", Approvals.title(plan))
