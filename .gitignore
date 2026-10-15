@@ -12,3 +12,4 @@ captures/
 relay/dist/
 .DS_Store
 site/dist/
+.claude/worktrees/
