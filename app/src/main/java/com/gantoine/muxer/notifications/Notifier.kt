@@ -26,13 +26,10 @@ class Notifier(private val context: Context) {
                 .apply { description = context.getString(R.string.channel_agents_description) },
         )
         manager.createNotificationChannel(
-            NotificationChannel(CONNECTION_CHANNEL, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_MIN)
-                .apply { description = context.getString(R.string.channel_connection_description) },
-        )
-        manager.createNotificationChannel(
             NotificationChannel(ACTIVITY_CHANNEL, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_LOW)
                 .apply { description = context.getString(R.string.channel_activity_description) },
         )
+        manager.deleteNotificationChannel(LEGACY_CONNECTION_CHANNEL)
     }
 
     fun canNotify(): Boolean =
@@ -148,7 +145,7 @@ class Notifier(private val context: Context) {
 
     companion object {
         const val AGENT_CHANNEL = "agents"
-        const val CONNECTION_CHANNEL = "connection"
+        private const val LEGACY_CONNECTION_CHANNEL = "connection"
         const val ACTIVITY_CHANNEL = "activity"
         const val ACTION_OPEN_TERMINAL = "com.gantoine.muxer.OPEN_TERMINAL"
         const val EXTRA_MAC_ID = "mac_id"

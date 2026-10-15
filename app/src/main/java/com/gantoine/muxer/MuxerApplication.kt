@@ -8,7 +8,6 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import com.gantoine.muxer.data.MacStore
 import com.gantoine.muxer.net.ConnectionManager
 import com.gantoine.muxer.net.PairingClient
-import com.gantoine.muxer.notifications.ActivityNotifier
 import com.gantoine.muxer.notifications.ConnectionService
 import com.gantoine.muxer.notifications.Notifier
 import com.gantoine.muxer.tile.NotificationsTile
@@ -49,8 +48,6 @@ class MuxerApplication : Application() {
         )
     }
 
-    private val activityNotifier: ActivityNotifier by lazy { ActivityNotifier(this, store, connections, notifier, scope) }
-
     private val notificationPermission = MutableStateFlow(false)
 
     override fun onCreate() {
@@ -61,7 +58,6 @@ class MuxerApplication : Application() {
             store.migrateGlobalBackgroundSetting()
             connections.start()
             launch { keepQuickSettingsTileInSync() }
-            activityNotifier.start()
             keepBackgroundServiceInSync()
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {

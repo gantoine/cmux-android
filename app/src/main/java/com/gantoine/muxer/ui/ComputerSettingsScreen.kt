@@ -136,8 +136,8 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
                 SettingsRow(
                     index = 2,
                     count = 3,
-                    headline = "Show working agents in the status bar",
-                    supporting = "While connected, keeps a live notification for each agent at work and counts down to retries.",
+                    headline = "Show agents in the background notification",
+                    supporting = "The notification that keeps the connection open lists this computer's agents: working, waiting for you, or retrying.",
                     onClick = { scope.launch { app.store.setShowActivity(macId, !mac.showActivity) } },
                     trailing = {
                         Switch(

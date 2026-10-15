@@ -1,5 +1,6 @@
 package com.gantoine.muxer.notifications
 
+import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
@@ -12,6 +13,7 @@ data class ComputerActivity(
     val workspaces: List<WorkspaceInfo>,
     val busySurfaces: Set<String>,
     val retries: List<Retry>,
+    val approvals: List<Approval> = emptyList(),
 )
 
 sealed interface LiveActivity {
@@ -19,61 +21,102 @@ sealed interface LiveActivity {
     val macId: String
     val workspaceId: String?
     val surfaceId: String
+    val agent: String?
+    val workspaceTitle: String
 }
 
 data class WorkingAgent(
     override val macId: String,
     override val workspaceId: String?,
     override val surfaceId: String,
-    val agent: String?,
-    val workspaceTitle: String,
+    override val agent: String?,
+    override val workspaceTitle: String,
+    val since: Long? = null,
 ) : LiveActivity {
     override val key get() = "activity:$macId:$surfaceId"
+}
+
+data class WaitingAgent(
+    override val macId: String,
+    override val workspaceId: String?,
+    override val surfaceId: String,
+    override val agent: String?,
+    override val workspaceTitle: String,
+    val request: String,
+) : LiveActivity {
+    override val key get() = "waiting:$macId:$surfaceId"
 }
 
 data class RetryCountdown(
     override val macId: String,
     override val workspaceId: String?,
     override val surfaceId: String,
-    val agent: String?,
-    val workspaceTitle: String?,
+    override val agent: String?,
+    override val workspaceTitle: String,
     val attempt: Int,
     val dueAt: Instant,
 ) : LiveActivity {
     override val key get() = "retry:$macId:$surfaceId"
 }
 
+data class ActivitySummary(
+    val waiting: List<WaitingAgent> = emptyList(),
+    val retries: List<RetryCountdown> = emptyList(),
+    val working: List<WorkingAgent> = emptyList(),
+    val connected: Int = 0,
+    val total: Int = 0,
+    val macNames: Map<String, String> = emptyMap(),
+) {
+    val activities: List<LiveActivity> get() = waiting + retries + working
+}
+
+data class Chronometer(val at: Long, val countDown: Boolean)
+
 object LiveActivities {
     fun working(activity: ComputerActivity, isLookingAt: (String) -> Boolean = { false }): List<WorkingAgent> {
         val retrying = activity.retries.map { it.surfaceId }.toSet()
+        val waiting = activity.approvals.map { it.surfaceId }.toSet()
         return activity.workspaces.flatMap { workspace ->
             workspace.terminals
-                .filter { isWorking(it, activity.busySurfaces) && it.id !in retrying && !isLookingAt(it.id) }
+                .filter { isWorking(it, activity.busySurfaces) && it.id !in retrying && it.id !in waiting && !isLookingAt(it.id) }
                 .map { terminal ->
                     WorkingAgent(
                         macId = activity.macId,
                         workspaceId = workspace.id,
                         surfaceId = terminal.id,
                         agent = agentName(terminal.agentSource),
-                        workspaceTitle = workspace.title.ifBlank { terminal.title }.ifBlank { "a workspace" },
+                        workspaceTitle = title(workspace, terminal),
                     )
                 }
         }.distinctBy { it.surfaceId }
     }
 
+    fun waiting(activity: ComputerActivity): List<WaitingAgent> =
+        activity.approvals.map { approval ->
+            val workspace = workspaceFor(activity, approval.workspaceId, approval.surfaceId)
+            val terminal = workspace?.terminals?.firstOrNull { it.id == approval.surfaceId }
+            WaitingAgent(
+                macId = activity.macId,
+                workspaceId = approval.workspaceId,
+                surfaceId = approval.surfaceId,
+                agent = agentName(approval.agent) ?: agentName(terminal?.agentSource),
+                workspaceTitle = title(workspace, terminal),
+                request = request(approval),
+            )
+        }.distinctBy { it.surfaceId }
+
     fun retries(activity: ComputerActivity, now: Instant, isLookingAt: (String) -> Boolean = { false }): List<RetryCountdown> =
         activity.retries.mapNotNull { retry ->
             val dueAt = runCatching { Instant.parse(retry.dueAt) }.getOrNull() ?: return@mapNotNull null
             if (!dueAt.isAfter(now) || isLookingAt(retry.surfaceId)) return@mapNotNull null
-            val workspace = activity.workspaces.firstOrNull { it.id == retry.workspaceId }
-                ?: activity.workspaces.firstOrNull { workspace -> workspace.terminals.any { it.id == retry.surfaceId } }
+            val workspace = workspaceFor(activity, retry.workspaceId, retry.surfaceId)
             val terminal = workspace?.terminals?.firstOrNull { it.id == retry.surfaceId }
             RetryCountdown(
                 macId = activity.macId,
                 workspaceId = retry.workspaceId ?: workspace?.id,
                 surfaceId = retry.surfaceId,
                 agent = agentName(retry.agent) ?: agentName(terminal?.agentSource),
-                workspaceTitle = workspace?.title?.takeIf { it.isNotBlank() },
+                workspaceTitle = title(workspace, terminal),
                 attempt = retry.attempt,
                 dueAt = dueAt,
             )
@@ -88,10 +131,51 @@ object LiveActivities {
         return trimmed.replace('_', ' ').replace('-', ' ').replaceFirstChar { it.uppercase() }
     }
 
-    fun workingTitle(agent: WorkingAgent): String = "${agent.agent ?: "An agent"} is working in ${agent.workspaceTitle}"
+    fun request(approval: Approval): String = when {
+        approval.isPermission -> "wants to use ${approval.tool ?: "a tool"}"
+        approval.isPlan -> "has a plan ready"
+        else -> "is asking you something"
+    }
 
-    fun retryTitle(retry: RetryCountdown, now: Instant): String =
-        "${retry.agent ?: "The agent"} retries in ${countdown(secondsUntil(retry, now))}"
+    fun title(summary: ActivitySummary): String {
+        val parts = listOfNotNull(
+            summary.waiting.size.takeIf { it > 0 }?.let { "$it waiting for you" },
+            summary.retries.size.takeIf { it > 0 }?.let { "$it retrying" },
+            summary.working.size.takeIf { it > 0 }?.let { if (it == 1) "1 agent working" else "$it agents working" },
+        )
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: connectionText(summary)
+    }
+
+    fun connectionText(summary: ActivitySummary): String = when {
+        summary.total == 0 -> "No computers to watch"
+        summary.connected < summary.total -> "Connected to ${summary.connected} of ${summary.total} computers"
+        summary.total == 1 -> "Connected to ${summary.macNames.values.singleOrNull() ?: "your computer"}"
+        else -> "Connected to ${summary.total} computers"
+    }
+
+    fun lines(summary: ActivitySummary, now: Instant): List<String> = summary.activities.map { activity ->
+        val state = when (activity) {
+            is WaitingAgent -> activity.request
+            is RetryCountdown -> "retries in ${countdown(secondsUntil(activity, now))}, attempt ${activity.attempt}"
+            is WorkingAgent -> "working"
+        }
+        val place = if (summary.total > 1) "${summary.macNames[activity.macId] ?: "?"} › ${activity.workspaceTitle}" else activity.workspaceTitle
+        "${activity.agent ?: "An agent"} · $place · $state"
+    }
+
+    fun chipText(summary: ActivitySummary, now: Instant): String? = when {
+        summary.waiting.isNotEmpty() -> "${summary.waiting.size} waiting"
+        summary.retries.isNotEmpty() -> countdown(secondsUntil(summary.retries.minBy { it.dueAt }, now))
+        summary.working.isNotEmpty() -> "${summary.working.size} working"
+        else -> null
+    }
+
+    fun chronometer(summary: ActivitySummary): Chronometer? = when {
+        summary.waiting.isNotEmpty() -> null
+        summary.retries.isNotEmpty() -> Chronometer(summary.retries.minBy { it.dueAt }.dueAt.toEpochMilli(), countDown = true)
+        summary.working.any { it.since != null } -> Chronometer(summary.working.mapNotNull { it.since }.min(), countDown = false)
+        else -> null
+    }
 
     fun secondsUntil(retry: RetryCountdown, now: Instant): Long =
         (retry.dueAt.epochSecond - now.epochSecond).coerceAtLeast(0)
@@ -101,9 +185,10 @@ object LiveActivities {
         return "%d:%02d".format(clamped / 60, clamped % 60)
     }
 
-    fun progressPercent(totalSeconds: Long, remainingSeconds: Long): Int {
-        if (totalSeconds <= 0) return 100
-        val elapsed = (totalSeconds - remainingSeconds).coerceIn(0, totalSeconds)
-        return (elapsed * 100 / totalSeconds).toInt()
-    }
+    private fun workspaceFor(activity: ComputerActivity, workspaceId: String?, surfaceId: String): WorkspaceInfo? =
+        activity.workspaces.firstOrNull { it.id == workspaceId }
+            ?: activity.workspaces.firstOrNull { workspace -> workspace.terminals.any { it.id == surfaceId } }
+
+    private fun title(workspace: WorkspaceInfo?, terminal: TerminalInfo?): String =
+        workspace?.title?.takeIf { it.isNotBlank() } ?: terminal?.title?.takeIf { it.isNotBlank() } ?: "a workspace"
 }
