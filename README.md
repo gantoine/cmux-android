@@ -100,7 +100,7 @@ Then pair with that address using `muxer pair --url`.
 
 ## Using the app
 
-- **Workspaces:** each workspace shows its color, a robot icon when an agent runs in it, and when it was last active. Type in the search box to filter by name, folder, or terminal. Tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace. Workspace groups from cmux show as their own card: tap the group's header to open the group's own terminals, and tap the arrow to fold its workspaces away.
+- **Workspaces:** each workspace shows its color, a robot icon when an agent runs in it, and when it was last active. Type in the search box to filter by name, folder, or terminal. Tap a workspace to open its terminal. Long-press to rename it, add a terminal, or close it. Tap **+** to create a workspace. Workspace groups from cmux show as their own card. Tap the group's name to fold its workspaces away, and tap the row under it to open the group's own terminals.
 - **Terminal:** pinch to zoom and drag sideways to pan.
 - **Scrolling back:** swipe down to read earlier output. The phone loads up to 2,000 lines of history and scrolls it locally, so the view on your computer does not move. Tap **Live** or scroll to the bottom to follow the terminal again. In full-screen programs such as vim or Claude Code, swiping scrolls inside the program on the computer instead.
 - **Copying:** long-press a word to select it, drag to extend the selection, then tap **Copy**. Selections can span history and the live screen.
