@@ -33,7 +33,6 @@ type Notification struct {
 }
 
 type Source interface {
-	Events(ctx context.Context, afterSeq *int64, categories []string, handle func(cmux.Event) error) error
 	Notifications(ctx context.Context) ([]cmux.Notification, error)
 }
 
@@ -51,32 +50,11 @@ func NewHub(source Source, logger *slog.Logger) *Hub {
 	return &Hub{source: source, logger: logger, nextSeq: time.Now().UnixMilli(), subscribers: map[chan Notification]struct{}{}}
 }
 
-func (h *Hub) Run(ctx context.Context) {
-	var afterSeq *int64
-	backoff := time.Second
-	for ctx.Err() == nil {
-		err := h.source.Events(ctx, afterSeq, []string{"notification"}, func(event cmux.Event) error {
-			backoff = time.Second
-			if event.Type != "event" {
-				return nil
-			}
-			seq := event.Seq
-			afterSeq = &seq
-			h.handle(ctx, event)
-			return nil
-		})
-		if ctx.Err() != nil {
-			return
-		}
-		h.logger.Warn("cmux event stream ended; reconnecting", "error", err, "retry_in", backoff)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(backoff):
-		}
-		backoff = min(backoff*2, 30*time.Second)
-	}
+func (h *Hub) HandleEvent(ctx context.Context, event cmux.Event) {
+	h.handle(ctx, event)
 }
+
+func (h *Hub) StreamResumed(context.Context) {}
 
 func (h *Hub) handle(ctx context.Context, event cmux.Event) {
 	var payload struct {

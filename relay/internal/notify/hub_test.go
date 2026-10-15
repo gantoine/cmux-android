@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/gantoine/muxer/relay/internal/cmux"
 )
@@ -14,16 +13,6 @@ import (
 type fakeSource struct {
 	events        []cmux.Event
 	notifications []cmux.Notification
-}
-
-func (f *fakeSource) Events(ctx context.Context, _ *int64, _ []string, handle func(cmux.Event) error) error {
-	for _, event := range f.events {
-		if err := handle(event); err != nil {
-			return err
-		}
-	}
-	<-ctx.Done()
-	return ctx.Err()
 }
 
 func (f *fakeSource) Notifications(context.Context) ([]cmux.Notification, error) {
@@ -43,18 +32,8 @@ func TestHubResolvesRedactedTextAndReplaysOnlyForReturningPhones(t *testing.T) {
 		notifications: []cmux.Notification{{ID: "n1", Title: "Claude Code", Body: "Claude is waiting for your input", WorkspaceID: "w1"}},
 	}
 	hub := NewHub(source, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go hub.Run(ctx)
-
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		_, history, unsubscribe := hub.Subscribe(1)
-		unsubscribe()
-		if len(history) == 3 || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	for _, event := range source.events {
+		hub.HandleEvent(context.Background(), event)
 	}
 
 	_, history, unsubscribe := hub.Subscribe(1)

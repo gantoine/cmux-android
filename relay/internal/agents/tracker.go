@@ -62,7 +62,6 @@ type Retry struct {
 }
 
 type Source interface {
-	Events(ctx context.Context, afterSeq *int64, categories []string, handle func(cmux.Event) error) error
 	SendAgentMessage(ctx context.Context, target, from, body string) (cmux.AgentMessage, error)
 	AgentMessages(ctx context.Context, surfaceID string, limit int) ([]cmux.AgentMessage, error)
 }
@@ -92,32 +91,16 @@ func NewTracker(source Source, logger *slog.Logger) *Tracker {
 }
 
 func (t *Tracker) Run(ctx context.Context) {
-	go t.expireStaleRetries(ctx)
-	var afterSeq *int64
-	backoff := time.Second
-	for ctx.Err() == nil {
-		err := t.source.Events(ctx, afterSeq, []string{"agent"}, func(event cmux.Event) error {
-			backoff = time.Second
-			if event.Type != "event" {
-				return nil
-			}
-			seq := event.Seq
-			afterSeq = &seq
-			t.handle(event)
-			return nil
-		})
-		if ctx.Err() != nil {
-			return
-		}
-		t.logger.Warn("cmux agent stream ended; reconnecting", "error", err, "retry_in", backoff)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(backoff):
-		}
-		backoff = min(backoff*2, 30*time.Second)
+	t.expireStaleRetries(ctx)
+}
+
+func (t *Tracker) HandleEvent(_ context.Context, event cmux.Event) {
+	if event.Type == "event" {
+		t.handle(event)
 	}
 }
+
+func (t *Tracker) StreamResumed(context.Context) {}
 
 type eventPayload struct {
 	Agent     string `json:"agent"`

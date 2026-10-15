@@ -18,11 +18,6 @@ type fakeSource struct {
 	sent   []string
 }
 
-func (f *fakeSource) Events(ctx context.Context, _ *int64, _ []string, _ func(cmux.Event) error) error {
-	<-ctx.Done()
-	return ctx.Err()
-}
-
 func (f *fakeSource) SendAgentMessage(_ context.Context, target, from, body string) (cmux.AgentMessage, error) {
 	f.sent = append(f.sent, target+"|"+from+"|"+body)
 	return cmux.AgentMessage{ID: "m1", SenderName: from, Body: body, State: "queued"}, nil

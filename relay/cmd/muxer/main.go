@@ -21,6 +21,7 @@ import (
 	"github.com/gantoine/muxer/relay/internal/approvals"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/events"
 	"github.com/gantoine/muxer/relay/internal/notify"
 	"github.com/gantoine/muxer/relay/internal/server"
 )
@@ -113,11 +114,11 @@ func runServe(args []string) error {
 	client := cmux.NewClient(cmux.DefaultSocketPath(), cmux.DefaultPasswordSource())
 	defer client.Close()
 	hub := notify.NewHub(client, logger)
-	go hub.Run(ctx)
 	approvalTracker := approvals.NewTracker(client, logger)
 	go approvalTracker.Run(ctx)
 	agentTracker := agents.NewTracker(client, logger)
 	go agentTracker.Run(ctx)
+	go events.NewStream(client, logger, []string{"notification", "agent"}, hub, approvalTracker, agentTracker).Run(ctx)
 	adminErr := make(chan error, 1)
 	go func() {
 		if err := server.ServeAdmin(ctx, paths.admin, store); err != nil {

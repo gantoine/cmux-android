@@ -13,7 +13,7 @@ import (
 )
 
 type fakeSource struct {
-	events chan cmux.Event
+	tracker *Tracker
 
 	mu      sync.Mutex
 	items   []cmux.FeedItem
@@ -21,20 +21,7 @@ type fakeSource struct {
 }
 
 func newFakeSource() *fakeSource {
-	return &fakeSource{events: make(chan cmux.Event, 16)}
-}
-
-func (f *fakeSource) Events(ctx context.Context, _ *int64, _ []string, handle func(cmux.Event) error) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case event := <-f.events:
-			if err := handle(event); err != nil {
-				return err
-			}
-		}
-	}
+	return &fakeSource{}
 }
 
 func (f *fakeSource) FeedItems(context.Context) ([]cmux.FeedItem, error) {
@@ -71,20 +58,22 @@ func (f *fakeSource) setItems(items ...cmux.FeedItem) {
 	f.items = items
 }
 
-func (f *fakeSource) emit(name, hook, requestID, surfaceID string) {
+func (f *fakeSource) emit(hook, phase, requestID, surfaceID string) {
 	payload, _ := json.Marshal(map[string]string{
 		"hook_event_name":      hook,
 		"_opencode_request_id": requestID,
 		"_source":              "claude",
 		"workspace_id":         "w1",
 		"surface_id":           surfaceID,
+		"phase":                phase,
 	})
-	f.events <- cmux.Event{Type: "event", Name: name, Payload: payload}
+	f.tracker.HandleEvent(context.Background(), cmux.Event{Type: "event", Name: "agent.hook." + hook, Category: "agent", Payload: payload})
 }
 
 func startTracker(t *testing.T, source *fakeSource) *Tracker {
 	t.Helper()
 	tracker := NewTracker(source, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	source.tracker = tracker
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go tracker.Run(ctx)
@@ -114,7 +103,7 @@ func TestPermissionRequestShowsTheFullCommandUntilCmuxCompletesIt(t *testing.T) 
 	})
 	tracker := startTracker(t, source)
 
-	source.emit("feed.item.received", "PermissionRequest", "r1", "s1")
+	source.emit("PermissionRequest", "received", "r1", "s1")
 	pending := waitFor(t, tracker, 1)
 	got := pending[0]
 	if got.Kind != KindPermission || got.Tool != "Bash" || got.Detail != "rm -rf build" || got.Description != "Clean the build folder" {
@@ -124,7 +113,7 @@ func TestPermissionRequestShowsTheFullCommandUntilCmuxCompletesIt(t *testing.T) 
 		t.Fatalf("permission must name the terminal it came from: %+v", got)
 	}
 
-	source.emit("feed.item.completed", "PermissionRequest", "r1", "s1")
+	source.emit("PermissionRequest", "completed", "r1", "s1")
 	waitFor(t, tracker, 0)
 }
 
@@ -137,19 +126,19 @@ func TestTerminalAnswerClearsTheRequestOnTheNextAgentEvent(t *testing.T) {
 	source.setItems(question)
 	tracker := startTracker(t, source)
 
-	source.emit("feed.item.received", "AskUserQuestion", "q1", "s1")
+	source.emit("AskUserQuestion", "received", "q1", "s1")
 	pending := waitFor(t, tracker, 1)
 	if pending[0].Kind != KindQuestion || len(pending[0].Questions[0].Options) != 2 || pending[0].Questions[0].Options[1].Label != "B" {
 		t.Fatalf("question must carry its options: %+v", pending[0])
 	}
 
-	source.emit("feed.item.received", "PreToolUse", "other", "s2")
+	source.emit("PreToolUse", "received", "other", "s2")
 	time.Sleep(50 * time.Millisecond)
 	waitFor(t, tracker, 1)
 
 	question.Status = "expired"
 	source.setItems(question)
-	source.emit("feed.item.received", "PreToolUse", "next", "s1")
+	source.emit("PreToolUse", "received", "next", "s1")
 	waitFor(t, tracker, 0)
 }
 
@@ -160,8 +149,8 @@ func TestAnswerRepliesToCmuxAndRejectsInvalidAnswers(t *testing.T) {
 		cmux.FeedItem{Kind: "question", Status: "pending", RequestID: "q1", Questions: []cmux.FeedQuestion{{Prompt: "Which?", Options: []cmux.FeedOption{{Label: "A"}}}}},
 	)
 	tracker := startTracker(t, source)
-	source.emit("feed.item.received", "PermissionRequest", "r1", "s1")
-	source.emit("feed.item.received", "AskUserQuestion", "q1", "s1")
+	source.emit("PermissionRequest", "received", "r1", "s1")
+	source.emit("AskUserQuestion", "received", "q1", "s1")
 	waitFor(t, tracker, 2)
 
 	ctx := context.Background()
@@ -196,8 +185,8 @@ func TestPlanCanBeApprovedOrSentBackWithFeedback(t *testing.T) {
 		cmux.FeedItem{Kind: "exitPlan", Status: "pending", RequestID: "p2", Plan: "# Other"},
 	)
 	tracker := startTracker(t, source)
-	source.emit("feed.item.received", "ExitPlanMode", "p1", "s1")
-	source.emit("feed.item.received", "ExitPlanMode", "p2", "s1")
+	source.emit("ExitPlanMode", "received", "p1", "s1")
+	source.emit("ExitPlanMode", "received", "p2", "s1")
 	pending := waitFor(t, tracker, 2)
 	if pending[0].Kind != KindPlan || pending[0].Plan != "# Plan\n1. Add tests" {
 		t.Fatalf("plan must carry its text: %+v", pending[0])

@@ -26,6 +26,9 @@ const (
 	feedKindQuestion   = "question"
 	feedKindPlan       = "exitPlan"
 	feedStatusPending  = "pending"
+	hookEventPrefix    = "agent.hook."
+	phaseReceived      = "received"
+	phaseCompleted     = "completed"
 	maxDetailLength    = 8000
 	lookupAttempts     = 5
 	lookupDelay        = 200 * time.Millisecond
@@ -81,7 +84,6 @@ type Answer struct {
 }
 
 type Source interface {
-	Events(ctx context.Context, afterSeq *int64, categories []string, handle func(cmux.Event) error) error
 	FeedItems(ctx context.Context) ([]cmux.FeedItem, error)
 	ReplyPermission(ctx context.Context, requestID, mode string) error
 	ReplyQuestion(ctx context.Context, requestID string, selections []string) error
@@ -102,32 +104,17 @@ func NewTracker(source Source, logger *slog.Logger) *Tracker {
 }
 
 func (t *Tracker) Run(ctx context.Context) {
-	go t.sweep(ctx)
-	var afterSeq *int64
-	backoff := time.Second
-	for ctx.Err() == nil {
-		err := t.source.Events(ctx, afterSeq, []string{"feed"}, func(event cmux.Event) error {
-			backoff = time.Second
-			if event.Type != "event" {
-				return nil
-			}
-			seq := event.Seq
-			afterSeq = &seq
-			t.handle(ctx, event)
-			return nil
-		})
-		if ctx.Err() != nil {
-			return
-		}
-		t.logger.Warn("cmux feed stream ended; reconnecting", "error", err, "retry_in", backoff)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(backoff):
-		}
-		backoff = min(backoff*2, 30*time.Second)
-		t.reconcile(ctx)
+	t.sweep(ctx)
+}
+
+func (t *Tracker) HandleEvent(ctx context.Context, event cmux.Event) {
+	if event.Type == "event" && strings.HasPrefix(event.Name, hookEventPrefix) {
+		t.handle(ctx, event)
 	}
+}
+
+func (t *Tracker) StreamResumed(ctx context.Context) {
+	t.reconcile(ctx)
 }
 
 type feedPayload struct {
@@ -136,6 +123,7 @@ type feedPayload struct {
 	Source        string `json:"_source"`
 	WorkspaceID   string `json:"workspace_id"`
 	SurfaceID     string `json:"surface_id"`
+	Phase         string `json:"phase"`
 }
 
 func (t *Tracker) handle(ctx context.Context, event cmux.Event) {
@@ -147,14 +135,17 @@ func (t *Tracker) handle(ctx context.Context, event cmux.Event) {
 	if payload.SurfaceID == "" && event.SurfaceID != nil {
 		payload.SurfaceID = *event.SurfaceID
 	}
-	switch event.Name {
-	case "feed.item.received":
+	if payload.HookEventName == "" {
+		payload.HookEventName = strings.TrimPrefix(event.Name, hookEventPrefix)
+	}
+	switch payload.Phase {
+	case phaseReceived:
 		if actionableHooks[payload.HookEventName] && payload.RequestID != "" {
 			t.track(ctx, payload)
 		} else if t.hasPendingOn(payload.SurfaceID) {
 			t.reconcile(ctx)
 		}
-	case "feed.item.completed":
+	case phaseCompleted:
 		t.remove(payload.RequestID)
 	}
 }
