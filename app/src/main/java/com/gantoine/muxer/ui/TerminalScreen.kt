@@ -81,6 +81,9 @@ import com.gantoine.muxer.data.MacStore
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.net.VisibleTerminal
+import com.gantoine.muxer.notifications.ConversationShortcuts
+import androidx.compose.ui.platform.LocalContext
+import java.util.concurrent.atomic.AtomicLong
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.terminal.TerminalBottomPadding
@@ -159,14 +162,25 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
         app.store.setFontSize(fontSize)
     }
 
+    val context = LocalContext.current
+    val visible = remember(macId, surfaceId) { VisibleTerminal(macId, surfaceId) }
+    val attachment = remember(connection, surfaceId) { AtomicLong(NO_ATTACHMENT) }
+    var requestedFit by remember(connection, surfaceId) { mutableStateOf<Pair<Int, Int>?>(null) }
     DisposableEffect(connection, workspaceId, surfaceId) {
-        val attachment = connection.attach(workspaceId, surfaceId)
-        val visible = VisibleTerminal(macId, surfaceId)
+        attachment.set(connection.attach(workspaceId, surfaceId))
         app.connections.visibleTerminal.value = visible
+        ConversationShortcuts.reportUsed(context, macId, workspaceId)
         onDispose {
-            connection.detach(attachment)
+            connection.detach(attachment.get())
             if (app.connections.visibleTerminal.value === visible) app.connections.visibleTerminal.value = null
         }
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        if (!connection.isAttachedTo(surfaceId)) attachment.set(connection.attach(workspaceId, surfaceId, requestedFit))
+        app.connections.visibleTerminal.value = visible
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        if (app.connections.visibleTerminal.value === visible) app.connections.visibleTerminal.value = null
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { connection.resync() }
     LaunchedEffect(connection) {
@@ -340,7 +354,8 @@ fun TerminalScreen(app: MuxerApplication, macId: String, workspaceId: String, su
                     val grid = fittingGrid(constraints.maxWidth, constraints.maxHeight - bottomPadding, metrics)
                     LaunchedEffect(fitToPhone, grid) {
                         if (fitToPhone) delay(FIT_SETTLE_MS)
-                        connection.setFit(if (fitToPhone) grid else null)
+                        requestedFit = if (fitToPhone) grid else null
+                        connection.setFit(requestedFit)
                     }
                     val current = screen
                     LaunchedEffect(current?.altScreen) {
@@ -443,6 +458,7 @@ private fun AgentPrompts(
 }
 
 private const val FIT_SETTLE_MS = 300L
+private const val NO_ATTACHMENT = -1L
 
 private val KEYS = listOf(
     "Esc" to "escape",

@@ -328,6 +328,8 @@ class RelayConnection(
         return next.id
     }
 
+    fun isAttachedTo(surfaceId: String): Boolean = attachment?.surfaceId == surfaceId
+
     fun setFit(fit: Pair<Int, Int>?) {
         val current = attachment ?: return
         attachment = current.copy(fit = fit)

@@ -10,6 +10,7 @@ import com.gantoine.muxer.data.SnapshotStore
 import com.gantoine.muxer.net.ConnectionManager
 import com.gantoine.muxer.net.PairingClient
 import com.gantoine.muxer.notifications.ConnectionService
+import com.gantoine.muxer.notifications.ConversationShortcuts
 import com.gantoine.muxer.notifications.Notifier
 import com.gantoine.muxer.tile.NotificationsTile
 import com.gantoine.muxer.tile.NotificationsTileService
@@ -36,7 +37,8 @@ class MuxerApplication : Application() {
 
     val store: MacStore by lazy { MacStore(this) }
     val snapshots: SnapshotStore by lazy { SnapshotStore(this) }
-    val notifier: Notifier by lazy { Notifier(this) }
+    val shortcuts: ConversationShortcuts by lazy { ConversationShortcuts(this) }
+    val notifier: Notifier by lazy { Notifier(this, shortcuts) }
     val pairing: PairingClient by lazy { PairingClient(httpClient) }
 
     val connections: ConnectionManager by lazy {
@@ -63,6 +65,7 @@ class MuxerApplication : Application() {
             connections.start()
             launch { keepQuickSettingsTileInSync() }
             launch { Widgets.keepFresh(this@MuxerApplication) }
+            launch { shortcuts.keepInSync(snapshots.snapshots) }
             keepBackgroundServiceInSync()
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {

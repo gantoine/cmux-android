@@ -8,23 +8,42 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
+import com.gantoine.muxer.BubbleActivity
 import com.gantoine.muxer.MainActivity
 import com.gantoine.muxer.R
 import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.ui.Approvals
+import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 
-class Notifier(private val context: Context) {
+class Notifier(private val context: Context, private val shortcuts: ConversationShortcuts) {
+    private data class Conversation(val target: ConversationTarget, val macName: String, val agentName: String, val channel: String) {
+        val notificationId: Int get() = "conversation:${target.key}".hashCode()
+    }
+
+    private val history = ConversationHistory()
+    private val conversations = ConcurrentHashMap<String, Conversation>()
+    private val you = Person.Builder().setName("You").setKey(YOU_KEY).build()
+    private val app = Person.Builder().setName("Muxer").setKey(APP_KEY).build()
+
     fun createChannels() {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(AGENT_CHANNEL, context.getString(R.string.channel_agents), NotificationManager.IMPORTANCE_HIGH)
-                .apply { description = context.getString(R.string.channel_agents_description) },
+        manager.createNotificationChannels(
+            listOf(
+                channel(APPROVALS_CHANNEL, R.string.channel_approvals, R.string.channel_approvals_description, NotificationManager.IMPORTANCE_HIGH),
+                channel(COMPLETIONS_CHANNEL, R.string.channel_completions, R.string.channel_completions_description, NotificationManager.IMPORTANCE_HIGH),
+                channel(ALERTS_CHANNEL, R.string.channel_alerts, R.string.channel_alerts_description, NotificationManager.IMPORTANCE_HIGH),
+            ),
         )
+        manager.deleteNotificationChannel(LEGACY_AGENT_CHANNEL)
         manager.createNotificationChannel(
             NotificationChannel(ACTIVITY_CHANNEL, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_LOW)
                 .apply { description = context.getString(R.string.channel_activity_description) },
@@ -32,59 +51,137 @@ class Notifier(private val context: Context) {
         manager.deleteNotificationChannel(LEGACY_CONNECTION_CHANNEL)
     }
 
+    private fun channel(id: String, name: Int, description: Int, importance: Int) =
+        NotificationChannel(id, context.getString(name), importance).apply { this.description = context.getString(description) }
+
     fun canNotify(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
     fun show(mac: Mac, notification: RelayNotification) {
         if (!canNotify()) return
+        val workspaceId = notification.workspaceId
+        val surfaceId = notification.surfaceId
+        if (!NotificationFilter.isConversation(notification) || workspaceId == null || surfaceId == null) {
+            showPlain(mac, notification)
+            return
+        }
+        val target = ConversationTarget(mac.id, workspaceId, surfaceId)
+        val agentName = shortcuts.agentName(mac.id, workspaceId)
+            ?: notification.title?.takeIf { it.isNotBlank() }
+            ?: notification.tabTitle?.takeIf { it.isNotBlank() }
+            ?: "Agent"
+        val conversation = Conversation(target, mac.name, agentName, NotificationFilter.channel(notification))
+        conversations[target.key] = conversation
+        if (activeNotification(conversation.notificationId) == null) history.clear(target.key) else restoreHistory(conversation)
+        val text = listOfNotNull(
+            notification.title?.takeIf { it.isNotBlank() && it != agentName },
+            notification.subtitle?.takeIf { it.isNotBlank() },
+            notification.body?.takeIf { it.isNotBlank() },
+        ).joinToString("\n")
+        history.add(target.key, ConversationMessage(notification.id, text, Sender.Agent, time(notification.createdAt)))
+        postConversation(conversation, silent = false)
+    }
+
+    private fun showPlain(mac: Mac, notification: RelayNotification) {
         val title = notification.title?.takeIf { it.isNotBlank() } ?: notification.tabTitle ?: mac.name
-        val context = listOfNotNull(mac.name, notification.tabTitle?.takeIf { it != title }).joinToString(" · ")
+        val subText = listOfNotNull(mac.name, notification.tabTitle?.takeIf { it != title }).joinToString(" · ")
         val body = listOfNotNull(notification.subtitle?.takeIf { it.isNotBlank() }, notification.body).joinToString("\n")
-        val built = NotificationCompat.Builder(this.context, AGENT_CHANNEL)
+        val built = NotificationCompat.Builder(context, NotificationFilter.channel(notification))
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setSubText(context)
+            .setSubText(subText)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setGroup(mac.id)
-            .setContentIntent(openTerminalIntent(mac.id, notification))
+            .setContentIntent(openTerminalIntent(mac.id, notification.workspaceId, notification.surfaceId, notification.id.hashCode()))
             .build()
-        @Suppress("MissingPermission")
-        NotificationManagerCompat.from(this.context).notify(notification.id.hashCode(), built)
+        post(notification.id.hashCode(), built)
     }
 
     fun dismiss(notification: RelayNotification) {
         NotificationManagerCompat.from(context).cancel(notification.id.hashCode())
+        val (key, remaining) = history.remove(notification.id) ?: return
+        val conversation = conversations[key] ?: return
+        if (!ConversationHistory.hasAgentMessages(remaining) || activeNotification(conversation.notificationId) == null) {
+            NotificationManagerCompat.from(context).cancel(conversation.notificationId)
+            history.clear(key)
+            return
+        }
+        postConversation(conversation, silent = true)
+    }
+
+    fun showReply(target: ConversationTarget, macName: String, agentName: String, text: String, failure: String?) {
+        if (!canNotify()) return
+        val conversation = conversations[target.key] ?: Conversation(target, macName, agentName, ALERTS_CHANNEL).also { conversations[target.key] = it }
+        restoreHistory(conversation)
+        val now = System.currentTimeMillis()
+        history.add(target.key, ConversationMessage("reply:$now", text, Sender.You, now))
+        if (failure != null) {
+            history.add(target.key, ConversationMessage("failure:$now", "Not sent to ${conversation.agentName}: $failure", Sender.App, now))
+        }
+        postConversation(conversation, silent = true)
+    }
+
+    private fun postConversation(conversation: Conversation, silent: Boolean) {
+        val messages = history.messages(conversation.target.key)
+        val last = messages.lastOrNull() ?: return
+        val agent = agentPerson(conversation.target, conversation.agentName)
+        val style = NotificationCompat.MessagingStyle(you)
+        messages.forEach { message -> style.addMessage(message.text, message.time, personFor(message.sender, agent)) }
+        val target = conversation.target
+        val builder = NotificationCompat.Builder(context, conversation.channel)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(conversation.agentName)
+            .setContentText(last.text)
+            .setSubText(conversation.macName)
+            .setStyle(style)
+            .setShortcutId(ConversationShortcuts.id(target.macId, target.workspaceId))
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setSilent(silent)
+            .setGroup(target.macId)
+            .setContentIntent(openTerminalIntent(target.macId, target.workspaceId, target.surfaceId, conversation.notificationId))
+            .addAction(messageAction(target, conversation.agentName))
+        bubble(target, conversation.notificationId)?.let(builder::setBubbleMetadata)
+        post(conversation.notificationId, builder.build())
     }
 
     fun showApproval(mac: Mac, approval: Approval) {
         if (!canNotify()) return
+        val target = ConversationTarget(mac.id, approval.workspaceId, approval.surfaceId)
+        val agentName = AgentNames.display(approval.agent) ?: shortcuts.agentName(mac.id, approval.workspaceId) ?: "Agent"
         val summary = Approvals.summary(approval)
         val body = listOfNotNull(
             approval.description?.takeIf { approval.isPermission && it.isNotBlank() && it != approval.detail },
-            summary,
+            summary.takeIf { it.isNotBlank() },
+            optionsLine(approval),
         ).joinToString("\n")
-        val builder = NotificationCompat.Builder(context, AGENT_CHANNEL)
+        val text = listOf(Approvals.title(approval), body).filter { it.isNotBlank() }.joinToString("\n")
+        val style = NotificationCompat.MessagingStyle(you)
+            .addMessage(text, time(approval.createdAt), agentPerson(target, agentName))
+        val notificationId = approvalNotificationId(approval.id)
+        val builder = NotificationCompat.Builder(context, APPROVALS_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(Approvals.title(approval))
             .setSubText(mac.name)
             .setContentText(summary)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setStyle(style)
+            .setShortcutId(ConversationShortcuts.id(mac.id, approval.workspaceId))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setGroup(mac.id)
-            .setContentIntent(openTerminalIntent(mac.id, approval.workspaceId, approval.surfaceId, approvalNotificationId(approval.id)))
-        approvalActions(mac.id, approval).forEach { (label, intent) -> builder.addAction(0, label, intent) }
-        @Suppress("MissingPermission")
-        NotificationManagerCompat.from(context).notify(approvalNotificationId(approval.id), builder.build())
+            .setContentIntent(openTerminalIntent(mac.id, approval.workspaceId, approval.surfaceId, notificationId))
+        approvalActions(mac.id, approval).forEach(builder::addAction)
+        bubble(target, notificationId)?.let(builder::setBubbleMetadata)
+        post(notificationId, builder.build())
     }
 
     fun showApprovalFailed(macName: String, approval: ApprovalTarget, message: String) {
         if (!canNotify()) return
-        val built = NotificationCompat.Builder(context, AGENT_CHANNEL)
+        val built = NotificationCompat.Builder(context, APPROVALS_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Your answer didn't reach $macName")
             .setContentText(message)
@@ -93,37 +190,109 @@ class Notifier(private val context: Context) {
             .setGroup(approval.macId)
             .setContentIntent(openTerminalIntent(approval.macId, approval.workspaceId, approval.surfaceId, approvalNotificationId(approval.approvalId)))
             .build()
-        @Suppress("MissingPermission")
-        NotificationManagerCompat.from(context).notify(approvalNotificationId(approval.approvalId), built)
+        post(approvalNotificationId(approval.approvalId), built)
     }
 
     fun dismissApproval(approvalId: String) {
         NotificationManagerCompat.from(context).cancel(approvalNotificationId(approvalId))
     }
 
-    private fun approvalActions(macId: String, approval: Approval): List<Pair<String, PendingIntent>> {
+    private fun optionsLine(approval: Approval): String? {
+        val question = approval.questions.singleOrNull()?.takeIf { approval.isQuestion } ?: return null
+        if (NotificationActions.oneTapAnswers(question).size == question.options.size) return null
+        return question.options.joinToString(" · ") { it.label }.takeIf { it.isNotBlank() }
+    }
+
+    private fun approvalActions(macId: String, approval: Approval): List<NotificationCompat.Action> {
         val target = ApprovalTarget(macId, approval.id, approval.workspaceId, approval.surfaceId)
+        fun action(label: String, intent: PendingIntent) = NotificationCompat.Action.Builder(0, label, intent).build()
         if (approval.isPermission) {
             return listOf(
-                "Allow" to ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ONCE),
-                "Always allow" to ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ALWAYS),
-                "Deny" to ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_DENY),
+                action("Allow", ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ONCE)),
+                action("Always allow", ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ALWAYS)),
+                action("Deny", ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_DENY)),
             )
         }
         if (approval.isPlan) {
             return listOf(
-                "Approve" to ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_MANUAL, plan = true),
-                "Auto-edit" to ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_AUTO_ACCEPT, plan = true),
-                "Reject" to ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_DENY, plan = true),
+                action("Approve", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_MANUAL, plan = true)),
+                action("Auto-edit", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_AUTO_ACCEPT, plan = true)),
+                action("Reject", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_DENY, plan = true)),
             )
         }
         val question = approval.questions.singleOrNull() ?: return emptyList()
-        if (question.multiSelect || question.options.size !in 1..MAX_NOTIFICATION_ACTIONS) return emptyList()
-        return question.options.map { option -> option.label to ApprovalActionReceiver.intent(context, target, answer = option.label) }
+        val options = NotificationActions.oneTapAnswers(question).map { label ->
+            action(label, ApprovalActionReceiver.intent(context, target, answer = label))
+        }
+        val typed = NotificationCompat.Action.Builder(0, "Type an answer", ApprovalActionReceiver.typedAnswerIntent(context, target))
+            .addRemoteInput(RemoteInput.Builder(ApprovalActionReceiver.KEY_TYPED_ANSWER).setLabel("Your answer").build())
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .setAllowGeneratedReplies(false)
+            .build()
+        return options + typed
     }
 
-    private fun openTerminalIntent(macId: String, notification: RelayNotification): PendingIntent =
-        openTerminalIntent(macId, notification.workspaceId, notification.surfaceId, notification.id.hashCode())
+    private fun messageAction(target: ConversationTarget, agentName: String): NotificationCompat.Action =
+        NotificationCompat.Action.Builder(0, "Message", AgentReplyReceiver.intent(context, target, agentName))
+            .addRemoteInput(RemoteInput.Builder(AgentReplyReceiver.KEY_TEXT).setLabel("Message $agentName").build())
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .setAllowGeneratedReplies(false)
+            .build()
+
+    private fun bubble(target: ConversationTarget, requestCode: Int): NotificationCompat.BubbleMetadata? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val intent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            BubbleActivity.intent(context, target),
+            mutableFlag() or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.BubbleMetadata.Builder(intent, shortcuts.icon(target.macId, target.workspaceId))
+            .setDesiredHeight(BUBBLE_HEIGHT_DP)
+            .setAutoExpandBubble(false)
+            .setSuppressNotification(false)
+            .build()
+    }
+
+    private fun agentPerson(target: ConversationTarget, name: String): Person =
+        Person.Builder().setName(name).setKey("agent:${target.macId}:${target.workspaceId}").setBot(true).build()
+
+    private fun personFor(sender: Sender, agent: Person): Person? = when (sender) {
+        Sender.Agent -> agent
+        Sender.You -> null
+        Sender.App -> app
+    }
+
+    private fun senderOf(person: Person?): Sender = when (person?.key) {
+        null, YOU_KEY -> Sender.You
+        APP_KEY -> Sender.App
+        else -> Sender.Agent
+    }
+
+    private fun restoreHistory(conversation: Conversation) {
+        if (history.messages(conversation.target.key).isNotEmpty()) return
+        val active = activeNotification(conversation.notificationId) ?: return
+        val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(active.notification) ?: return
+        history.restore(
+            conversation.target.key,
+            style.messages.mapIndexed { index, message ->
+                ConversationMessage("restored:$index", message.text?.toString().orEmpty(), senderOf(message.person), message.timestamp)
+            },
+        )
+    }
+
+    private fun activeNotification(id: Int): StatusBarNotification? =
+        runCatching { context.getSystemService(NotificationManager::class.java).activeNotifications.firstOrNull { it.id == id } }.getOrNull()
+
+    private fun post(id: Int, notification: android.app.Notification) {
+        @Suppress("MissingPermission")
+        NotificationManagerCompat.from(context).notify(id, notification)
+    }
+
+    private fun time(createdAt: String?): Long =
+        createdAt?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: System.currentTimeMillis()
 
     fun openTerminalIntent(macId: String, workspaceId: String?, surfaceId: String?, requestCode: Int): PendingIntent =
         PendingIntent.getActivity(
@@ -136,9 +305,12 @@ class Notifier(private val context: Context) {
     private fun approvalNotificationId(approvalId: String): Int = "approval:$approvalId".hashCode()
 
     companion object {
-        const val AGENT_CHANNEL = "agents"
-        private const val LEGACY_CONNECTION_CHANNEL = "connection"
+        const val APPROVALS_CHANNEL = "approvals"
+        const val COMPLETIONS_CHANNEL = "completions"
+        const val ALERTS_CHANNEL = "alerts"
+        private const val LEGACY_AGENT_CHANNEL = "agents"
         const val ACTIVITY_CHANNEL = "activity"
+        private const val LEGACY_CONNECTION_CHANNEL = "connection"
         const val ACTION_OPEN_TERMINAL = "com.gantoine.muxer.OPEN_TERMINAL"
         const val EXTRA_MAC_ID = "mac_id"
         const val EXTRA_WORKSPACE_ID = "workspace_id"
@@ -153,5 +325,10 @@ class Notifier(private val context: Context) {
                 putExtra(EXTRA_WORKSPACE_ID, workspaceId)
                 putExtra(EXTRA_SURFACE_ID, surfaceId)
             }
+        private const val YOU_KEY = "you"
+        private const val APP_KEY = "muxer"
+        private const val BUBBLE_HEIGHT_DP = 600
+
+        fun mutableFlag(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
     }
 }

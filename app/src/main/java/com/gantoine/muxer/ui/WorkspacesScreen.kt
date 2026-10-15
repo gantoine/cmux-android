@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
@@ -84,7 +85,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -180,6 +183,8 @@ fun WorkspacesScreen(
     var filter by rememberSaveable { mutableStateOf(WorkspaceFilter.All) }
     var toggledGroups by rememberSaveable { mutableStateOf(listOf<String>()) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val canPinShortcuts = remember { ShortcutManagerCompat.isRequestPinShortcutSupported(context) }
 
     fun run(action: suspend RelayConnection.() -> Result<*>, onSuccess: () -> Unit = {}) {
         val target = connection ?: return
@@ -369,6 +374,14 @@ fun WorkspacesScreen(
             SheetAction(Icons.Filled.Add, "New terminal") {
                 dialog = null
                 run({ request("create_terminal", buildJsonObject { put("workspace_id", current.workspace.id) }) })
+            }
+            if (canPinShortcuts && current.workspace.terminals.isNotEmpty()) {
+                SheetAction(Icons.AutoMirrored.Filled.AddToHomeScreen, "Add to Home screen") {
+                    dialog = null
+                    if (!app.shortcuts.requestPin(macId, macName, current.workspace)) {
+                        scope.launch { snackbar.showSnackbar("Your home screen can't add this shortcut.") }
+                    }
+                }
             }
             if (current.group == null) {
                 SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename") { dialog = WorkspaceDialog.Rename(current.workspace) }

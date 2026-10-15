@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private fun targetFrom(intent: Intent?): LaunchTarget? {
         intent ?: return null
         if (intent.action == Intent.ACTION_VIEW) PairLink.parse(intent.data)?.let { return it }
+        if (intent.action == ACTION_PAIR) return LaunchTarget.PairComputer
         if (intent.action == Notifier.ACTION_OPEN_TERMINAL) {
             val macId = intent.getStringExtra(Notifier.EXTRA_MAC_ID) ?: return null
             val workspaceId = intent.getStringExtra(Notifier.EXTRA_WORKSPACE_ID) ?: return null
@@ -43,5 +44,9 @@ class MainActivity : ComponentActivity() {
             return LaunchTarget.Terminal(macId, workspaceId, surfaceId)
         }
         return null
+    }
+
+    companion object {
+        const val ACTION_PAIR = "com.gantoine.muxer.PAIR"
     }
 }
