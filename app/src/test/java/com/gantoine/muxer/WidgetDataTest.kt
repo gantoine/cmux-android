@@ -1,0 +1,179 @@
+package com.gantoine.muxer
+
+import com.gantoine.muxer.data.MacSnapshot
+import com.gantoine.muxer.protocol.Approval
+import com.gantoine.muxer.protocol.ApprovalOption
+import com.gantoine.muxer.protocol.ApprovalQuestion
+import com.gantoine.muxer.protocol.Retry
+import com.gantoine.muxer.protocol.TerminalInfo
+import com.gantoine.muxer.protocol.WorkspaceInfo
+import com.gantoine.muxer.ui.Approvals
+import com.gantoine.muxer.widget.ApprovalButton
+import com.gantoine.muxer.widget.BoardCounts
+import com.gantoine.muxer.widget.WidgetData
+import com.gantoine.muxer.widget.WorkspaceState
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Locale
+
+class WidgetDataTest {
+    private val now = Instant.parse("2026-10-15T18:00:00Z").toEpochMilli()
+
+    private fun workspace(id: String, vararg terminals: TerminalInfo) = WorkspaceInfo(id = id, title = id, terminals = terminals.toList())
+
+    private fun snapshot(
+        macId: String = "mac",
+        workspaces: List<WorkspaceInfo> = emptyList(),
+        approvals: List<Approval> = emptyList(),
+        retries: List<Retry> = emptyList(),
+        busy: Set<String> = emptySet(),
+        connected: Boolean = true,
+        updatedAt: Long = now,
+    ) = MacSnapshot(macId, "$macId's Mac", connected, updatedAt, workspaces, approvals, retries, busy)
+
+    private fun permission(id: String, surfaceId: String, createdAt: String? = null) =
+        Approval(id = id, kind = Approval.KIND_PERMISSION, workspaceId = "w", surfaceId = surfaceId, tool = "Bash", createdAt = createdAt)
+
+    @Test
+    fun snapshotsAreStaleWhenDisconnectedOrOlderThanTwoMinutes() {
+        assertFalse(WidgetData.isStale(snapshot(updatedAt = now - 60_000), now))
+        assertTrue(WidgetData.isStale(snapshot(updatedAt = now - 121_000), now))
+        assertTrue(WidgetData.isStale(snapshot(connected = false), now))
+    }
+
+    @Test
+    fun asOfNamesTheOldestStaleSnapshotOnly() {
+        val zone = ZoneId.of("UTC")
+        assertNull(WidgetData.asOf(listOf(snapshot()), now, zone, Locale.UK))
+        val stale = listOf(
+            snapshot(macId = "a", updatedAt = now - 10 * 60_000),
+            snapshot(macId = "b", connected = false, updatedAt = now - 30 * 60_000),
+            snapshot(macId = "c", updatedAt = now - 60 * 60_000 + 1),
+        )
+        assertEquals("as of 17:00", WidgetData.asOf(stale, now, zone, Locale.UK))
+        assertEquals("as of 17:30", WidgetData.asOf(stale.dropLast(1), now, zone, Locale.UK))
+    }
+
+    @Test
+    fun workspaceStatePrefersWaitingThenRetryingThenWorking() {
+        val agent = TerminalInfo(id = "t1", agentSource = "claude", agentState = "Idle")
+        val ws = workspace("w1", agent)
+        assertEquals(WorkspaceState.Idle, WidgetData.state(ws, snapshot()))
+        assertEquals(WorkspaceState.Working, WidgetData.state(ws, snapshot(busy = setOf("t1"))))
+        assertEquals(
+            WorkspaceState.Working,
+            WidgetData.state(workspace("w1", agent.copy(agentState = "Running")), snapshot()),
+        )
+        val retrying = snapshot(busy = setOf("t1"), retries = listOf(Retry(surfaceId = "t1", dueAt = "2026-10-15T18:01:00Z")))
+        assertEquals(WorkspaceState.Retrying, WidgetData.state(ws, retrying))
+        val waiting = retrying.copy(approvals = listOf(permission("a1", "t1")))
+        assertEquals(WorkspaceState.Waiting, WidgetData.state(ws, waiting))
+    }
+
+    @Test
+    fun rowsOpenTheAgentTerminalOrTheFirstOne() {
+        val plain = TerminalInfo(id = "shell")
+        val agent = TerminalInfo(id = "claude", agentSource = "claude")
+        assertEquals("claude", WidgetData.agentSurface(workspace("w", plain, agent)))
+        assertEquals("shell", WidgetData.agentSurface(workspace("w", plain)))
+        assertNull(WidgetData.agentSurface(workspace("w")))
+    }
+
+    @Test
+    fun boardNamesComputersOnlyWhenAskedAndCountsStates() {
+        val first = snapshot(macId = "a", workspaces = listOf(workspace("w1", TerminalInfo("t1"))), busy = setOf("t1"))
+        val second = snapshot(
+            macId = "b",
+            workspaces = listOf(workspace("w2", TerminalInfo("t2")), workspace("w3", TerminalInfo("t3"))),
+            approvals = listOf(permission("x", "t2")),
+        )
+        val grouped = WidgetData.board(listOf(first, second), showComputerNames = true)
+        assertEquals(listOf("a's Mac", "b's Mac"), grouped.map { it.title })
+        assertEquals(listOf(null), WidgetData.board(listOf(first), showComputerNames = false).map { it.title })
+        val counts = WidgetData.counts(grouped)
+        assertEquals(BoardCounts(waiting = 1, retrying = 0, working = 1, idle = 1), counts)
+        assertEquals("1 waiting · 1 working", WidgetData.countsLabel(counts))
+        assertEquals("All idle", WidgetData.countsLabel(BoardCounts(0, 0, 0, 2)))
+        assertEquals("No workspaces", WidgetData.countsLabel(BoardCounts(0, 0, 0, 0)))
+    }
+
+    @Test
+    fun pairedKeepsTheComputersOrderAndDropsUnpairedSnapshots() {
+        val snapshots = mapOf("a" to snapshot(macId = "a"), "b" to snapshot(macId = "b"), "gone" to snapshot(macId = "gone"))
+        assertEquals(listOf("b", "a"), WidgetData.paired(snapshots, listOf("b", "a", "new")).map { it.macId })
+    }
+
+    @Test
+    fun approvalButtonsMatchTheKindOfPrompt() {
+        assertEquals(
+            listOf("Allow", "Always", "Deny"),
+            WidgetData.buttons(permission("p", "t")).map { it.label },
+        )
+        val plan = Approval(id = "p", kind = Approval.KIND_PLAN, workspaceId = "w", surfaceId = "t")
+        val planButtons = WidgetData.buttons(plan)
+        assertEquals(listOf("Approve", "Auto-edit", "Reject"), planButtons.map { it.label })
+        assertEquals(ApprovalButton.Decide("Auto-edit", Approvals.PLAN_AUTO_ACCEPT, plan = true), planButtons[1])
+
+        fun question(options: Int, multiSelect: Boolean = false) = ApprovalQuestion(
+            prompt = "Which?",
+            multiSelect = multiSelect,
+            options = (1..options).map { ApprovalOption("Option $it") },
+        )
+        fun asking(vararg questions: ApprovalQuestion) =
+            Approval(id = "q", kind = Approval.KIND_QUESTION, workspaceId = "w", surfaceId = "t", questions = questions.toList())
+
+        assertEquals(
+            listOf(ApprovalButton.Choose("Option 1"), ApprovalButton.Choose("Option 2")),
+            WidgetData.buttons(asking(question(2))),
+        )
+        assertEquals(listOf(ApprovalButton.OpenTerminal()), WidgetData.buttons(asking(question(4))))
+        assertEquals(listOf(ApprovalButton.OpenTerminal()), WidgetData.buttons(asking(question(2, multiSelect = true))))
+        assertEquals(listOf(ApprovalButton.OpenTerminal()), WidgetData.buttons(asking(question(2), question(2))))
+        assertEquals(listOf(ApprovalButton.OpenTerminal()), WidgetData.buttons(asking(question(0))))
+    }
+
+    @Test
+    fun approvalsAreNewestFirstAcrossComputers() {
+        val a = snapshot(macId = "a", approvals = listOf(permission("old", "t1", "2026-10-15T17:00:00Z"), permission("undated", "t1")))
+        val b = snapshot(macId = "b", approvals = listOf(permission("new", "t2", "2026-10-15T17:30:00Z")))
+        val items = WidgetData.approvals(listOf(a, b))
+        assertEquals(listOf("new", "old", "undated"), items.map { it.approval.id })
+        assertEquals("b's Mac", items.first().macName)
+    }
+
+    @Test
+    fun retriesFindTheirWorkspaceAndCountDown() {
+        val ws = workspace("w1", TerminalInfo("t1"))
+        val retry = Retry(surfaceId = "t1", agent = "claude", dueAt = "2026-10-15T18:00:42Z")
+        val items = WidgetData.retries(listOf(snapshot(workspaces = listOf(ws), retries = listOf(retry))))
+        assertEquals("w1", items.single().workspaceId)
+        assertEquals("Claude retries in 0:42", WidgetData.retryLabel(retry, Instant.ofEpochMilli(now)))
+        assertEquals("Claude retries now", WidgetData.retryLabel(retry, Instant.parse("2026-10-15T18:05:00Z")))
+        assertEquals("The agent retries now", WidgetData.retryLabel(retry.copy(agent = null, dueAt = "soon"), Instant.ofEpochMilli(now)))
+    }
+
+    @Test
+    fun previewShowsTheLastNonBlankLines() {
+        val preview = "one\ntwo  \n\nthree\nfour\n\n  \n"
+        assertEquals(listOf("three", "four"), WidgetData.previewLines(preview, 2))
+        assertEquals(listOf("two", "", "three", "four"), WidgetData.previewLines(preview, 4))
+        assertEquals(listOf("one", "two", "", "three", "four"), WidgetData.previewLines(preview, 10))
+        assertEquals(listOf("three", "four"), WidgetData.previewLines("\n\nthree\nfour", 3))
+        assertEquals(emptyList<String>(), WidgetData.previewLines(null, 3))
+        assertEquals(emptyList<String>(), WidgetData.previewLines(preview, 0))
+        assertEquals(listOf("thr", "fou"), WidgetData.previewLines(preview, 2, maxColumns = 3))
+    }
+
+    @Test
+    fun previewLineCountFitsTheWidgetHeight() {
+        assertEquals(5, WidgetData.previewLineCount(heightDp = 122f, chromeDp = 52f, lineDp = 14f))
+        assertEquals(1, WidgetData.previewLineCount(heightDp = 40f, chromeDp = 52f, lineDp = 14f))
+        assertEquals(30, WidgetData.previewColumnCount(widthDp = 238f, paddingDp = 28f, charDp = 7f))
+        assertEquals(1, WidgetData.previewColumnCount(widthDp = 20f, paddingDp = 28f, charDp = 7f))
+    }
+}

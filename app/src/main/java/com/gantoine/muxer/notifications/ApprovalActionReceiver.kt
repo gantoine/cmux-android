@@ -25,9 +25,12 @@ class ApprovalActionReceiver : BroadcastReceiver() {
         val pending = goAsync()
         app.scope.launch {
             try {
-                val connection = app.connections.connection(target.macId)
+                val paired = app.store.current().any { it.id == target.macId }
+                if (paired) app.connections.wake(WAKE_MS)
+                val connection = if (paired) app.connections.awaitConnected(target.macId, CONNECT_TIMEOUT_MS) else null
                 val result = when {
-                    connection == null -> Result.failure(IllegalStateException("This computer is not paired anymore."))
+                    !paired -> Result.failure(IllegalStateException("This computer is not paired anymore."))
+                    connection == null -> Result.failure(IllegalStateException("Couldn't reach the computer."))
                     mode != null && plan -> connection.decidePlan(target.approvalId, mode)
                     mode != null -> connection.allow(target.approvalId, mode)
                     answer != null -> connection.answer(target.approvalId, listOf(answer))
@@ -52,9 +55,21 @@ class ApprovalActionReceiver : BroadcastReceiver() {
         private const val EXTRA_MODE = "mode"
         private const val EXTRA_ANSWER = "answer"
         private const val EXTRA_PLAN = "plan"
+        private const val WAKE_MS = 30_000L
+        private const val CONNECT_TIMEOUT_MS = 8_000L
 
         fun intent(context: Context, target: ApprovalTarget, mode: String? = null, answer: String? = null, plan: Boolean = false): PendingIntent {
-            val intent = Intent(context, ApprovalActionReceiver::class.java).apply {
+            val requestCode = listOf(target.approvalId, mode, answer).hashCode()
+            return PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                broadcastIntent(context, target, mode, answer, plan),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        }
+
+        fun broadcastIntent(context: Context, target: ApprovalTarget, mode: String? = null, answer: String? = null, plan: Boolean = false): Intent =
+            Intent(context, ApprovalActionReceiver::class.java).apply {
                 action = ACTION_ANSWER
                 putExtra(EXTRA_MAC_ID, target.macId)
                 putExtra(EXTRA_APPROVAL_ID, target.approvalId)
@@ -64,8 +79,5 @@ class ApprovalActionReceiver : BroadcastReceiver() {
                 putExtra(EXTRA_ANSWER, answer)
                 putExtra(EXTRA_PLAN, plan)
             }
-            val requestCode = listOf(target.approvalId, mode, answer).hashCode()
-            return PendingIntent.getBroadcast(context, requestCode, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        }
     }
 }

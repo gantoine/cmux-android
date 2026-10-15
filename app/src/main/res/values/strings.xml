@@ -6,4 +6,22 @@
     <string name="channel_activity">Background connection</string>
     <string name="channel_activity_description">Shown while the app stays connected to your computers, with what your agents are doing</string>
     <string name="tile_label">Muxer</string>
+    <string name="widget_approvals_label">Waiting for you</string>
+    <string name="widget_approvals_description">Answer your agents\' permission requests, questions and plans</string>
+    <string name="widget_board_label">Agents</string>
+    <string name="widget_board_description">See which workspaces are waiting, working or idle</string>
+    <string name="widget_peek_label">Terminal peek</string>
+    <string name="widget_peek_description">The last lines of one workspace\'s terminal</string>
+    <string name="widget_peek_configure_label">Choose a workspace</string>
+    <string name="widget_preview_approvals_title">Waiting for you</string>
+    <string name="widget_preview_approvals_row">Claude wants to use Bash</string>
+    <string name="widget_preview_approvals_detail">npm test</string>
+    <string name="widget_preview_approvals_buttons">Allow · Always · Deny</string>
+    <string name="widget_preview_board_title">Agents</string>
+    <string name="widget_preview_board_first">API refactor</string>
+    <string name="widget_preview_board_first_state">Working · 14:02</string>
+    <string name="widget_preview_board_second">Docs</string>
+    <string name="widget_preview_board_second_state">Idle · Yesterday</string>
+    <string name="widget_preview_peek_title">API refactor</string>
+    <string name="widget_preview_peek_output">$ npm test\n✓ 42 passing\n$</string>
 </resources>

@@ -60,5 +60,50 @@
                 android:name="android.service.quicksettings.ACTIVE_TILE"
                 android:value="true" />
         </service>
+
+        <receiver
+            android:name=".widget.ApprovalsWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_approvals_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_approvals_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.AgentBoardWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_board_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_board_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.PeekWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_peek_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_peek_info" />
+        </receiver>
+
+        <activity
+            android:name=".widget.PeekConfigActivity"
+            android:exported="true"
+            android:label="@string/widget_peek_configure_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

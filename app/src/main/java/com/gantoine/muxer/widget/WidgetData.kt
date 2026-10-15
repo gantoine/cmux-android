@@ -1,0 +1,162 @@
+package com.gantoine.muxer.widget
+
+import com.gantoine.muxer.data.MacSnapshot
+import com.gantoine.muxer.protocol.Approval
+import com.gantoine.muxer.protocol.Retry
+import com.gantoine.muxer.protocol.WorkspaceInfo
+import com.gantoine.muxer.ui.AgentStatus
+import com.gantoine.muxer.ui.AgentMessaging
+import com.gantoine.muxer.ui.Approvals
+import com.gantoine.muxer.ui.WorkspaceListing
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
+
+enum class WorkspaceState(val label: String) {
+    Waiting("Waiting for you"),
+    Retrying("Retrying"),
+    Working("Working"),
+    Idle("Idle"),
+}
+
+data class BoardRow(val macId: String, val workspace: WorkspaceInfo, val state: WorkspaceState, val surfaceId: String?)
+
+data class BoardSection(val macId: String, val title: String?, val rows: List<BoardRow>)
+
+data class BoardCounts(val waiting: Int, val retrying: Int, val working: Int, val idle: Int)
+
+sealed interface ApprovalButton {
+    val label: String
+
+    data class Decide(override val label: String, val mode: String, val plan: Boolean) : ApprovalButton
+    data class Choose(override val label: String) : ApprovalButton
+    data class OpenTerminal(override val label: String = "Answer") : ApprovalButton
+}
+
+data class ApprovalItem(val macId: String, val macName: String, val approval: Approval, val buttons: List<ApprovalButton>)
+
+data class RetryItem(val macId: String, val macName: String, val retry: Retry, val workspaceId: String?)
+
+object WidgetData {
+    const val STALE_AFTER_MS = 2 * 60_000L
+    private const val MAX_OPTION_BUTTONS = 3
+
+    fun paired(snapshots: Map<String, MacSnapshot>, macIds: List<String>): List<MacSnapshot> = macIds.mapNotNull(snapshots::get)
+
+    fun isStale(snapshot: MacSnapshot, now: Long): Boolean = !snapshot.connected || now - snapshot.updatedAt > STALE_AFTER_MS
+
+    fun asOf(
+        snapshots: Collection<MacSnapshot>,
+        now: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+    ): String? {
+        val oldest = snapshots.filter { isStale(it, now) }.minOfOrNull { it.updatedAt } ?: return null
+        val time = Instant.ofEpochMilli(oldest).atZone(zone).format(DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale))
+        return "as of $time"
+    }
+
+    fun state(workspace: WorkspaceInfo, snapshot: MacSnapshot): WorkspaceState {
+        val surfaces = workspace.terminals.map { it.id }.toSet()
+        fun belongs(workspaceId: String?, surfaceId: String) = workspaceId == workspace.id || surfaceId in surfaces
+        return when {
+            snapshot.approvals.any { belongs(it.workspaceId, it.surfaceId) } -> WorkspaceState.Waiting
+            snapshot.retries.any { belongs(it.workspaceId, it.surfaceId) } -> WorkspaceState.Retrying
+            workspace.terminals.any { it.id in snapshot.busySurfaces || WorkspaceListing.agentStatus(it) is AgentStatus.Working } ->
+                WorkspaceState.Working
+            else -> WorkspaceState.Idle
+        }
+    }
+
+    fun agentSurface(workspace: WorkspaceInfo): String? =
+        (workspace.terminals.firstOrNull { it.agentSource != null || it.agentState != null } ?: workspace.terminals.firstOrNull())?.id
+
+    fun board(snapshots: List<MacSnapshot>, showComputerNames: Boolean): List<BoardSection> =
+        snapshots.map { snapshot ->
+            BoardSection(
+                macId = snapshot.macId,
+                title = snapshot.macName.takeIf { showComputerNames },
+                rows = snapshot.workspaces.map { BoardRow(snapshot.macId, it, state(it, snapshot), agentSurface(it)) },
+            )
+        }
+
+    fun counts(sections: List<BoardSection>): BoardCounts {
+        val states = sections.flatMap { section -> section.rows.map { it.state } }
+        return BoardCounts(
+            waiting = states.count { it == WorkspaceState.Waiting },
+            retrying = states.count { it == WorkspaceState.Retrying },
+            working = states.count { it == WorkspaceState.Working },
+            idle = states.count { it == WorkspaceState.Idle },
+        )
+    }
+
+    fun countsLabel(counts: BoardCounts): String {
+        val parts = listOf(counts.waiting to "waiting", counts.retrying to "retrying", counts.working to "working")
+            .filter { (count, _) -> count > 0 }
+            .map { (count, label) -> "$count $label" }
+        return when {
+            parts.isNotEmpty() -> parts.joinToString(" · ")
+            counts.idle > 0 -> "All idle"
+            else -> "No workspaces"
+        }
+    }
+
+    fun buttons(approval: Approval): List<ApprovalButton> {
+        if (approval.isPermission) {
+            return listOf(
+                ApprovalButton.Decide("Allow", Approvals.MODE_ONCE, plan = false),
+                ApprovalButton.Decide("Always", Approvals.MODE_ALWAYS, plan = false),
+                ApprovalButton.Decide("Deny", Approvals.MODE_DENY, plan = false),
+            )
+        }
+        if (approval.isPlan) {
+            return listOf(
+                ApprovalButton.Decide("Approve", Approvals.PLAN_MANUAL, plan = true),
+                ApprovalButton.Decide("Auto-edit", Approvals.PLAN_AUTO_ACCEPT, plan = true),
+                ApprovalButton.Decide("Reject", Approvals.PLAN_DENY, plan = true),
+            )
+        }
+        val question = approval.questions.singleOrNull()
+        if (question == null || question.multiSelect || question.options.size !in 1..MAX_OPTION_BUTTONS) {
+            return listOf(ApprovalButton.OpenTerminal())
+        }
+        return question.options.map { ApprovalButton.Choose(it.label) }
+    }
+
+    fun approvals(snapshots: List<MacSnapshot>): List<ApprovalItem> =
+        snapshots
+            .flatMap { snapshot -> snapshot.approvals.map { ApprovalItem(snapshot.macId, snapshot.macName, it, buttons(it)) } }
+            .sortedByDescending { item -> item.approval.createdAt?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.EPOCH }
+
+    fun retries(snapshots: List<MacSnapshot>): List<RetryItem> =
+        snapshots.flatMap { snapshot ->
+            snapshot.retries.map { retry ->
+                val workspaceId = retry.workspaceId ?: snapshot.workspaces.firstOrNull { w -> w.terminals.any { it.id == retry.surfaceId } }?.id
+                RetryItem(snapshot.macId, snapshot.macName, retry, workspaceId)
+            }
+        }
+
+    fun retryLabel(retry: Retry, now: Instant): String {
+        val agent = retry.agent?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "The agent"
+        val seconds = AgentMessaging.secondsUntil(retry, now)
+        return if (seconds == null || seconds == 0L) "$agent retries now" else "$agent retries in %d:%02d".format(seconds / 60, seconds % 60)
+    }
+
+    fun previewLines(preview: String?, maxLines: Int, maxColumns: Int = Int.MAX_VALUE): List<String> {
+        if (maxLines <= 0 || maxColumns <= 0) return emptyList()
+        return preview.orEmpty()
+            .lines()
+            .map { it.trimEnd().take(maxColumns) }
+            .dropLastWhile { it.isEmpty() }
+            .takeLast(maxLines)
+            .dropWhile { it.isEmpty() }
+    }
+
+    fun previewLineCount(heightDp: Float, chromeDp: Float, lineDp: Float): Int =
+        ((heightDp - chromeDp) / lineDp).toInt().coerceAtLeast(1)
+
+    fun previewColumnCount(widthDp: Float, paddingDp: Float, charDp: Float): Int =
+        ((widthDp - paddingDp) / charDp).toInt().coerceAtLeast(1)
+}

@@ -13,6 +13,7 @@ import com.gantoine.muxer.notifications.ConnectionService
 import com.gantoine.muxer.notifications.Notifier
 import com.gantoine.muxer.tile.NotificationsTile
 import com.gantoine.muxer.tile.NotificationsTileService
+import com.gantoine.muxer.widget.Widgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +62,7 @@ class MuxerApplication : Application() {
             store.migrateGlobalBackgroundSetting()
             connections.start()
             launch { keepQuickSettingsTileInSync() }
+            launch { Widgets.keepFresh(this@MuxerApplication) }
             keepBackgroundServiceInSync()
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
