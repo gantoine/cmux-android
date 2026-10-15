@@ -23,6 +23,7 @@ data class Mac(
     val lastNotificationSeq: Long = 0,
     val backgroundNotifications: Boolean = false,
     val completionNotifications: Boolean = true,
+    val showActivity: Boolean = true,
 )
 
 data class Settings(val fontSize: Float, val fitToPhone: Boolean = true)
@@ -49,7 +50,8 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
             val replaced = macs.filter { it.id == id || it.url == url }
             val background = replaced.any { it.backgroundNotifications }
             val completions = replaced.all { it.completionNotifications }
-            macs - replaced.toSet() + Mac(id, Names.possessive(name), url, cipher.encrypt(token), notificationSeq, background, completions)
+            val activity = replaced.all { it.showActivity }
+            macs - replaced.toSet() + Mac(id, Names.possessive(name), url, cipher.encrypt(token), notificationSeq, background, completions, activity)
         }
     }
 
@@ -59,6 +61,10 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
 
     suspend fun setCompletionNotifications(id: String, enabled: Boolean) = update { macs ->
         macs.map { if (it.id == id) it.copy(completionNotifications = enabled) else it }
+    }
+
+    suspend fun setShowActivity(id: String, enabled: Boolean) = update { macs ->
+        macs.map { if (it.id == id) it.copy(showActivity = enabled) else it }
     }
 
     suspend fun migrateGlobalBackgroundSetting() {

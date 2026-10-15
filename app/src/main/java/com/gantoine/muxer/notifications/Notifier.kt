@@ -29,6 +29,10 @@ class Notifier(private val context: Context) {
             NotificationChannel(CONNECTION_CHANNEL, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_MIN)
                 .apply { description = context.getString(R.string.channel_connection_description) },
         )
+        manager.createNotificationChannel(
+            NotificationChannel(ACTIVITY_CHANNEL, context.getString(R.string.channel_activity), NotificationManager.IMPORTANCE_LOW)
+                .apply { description = context.getString(R.string.channel_activity_description) },
+        )
     }
 
     fun canNotify(): Boolean =
@@ -124,7 +128,7 @@ class Notifier(private val context: Context) {
     private fun openTerminalIntent(macId: String, notification: RelayNotification): PendingIntent =
         openTerminalIntent(macId, notification.workspaceId, notification.surfaceId, notification.id.hashCode())
 
-    private fun openTerminalIntent(macId: String, workspaceId: String?, surfaceId: String?, requestCode: Int): PendingIntent {
+    fun openTerminalIntent(macId: String, workspaceId: String?, surfaceId: String?, requestCode: Int): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             action = ACTION_OPEN_TERMINAL
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -145,6 +149,7 @@ class Notifier(private val context: Context) {
     companion object {
         const val AGENT_CHANNEL = "agents"
         const val CONNECTION_CHANNEL = "connection"
+        const val ACTIVITY_CHANNEL = "activity"
         const val ACTION_OPEN_TERMINAL = "com.gantoine.muxer.OPEN_TERMINAL"
         const val EXTRA_MAC_ID = "mac_id"
         const val EXTRA_WORKSPACE_ID = "workspace_id"
