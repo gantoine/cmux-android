@@ -69,6 +69,7 @@ import com.gantoine.muxer.protocol.ChatTool
 fun ChatView(
     chat: ChatState,
     status: AgentStatus?,
+    answeringHere: Boolean,
     draft: String,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
@@ -100,7 +101,7 @@ fun ChatView(
                 }
             }
         }
-        AnimatedVisibility(visible = WorkspaceListing.needsTerminalAnswer(status)) {
+        AnimatedVisibility(visible = !answeringHere && WorkspaceListing.needsTerminalAnswer(status)) {
             NeedsYouCard(status?.label.orEmpty(), onShowTerminal)
         }
         ChatComposer(
@@ -118,7 +119,7 @@ fun ChatView(
 private fun ChatItem(entry: ChatEntry, working: Boolean) {
     when (entry.kind) {
         "user" -> UserMessage(entry.text.orEmpty())
-        "assistant" -> AssistantMessage(entry.text.orEmpty())
+        "assistant" -> MarkdownText(entry.text.orEmpty())
         "tool" -> entry.tool?.let { ToolCall(it, working) }
         else -> Notice(entry.text.orEmpty())
     }
@@ -141,7 +142,7 @@ private fun UserMessage(text: String) {
 }
 
 @Composable
-private fun AssistantMessage(text: String) {
+fun MarkdownText(text: String) {
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHigh
     SelectionContainer {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {

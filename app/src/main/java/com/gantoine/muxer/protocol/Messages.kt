@@ -130,6 +130,46 @@ data class RelayNotification(
 data class NotificationMessage(val notification: RelayNotification)
 
 @Serializable
+data class ApprovalOption(val label: String, val description: String? = null)
+
+@Serializable
+data class ApprovalQuestion(
+    val header: String? = null,
+    val prompt: String,
+    val multiSelect: Boolean = false,
+    val options: List<ApprovalOption> = emptyList(),
+)
+
+@Serializable
+data class Approval(
+    val id: String,
+    val kind: String,
+    val agent: String? = null,
+    val workspaceId: String,
+    val surfaceId: String,
+    val tool: String? = null,
+    val detail: String? = null,
+    val description: String? = null,
+    val questions: List<ApprovalQuestion> = emptyList(),
+    val plan: String? = null,
+    val cwd: String? = null,
+    val createdAt: String? = null,
+) {
+    val isPermission: Boolean get() = kind == KIND_PERMISSION
+    val isQuestion: Boolean get() = kind == KIND_QUESTION
+    val isPlan: Boolean get() = kind == KIND_PLAN
+
+    companion object {
+        const val KIND_PERMISSION = "permission"
+        const val KIND_QUESTION = "question"
+        const val KIND_PLAN = "plan"
+    }
+}
+
+@Serializable
+data class ApprovalsMessage(val approvals: List<Approval> = emptyList())
+
+@Serializable
 data class RequestError(val code: String, val message: String = "")
 
 @Serializable

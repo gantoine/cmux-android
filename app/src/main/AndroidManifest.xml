@@ -33,6 +33,10 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".notifications.ApprovalActionReceiver"
+            android:exported="false" />
+
         <service
             android:name=".notifications.ConnectionService"
             android:exported="false"

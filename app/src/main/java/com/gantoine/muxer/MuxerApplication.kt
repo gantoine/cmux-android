@@ -41,6 +41,8 @@ class MuxerApplication : Application() {
             scope = scope,
             notify = notifier::show,
             dismiss = notifier::dismiss,
+            notifyApproval = notifier::showApproval,
+            dismissApproval = notifier::dismissApproval,
         )
     }
 
