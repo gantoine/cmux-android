@@ -12,7 +12,7 @@ object NotificationsTile {
         val watched = macs.filter { it.backgroundNotifications }
         if (watched.isEmpty()) return TileStatus(TileState.Inactive, "Off")
         val connected = watched.count { it.id in connectedMacIds }
-        return TileStatus(TileState.Active, "Connected to $connected of ${watched.size}")
+        return TileStatus(TileState.Active, "$connected of ${watched.size} connected")
     }
 
     fun backgroundAfterToggle(macs: List<Mac>): Boolean = macs.any { !it.backgroundNotifications }

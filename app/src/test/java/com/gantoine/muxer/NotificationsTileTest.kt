@@ -25,7 +25,7 @@ class NotificationsTileTest {
     @Test
     fun countsConnectionsAmongWatchedComputers() {
         val macs = listOf(mac("a", true), mac("b", true), mac("c", false))
-        assertEquals(TileStatus(TileState.Active, "Connected to 1 of 2"), NotificationsTile.status(macs, setOf("a", "c")))
+        assertEquals(TileStatus(TileState.Active, "1 of 2 connected"), NotificationsTile.status(macs, setOf("a", "c")))
     }
 
     @Test
