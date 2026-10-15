@@ -7,12 +7,18 @@ import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.Welcome
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
@@ -35,6 +41,18 @@ class ConnectionManager(
 
     private val appVisible = MutableStateFlow(false)
     val visibleTerminal = MutableStateFlow<VisibleTerminal?>(null)
+    val lookingAt: Flow<VisibleTerminal?> = combine(appVisible, visibleTerminal) { visible, terminal -> terminal.takeIf { visible } }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val connectedMacIds: Flow<Set<String>> = connectionsFlow.flatMapLatest { connections ->
+        if (connections.isEmpty()) {
+            flowOf(emptySet())
+        } else {
+            combine(connections.map { (macId, connection) -> connection.state.map { macId to (it is ConnectionState.Connected) } }) { states ->
+                states.filter { it.second }.map { it.first }.toSet()
+            }
+        }
+    }.distinctUntilChanged()
 
     fun start() {
         scope.launch {

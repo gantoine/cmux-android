@@ -10,21 +10,19 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
-import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.MainActivity
+import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.R
-import com.gantoine.muxer.net.ConnectionState
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 class ConnectionService : LifecycleService() {
+    private val app get() = application as MuxerApplication
+
     override fun onCreate() {
         super.onCreate()
-        startInForeground(connected = 0, total = 0)
-        watchConnections()
+        startInForeground(TimedSummary(ActivitySummary(), Instant.now()))
+        lifecycleScope.launch { ActivityFeed(app.store, app.connections).summaries().collect(::startInForeground) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -32,45 +30,37 @@ class ConnectionService : LifecycleService() {
         return START_STICKY
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private fun watchConnections() {
-        val manager = (application as MuxerApplication).connections
-        lifecycleScope.launch {
-            manager.connectionsFlow.flatMapLatest { connections ->
-                if (connections.isEmpty()) {
-                    flowOf(0 to 0)
-                } else {
-                    combine(connections.values.map { it.state }) { states ->
-                        states.count { it is ConnectionState.Connected } to states.count { it !is ConnectionState.Stopped }
-                    }
-                }
-            }.collect { (connected, total) -> startInForeground(connected, total) }
-        }
-    }
-
-    private fun startInForeground(connected: Int, total: Int) {
-        val text = when {
-            total == 0 -> "No computers to watch"
-            connected == total -> if (total == 1) "Connected to your computer" else "Connected to $total computers"
-            else -> "Connected to $connected of $total computers"
-        }
-        val openApp = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = NotificationCompat.Builder(this, Notifier.CONNECTION_CHANNEL)
+    private fun startInForeground(timed: TimedSummary) {
+        val (summary, now) = timed
+        val lines = LiveActivities.lines(summary, now)
+        val builder = NotificationCompat.Builder(this, Notifier.ACTIVITY_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Watching for terminal notifications")
-            .setContentText(text)
+            .setContentTitle(LiveActivities.title(summary))
             .setOngoing(true)
             .setSilent(true)
-            .setContentIntent(openApp)
-            .build()
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            .setOnlyAlertOnce(true)
+            .setContentIntent(contentIntent(summary))
+        if (lines.isEmpty()) {
+            builder.setContentText("Watching for terminal notifications")
         } else {
-            0
+            builder
+                .setContentText(lines.first())
+                .setStyle(NotificationCompat.InboxStyle().also { style -> lines.forEach { style.addLine(it) } })
+                .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+                .setRequestPromotedOngoing(true)
+            LiveActivities.chipText(summary, now)?.let { builder.setShortCriticalText(it) }
+            LiveActivities.chronometer(summary)?.let { chronometer ->
+                builder.setWhen(chronometer.at).setShowWhen(true).setUsesChronometer(true).setChronometerCountDown(chronometer.countDown)
+            }
         }
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, builder.build(), type)
+    }
+
+    private fun contentIntent(summary: ActivitySummary): PendingIntent {
+        val only = summary.activities.singleOrNull()
+        if (only != null) return app.notifier.openTerminalIntent(only.macId, only.workspaceId, only.surfaceId, NOTIFICATION_ID)
+        return PendingIntent.getActivity(this, NOTIFICATION_ID, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
     }
 
     companion object {

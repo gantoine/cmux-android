@@ -10,6 +10,8 @@ import com.gantoine.muxer.net.ConnectionManager
 import com.gantoine.muxer.net.PairingClient
 import com.gantoine.muxer.notifications.ConnectionService
 import com.gantoine.muxer.notifications.Notifier
+import com.gantoine.muxer.tile.NotificationsTile
+import com.gantoine.muxer.tile.NotificationsTileService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -55,6 +57,7 @@ class MuxerApplication : Application() {
         scope.launch {
             store.migrateGlobalBackgroundSetting()
             connections.start()
+            launch { keepQuickSettingsTileInSync() }
             keepBackgroundServiceInSync()
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -69,6 +72,12 @@ class MuxerApplication : Application() {
 
     fun notificationPermissionChanged() {
         notificationPermission.value = notifier.canNotify()
+    }
+
+    private suspend fun keepQuickSettingsTileInSync() {
+        combine(store.macs, connections.connectedMacIds) { macs, connected -> NotificationsTile.status(macs, connected) }
+            .distinctUntilChanged()
+            .collect { NotificationsTileService.requestRefresh(this) }
     }
 
     private suspend fun keepBackgroundServiceInSync() {
