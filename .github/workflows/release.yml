@@ -45,7 +45,7 @@ jobs:
       - name: Test
         run: |
           (cd relay && go test ./...)
-          ./gradlew :app:testDebugUnitTest
+          ./gradlew :shared:test :app:testDebugUnitTest
 
       - name: Build relay
         working-directory: relay
@@ -59,7 +59,7 @@ jobs:
             rm dist/muxer
           done
 
-      - name: Build signed APK
+      - name: Build signed APKs
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
           SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
@@ -71,11 +71,13 @@ jobs:
             exit 1
           fi
           echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          SIGNING_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" ./gradlew :app:assembleRelease \
+          SIGNING_KEYSTORE_PATH="$RUNNER_TEMP/release.jks" ./gradlew :app:assembleRelease :wear:assembleRelease \
             -PversionName="$VERSION" -PversionCode="$VERSION_CODE"
           rm "$RUNNER_TEMP/release.jks"
           cp app/build/outputs/apk/release/app-release.apk "relay/dist/muxer-${VERSION}.apk"
           cp app/build/outputs/mapping/release/mapping.txt "relay/dist/muxer-${VERSION}-mapping.txt"
+          cp wear/build/outputs/apk/release/wear-release.apk "relay/dist/muxer-wear-${VERSION}.apk"
+          cp wear/build/outputs/mapping/release/mapping.txt "relay/dist/muxer-wear-${VERSION}-mapping.txt"
 
       - name: Checksums
         working-directory: relay/dist

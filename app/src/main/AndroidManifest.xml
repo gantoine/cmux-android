@@ -104,5 +104,14 @@
             android:exported="false"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize" />
+
+        <service
+            android:name=".wear.WatchAnswerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.REQUEST_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:path="/muxer/answer" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

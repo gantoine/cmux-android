@@ -15,6 +15,7 @@ import com.gantoine.muxer.notifications.Notifier
 import com.gantoine.muxer.tile.NotificationsTile
 import com.gantoine.muxer.tile.NotificationsTileService
 import com.gantoine.muxer.widget.Widgets
+import com.gantoine.muxer.wear.WatchSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,6 +67,7 @@ class MuxerApplication : Application() {
             launch { keepQuickSettingsTileInSync() }
             launch { Widgets.keepFresh(this@MuxerApplication) }
             launch { shortcuts.keepInSync(snapshots.snapshots) }
+            WatchSync(this@MuxerApplication).start()
             keepBackgroundServiceInSync()
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
