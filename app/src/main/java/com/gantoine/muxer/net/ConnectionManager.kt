@@ -2,6 +2,7 @@ package com.gantoine.muxer.net
 
 import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.data.MacStore
+import com.gantoine.muxer.notifications.NotificationFilter
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.Welcome
@@ -114,7 +115,8 @@ class ConnectionManager(
         when (notification.kind) {
             "created" -> {
                 val answerableHere = connection(macId)?.approvals?.value.orEmpty().any { it.surfaceId == notification.surfaceId }
-                if (!isLookingAt(macId, notification.surfaceId) && !answerableHere) notify(mac, notification)
+                val wanted = NotificationFilter.shouldShow(mac, notification)
+                if (wanted && !isLookingAt(macId, notification.surfaceId) && !answerableHere) notify(mac, notification)
             }
             "dismissed" -> dismiss(notification)
         }
