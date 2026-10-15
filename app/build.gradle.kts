@@ -49,6 +49,9 @@ android {
 }
 
 dependencies {
+    constraints {
+        libs.bundles.patched.build.tooling.get().forEach { add("androidLintTool", it) }
+    }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
