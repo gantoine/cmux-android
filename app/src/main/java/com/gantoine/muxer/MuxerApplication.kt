@@ -6,6 +6,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.gantoine.muxer.data.MacStore
+import com.gantoine.muxer.data.SnapshotStore
 import com.gantoine.muxer.net.ConnectionManager
 import com.gantoine.muxer.net.PairingClient
 import com.gantoine.muxer.notifications.ConnectionService
@@ -33,12 +34,14 @@ class MuxerApplication : Application() {
     }
 
     val store: MacStore by lazy { MacStore(this) }
+    val snapshots: SnapshotStore by lazy { SnapshotStore(this) }
     val notifier: Notifier by lazy { Notifier(this) }
     val pairing: PairingClient by lazy { PairingClient(httpClient) }
 
     val connections: ConnectionManager by lazy {
         ConnectionManager(
             store = store,
+            snapshots = snapshots,
             client = httpClient,
             scope = scope,
             notify = notifier::show,
