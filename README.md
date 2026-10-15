@@ -111,6 +111,31 @@ Then pair with that address using `muxer pair --url`.
 - **Background notifications:** open a computer, tap the gear icon, and turn on **Notify me in the background**. The app then keeps a connection to that computer open in a foreground service, so its cmux notifications reach you while the app is closed. Each computer has its own switch, and a bell on the **Computers** list marks the ones that are on. Reading a notification on the computer removes it from the phone.
 - **Computer settings:** the same page lets you rename the computer, see its address and versions, and remove it.
 
+## Custom alerts with cmux automations
+
+The phone shows every notification cmux posts, so a [cmux automation](https://github.com/manaflow-ai/cmux/blob/main/docs/automations.md) with a `notify` action also reaches your phone. Muxer needs no setup for this. For example, this rule in `~/.cmuxterm/automations.json` tells you when cmux types "continue" for an agent after an overload:
+
+```json
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "phone-auto-resume",
+      "when": { "event": "agent.auto_resume.sent" },
+      "then": [
+        {
+          "action": "notify",
+          "title": "Agent resumed",
+          "body": "{{payload.agent}} was resumed after a temporary error (attempt {{payload.attempt}})."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Run `cmux automation reload` after editing the file, and `cmux automation test phone-auto-resume --event '{"name":"agent.auto_resume.sent","category":"agent","payload":{"agent":"claude","attempt":1}}'` to check a rule without firing it. The **Tell me when an agent finishes** setting and the filter that drops "waiting for your input" alerts apply to these notifications too.
+
 ## Updating the relay
 
 ```sh
