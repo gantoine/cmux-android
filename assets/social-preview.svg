@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
   <defs>
-    <linearGradient id="chevron" x1="35.25" y1="54" x2="62.51" y2="54" gradientUnits="userSpaceOnUse">
+    <linearGradient id="chevron" x1="18.79" y1="54" x2="56.95" y2="54" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#A8F5C8"/>
       <stop offset="0.52" stop-color="#3DDC84"/>
       <stop offset="1" stop-color="#0F9D58"/>
     </linearGradient>
   </defs>
   <rect width="1280" height="640" fill="#1E1F29"/>
-  <g transform="translate(110 150) scale(3.4) translate(-12 -12)">
-    <rect x="12" y="12" width="84" height="84" rx="20" fill="#2A2C3B"/>
-    <path d="M35.25 35.1 L62.51 54 L35.25 72.9 L35.25 64.5 L49.73 54 L35.25 43.5 Z" fill="url(#chevron)"/>
-    <rect x="53.25" y="66.3" width="19.5" height="6.6" rx="3.3" fill="#E8EDF5"/>
+  <g transform="translate(112 177) scale(2.644)">
+    <rect width="108" height="108" rx="25.7" fill="#2A2C3B"/>
+    <path d="M18.79,27.54 L56.95,54.0 L18.79,80.46 L18.79,68.7 L39.06,54.0 L18.79,39.3 Z" fill="url(#chevron)"/>
+    <rect x="61.84" y="71.22" width="27.3" height="9.24" rx="4.62" fill="#E8EDF5"/>
   </g>
   <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
-    <text x="470" y="290" font-size="84" font-weight="700" fill="#C6D0F5">Muxer</text>
-    <text x="472" y="360" font-size="36" fill="#A5ADCE">Your Mac's cmux terminals, on your phone.</text>
-    <text x="472" y="410" font-size="36" fill="#A5ADCE">Any plan, no cloud, over Tailscale.</text>
-    <text x="472" y="500" font-size="24" fill="#737994">Unofficial. Not affiliated with Manaflow or the cmux team.</text>
+    <text x="466" y="263" font-size="84" font-weight="700" fill="#C6D0F5">Muxer</text>
+    <text x="470" y="329" font-size="34" fill="#A5ADCE">Watch and drive cmux from your phone.</text>
+    <text x="470" y="377" font-size="34" fill="#A5ADCE">Runs on your own network with any cmux plan.</text>
+    <text x="470" y="433" font-size="22" fill="#737994">Unofficial. Not affiliated with Manaflow or the cmux team.</text>
   </g>
 </svg>
