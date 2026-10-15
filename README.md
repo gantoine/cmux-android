@@ -112,6 +112,7 @@ Then pair with that address using `muxer pair --url`.
 - **Retries:** when an agent stops on a temporary error, such as an overloaded model, and cmux schedules a retry, a banner counts down to it, and the phone holds back that agent's notification until it has been retried.
 - **Fit to phone:** while you view a terminal, cmux resizes it to the phone's screen, so lines wrap instead of running off the side. cmux gives the size back when you leave the terminal. Turn it off with the fit icon to see the terminal at its size on your computer; the app remembers your choice.
 - **Background notifications:** open a computer, tap the gear icon, and turn on **Notify me in the background**. The app then keeps a connection to that computer open in a foreground service, so its cmux notifications reach you while the app is closed. Each computer has its own switch, and a bell on the **Computers** list marks the ones that are on. Reading a notification on the computer removes it from the phone.
+- **Keep awake:** the same page has **Keep this computer awake**, which turns on cmux's Keep Mac Awake so idle sleep doesn't cut your phone off while agents run. It stops idle sleep only: closing a laptop's lid still puts it to sleep, and quitting cmux turns it off. A coffee cup on the **Computers** list marks computers kept awake, including when you turned it on at the computer.
 - **Computer settings:** the same page lets you rename the computer, see its address and versions, and remove it.
 
 ## Custom alerts with cmux automations

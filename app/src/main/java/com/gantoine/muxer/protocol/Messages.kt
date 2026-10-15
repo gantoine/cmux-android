@@ -229,3 +229,6 @@ data class AgentMessage(
 
 @Serializable
 data class AgentMessagesMessage(val surfaceId: String, val messages: List<AgentMessage> = emptyList())
+
+@Serializable
+data class KeepAwakeMessage(val enabled: Boolean)

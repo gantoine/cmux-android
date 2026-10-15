@@ -398,3 +398,19 @@ func (c *Client) AgentMessages(ctx context.Context, surfaceID string, limit int)
 	err := c.Call(ctx, "agent.message.list", map[string]any{"surface": surfaceID, "limit": limit}, &list)
 	return list.Messages, err
 }
+
+func (c *Client) KeepAwake(ctx context.Context) (bool, error) {
+	var status struct {
+		Enabled bool `json:"enabled"`
+	}
+	err := c.Call(ctx, "caffeine.status", nil, &status)
+	return status.Enabled, err
+}
+
+func (c *Client) SetKeepAwake(ctx context.Context, enabled bool) (bool, error) {
+	var status struct {
+		Enabled bool `json:"enabled"`
+	}
+	err := c.Call(ctx, "caffeine.set", map[string]any{"enabled": enabled}, &status)
+	return status.Enabled, err
+}

@@ -11,6 +11,7 @@ import com.gantoine.muxer.protocol.ChatMessage
 import com.gantoine.muxer.protocol.ChatSessionMessage
 import com.gantoine.muxer.protocol.DetachedMessage
 import com.gantoine.muxer.protocol.HistoryResponse
+import com.gantoine.muxer.protocol.KeepAwakeMessage
 import com.gantoine.muxer.protocol.NotificationMessage
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.RelayNotification
@@ -104,6 +105,9 @@ class RelayConnection(
     private val _agentMessages = MutableStateFlow<List<AgentMessage>>(emptyList())
     val agentMessages: StateFlow<List<AgentMessage>> = _agentMessages.asStateFlow()
 
+    private val _keepAwake = MutableStateFlow<Boolean?>(null)
+    val keepAwake: StateFlow<Boolean?> = _keepAwake.asStateFlow()
+
     private val _detached = MutableSharedFlow<DetachedMessage>(extraBufferCapacity = 8)
     val detached: SharedFlow<DetachedMessage> = _detached.asSharedFlow()
 
@@ -136,6 +140,7 @@ class RelayConnection(
         _approvals.value = emptyList()
         _retries.value = emptyList()
         _busySurfaces.value = emptySet()
+        _keepAwake.value = null
         _state.value = ConnectionState.Stopped
     }
 
@@ -167,6 +172,7 @@ class RelayConnection(
             _approvals.value = emptyList()
             _retries.value = emptyList()
             _busySurfaces.value = emptySet()
+            _keepAwake.value = null
             _state.value = ConnectionState.Disconnected(reason.message)
             delay(backoffMs)
             backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
@@ -261,6 +267,9 @@ class RelayConnection(
             "agent_messages" -> {
                 val listing = RelayJson.decodeFromJsonElement(AgentMessagesMessage.serializer(), message)
                 if (listing.surfaceId == attachment?.surfaceId) _agentMessages.value = listing.messages
+            }
+            "keep_awake" -> {
+                _keepAwake.value = RelayJson.decodeFromJsonElement(KeepAwakeMessage.serializer(), message).enabled
             }
             "notification" -> {
                 notifications.trySend(RelayJson.decodeFromJsonElement(NotificationMessage.serializer(), message).notification)
@@ -376,6 +385,13 @@ class RelayConnection(
             val sent = RelayJson.decodeFromJsonElement(AgentMessage.serializer(), data ?: error("The computer did not confirm the message."))
             if (_agentMessages.value.none { it.id == sent.id }) _agentMessages.value = listOf(sent) + _agentMessages.value
             sent
+        }
+
+    suspend fun setKeepAwake(enabled: Boolean): Result<Boolean> =
+        request("set_keep_awake", buildJsonObject { put("enabled", enabled) }).mapCatching { data ->
+            val confirmed = data?.let { RelayJson.decodeFromJsonElement(KeepAwakeMessage.serializer(), it).enabled } ?: enabled
+            _keepAwake.value = confirmed
+            confirmed
         }
 
     private fun forget(approvalId: String) {

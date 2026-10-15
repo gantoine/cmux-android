@@ -61,6 +61,8 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
     val mac = macs?.firstOrNull { it.id == macId }
     val connections by app.connections.connectionsFlow.collectAsState()
     val state by (connections[macId]?.state ?: flowOf(ConnectionState.Stopped)).collectAsState(initial = ConnectionState.Stopped)
+    val keepAwake by (connections[macId]?.keepAwake ?: flowOf(null)).collectAsState(initial = null)
+    var changingKeepAwake by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var renaming by remember { mutableStateOf(false) }
@@ -81,6 +83,15 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
             return
         }
         scope.launch { app.store.setBackgroundNotifications(macId, enabled) }
+    }
+
+    fun setKeepAwake(enabled: Boolean) {
+        val connection = connections[macId] ?: return
+        changingKeepAwake = true
+        scope.launch {
+            connection.setKeepAwake(enabled).onFailure { snackbar.showSnackbar(it.message ?: "The computer didn't change its sleep setting.") }
+            changingKeepAwake = false
+        }
     }
 
     Scaffold(
@@ -119,6 +130,30 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
                         Switch(
                             checked = mac.completionNotifications,
                             onCheckedChange = { enabled -> scope.launch { app.store.setCompletionNotifications(macId, enabled) } },
+                        )
+                    },
+                )
+            }
+
+            SectionLabel("Power")
+            SettingsGroup {
+                val connected = state is ConnectionState.Connected
+                val awake = keepAwake
+                SettingsRow(
+                    index = 0,
+                    count = 1,
+                    headline = "Keep this computer awake",
+                    supporting = when {
+                        !connected -> "Connect to this computer to change this."
+                        awake == null -> "Needs a newer relay and cmux on this computer."
+                        else -> "Stops idle sleep while cmux is open, so your phone can still reach it. Closing the lid still puts it to sleep."
+                    },
+                    onClick = if (connected && awake != null && !changingKeepAwake) ({ setKeepAwake(!awake) }) else null,
+                    trailing = {
+                        Switch(
+                            checked = awake == true,
+                            enabled = connected && awake != null && !changingKeepAwake,
+                            onCheckedChange = ::setKeepAwake,
                         )
                     },
                 )

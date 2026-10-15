@@ -33,6 +33,24 @@ type fakeCmux struct {
 	agent           cmux.AgentSession
 	agentErr        error
 	running         claude.SessionRef
+	keepAwake       bool
+	keepAwakeErr    error
+}
+
+func (f *fakeCmux) KeepAwake(context.Context) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.keepAwake, f.keepAwakeErr
+}
+
+func (f *fakeCmux) SetKeepAwake(_ context.Context, enabled bool) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.keepAwakeErr != nil {
+		return false, f.keepAwakeErr
+	}
+	f.keepAwake = enabled
+	return enabled, nil
 }
 
 func (f *fakeCmux) AgentSession(context.Context, string, string) (cmux.AgentSession, error) {
@@ -204,8 +222,28 @@ func (r testRelay) dial(t *testing.T, ctx context.Context, token string) (*webso
 	return websocket.Dial(ctx, strings.Replace(r.url, "http", "ws", 1)+"/v1/ws", &websocket.DialOptions{HTTPHeader: header})
 }
 
+var (
+	backlogMu sync.Mutex
+	backlog   = map[*websocket.Conn][]map[string]any{}
+)
+
+func takeFromBacklog(conn *websocket.Conn, matches func(map[string]any) bool) map[string]any {
+	backlogMu.Lock()
+	defer backlogMu.Unlock()
+	for index, message := range backlog[conn] {
+		if matches(message) {
+			backlog[conn] = append(backlog[conn][:index], backlog[conn][index+1:]...)
+			return message
+		}
+	}
+	return nil
+}
+
 func readUntil(t *testing.T, ctx context.Context, conn *websocket.Conn, kind string) map[string]any {
 	t.Helper()
+	if message := takeFromBacklog(conn, func(message map[string]any) bool { return message["type"] == kind }); message != nil {
+		return message
+	}
 	for {
 		var message map[string]any
 		if err := wsjson.Read(ctx, conn, &message); err != nil {

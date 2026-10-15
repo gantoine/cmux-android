@@ -87,7 +87,7 @@ func TestPhoneSeesRetriesAndCanMessageTheAgent(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_agent_message", "id": "2", "text": "use staging"})
-	if result := readUntil(t, ctx, conn, "result"); result["ok"] != false || result["error"].(map[string]any)["code"] != "not_attached" {
+	if result := resultFor(t, ctx, conn, "2"); result["ok"] != false || result["error"].(map[string]any)["code"] != "not_attached" {
 		t.Fatalf("messaging needs an open terminal: %v", result)
 	}
 
@@ -97,12 +97,12 @@ func TestPhoneSeesRetriesAndCanMessageTheAgent(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_agent_message", "id": "3", "text": ""})
-	if result := readUntil(t, ctx, conn, "result"); result["ok"] != false || result["error"].(map[string]any)["code"] != "invalid_params" {
+	if result := resultFor(t, ctx, conn, "3"); result["ok"] != false || result["error"].(map[string]any)["code"] != "invalid_params" {
 		t.Fatalf("empty messages must be refused: %v", result)
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_agent_message", "id": "4", "text": "use staging"})
-	result := readUntil(t, ctx, conn, "result")
+	result := resultFor(t, ctx, conn, "4")
 	if result["ok"] != true || result["data"].(map[string]any)["state"] != "queued" {
 		t.Fatalf("sending must return the queued message: %v", result)
 	}

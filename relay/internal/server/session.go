@@ -29,6 +29,7 @@ type Intervals struct {
 	SlowAfter  time.Duration
 	Workspaces time.Duration
 	Chat       time.Duration
+	KeepAwake  time.Duration
 }
 
 var DefaultIntervals = Intervals{
@@ -39,19 +40,21 @@ var DefaultIntervals = Intervals{
 	SlowAfter:  time.Minute,
 	Workspaces: 2 * time.Second,
 	Chat:       500 * time.Millisecond,
+	KeepAwake:  30 * time.Second,
 }
 
 const (
-	writeTimeout          = 10 * time.Second
-	pingInterval          = 30 * time.Second
-	revocationCheck       = 10 * time.Second
-	maxConsecutiveErrors  = 10
-	maxInputBytes         = 64 * 1024
-	defaultHistoryLines   = 2000
-	maxHistoryLines       = 5000
-	maxQueuedMessages     = 64
-	callTimeout           = 15 * time.Second
-	terminalGoneErrorCode = "not_found"
+	writeTimeout            = 10 * time.Second
+	pingInterval            = 30 * time.Second
+	revocationCheck         = 10 * time.Second
+	maxConsecutiveErrors    = 10
+	maxInputBytes           = 64 * 1024
+	defaultHistoryLines     = 2000
+	maxHistoryLines         = 5000
+	maxQueuedMessages       = 64
+	callTimeout             = 15 * time.Second
+	terminalGoneErrorCode   = "not_found"
+	methodNotFoundErrorCode = "method_not_found"
 )
 
 type requestError struct {
@@ -85,6 +88,7 @@ type session struct {
 	attached       *attachment
 	started        bool
 	workspacesWake chan struct{}
+	keepAwakeWake  chan struct{}
 }
 
 func newSession(server *Server, conn *websocket.Conn, device devices.Device) *session {
@@ -94,6 +98,7 @@ func newSession(server *Server, conn *websocket.Conn, device devices.Device) *se
 		device:         device,
 		clientID:       "muxer-" + device.ID,
 		workspacesWake: make(chan struct{}, 1),
+		keepAwakeWake:  make(chan struct{}, 1),
 	}
 }
 
@@ -390,6 +395,25 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			return nil, &requestError{Code: "invalid_params", Message: err.Error()}
 		}
 		return nil, err
+	case "keep_awake":
+		enabled, err := s.server.cmux.KeepAwake(ctx)
+		if err != nil {
+			return nil, keepAwakeError(err)
+		}
+		return map[string]bool{"enabled": enabled}, nil
+	case "set_keep_awake":
+		var request struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if err := json.Unmarshal(raw, &request); err != nil || request.Enabled == nil {
+			return nil, &requestError{Code: "invalid_params", Message: "set_keep_awake needs enabled."}
+		}
+		enabled, err := s.server.cmux.SetKeepAwake(ctx, *request.Enabled)
+		if err != nil {
+			return nil, keepAwakeError(err)
+		}
+		signal(s.keepAwakeWake)
+		return map[string]bool{"enabled": enabled}, nil
 	case "send_agent_message":
 		var request struct {
 			Text string `json:"text"`
@@ -440,6 +464,7 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 		go s.forwardNotifications(notificationsAfter)
 		go s.forwardApprovals()
 		go s.forwardAgentActivity()
+		go s.watchKeepAwake()
 	}
 	return welcome, nil
 }
@@ -552,6 +577,42 @@ func (s *session) watchAgentMessages(ctx context.Context, current *attachment) {
 			return
 		case <-changes:
 		}
+	}
+}
+
+func (s *session) watchKeepAwake() {
+	var last *bool
+	for {
+		ctx, cancel := context.WithTimeout(s.ctx, callTimeout)
+		enabled, err := s.server.cmux.KeepAwake(ctx)
+		cancel()
+		if cmux.ErrorCode(err) == methodNotFoundErrorCode {
+			return
+		}
+		if err == nil && (last == nil || *last != enabled) {
+			last = &enabled
+			s.send(map[string]any{"type": "keep_awake", "enabled": enabled})
+		}
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-s.keepAwakeWake:
+		case <-time.After(s.server.options.PollInterval.KeepAwake):
+		}
+	}
+}
+
+func keepAwakeError(err error) error {
+	if cmux.ErrorCode(err) == methodNotFoundErrorCode {
+		return &requestError{Code: "unsupported", Message: "This version of cmux can't keep the computer awake. Update cmux."}
+	}
+	return err
+}
+
+func signal(channel chan struct{}) {
+	select {
+	case channel <- struct{}{}:
+	default:
 	}
 }
 

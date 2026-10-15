@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddToQueue
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LaptopMac
+import androidx.compose.material.icons.outlined.Coffee
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -117,9 +118,11 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
                 itemsIndexed(list, key = { _, mac -> mac.id }) { index, mac ->
                     val state by (connections[mac.id]?.state ?: flowOf(ConnectionState.Stopped))
                         .collectAsState(initial = ConnectionState.Stopped)
+                    val keepAwake by (connections[mac.id]?.keepAwake ?: flowOf(null)).collectAsState(initial = null)
                     MacRow(
                         mac = mac,
                         state = state,
+                        keepAwake = keepAwake == true,
                         shape = groupedShape(index, list.size),
                         onOpen = { onOpenMac(mac) },
                         onLongPress = { dialog = MacDialog.Actions(mac) },
@@ -212,6 +215,7 @@ private fun GhostComputers(modifier: Modifier = Modifier, rows: Int = 4) {
 private fun MacRow(
     mac: Mac,
     state: ConnectionState,
+    keepAwake: Boolean,
     shape: Shape,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
@@ -244,6 +248,15 @@ private fun MacRow(
                 color = if (state is ConnectionState.Connected) MaterialTheme.colorScheme.onSurfaceVariant else statusColor(state),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (keepAwake) {
+            Spacer(Modifier.width(12.dp))
+            Icon(
+                Icons.Outlined.Coffee,
+                contentDescription = "Kept awake",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
         if (mac.backgroundNotifications) {

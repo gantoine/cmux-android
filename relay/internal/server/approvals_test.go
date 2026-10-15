@@ -64,7 +64,7 @@ func TestPhoneSeesPendingApprovalsAndCanAnswerThem(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "answer_approval", "id": "2", "approval_id": "r1", "mode": "once"})
-	if result := readUntil(t, ctx, conn, "result"); result["ok"] != true || result["id"] != "2" {
+	if result := resultFor(t, ctx, conn, "2"); result["ok"] != true || result["id"] != "2" {
 		t.Fatalf("answering must succeed: %v", result)
 	}
 	if cleared := readUntil(t, ctx, conn, "approvals")["approvals"].([]any); len(cleared) != 0 {
@@ -72,7 +72,7 @@ func TestPhoneSeesPendingApprovalsAndCanAnswerThem(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "answer_approval", "id": "3", "approval_id": "r1", "mode": "once"})
-	result := readUntil(t, ctx, conn, "result")
+	result := resultFor(t, ctx, conn, "3")
 	if result["ok"] != false || result["error"].(map[string]any)["code"] != "not_pending" {
 		t.Fatalf("answering twice must say the request is gone: %v", result)
 	}
