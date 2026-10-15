@@ -145,6 +145,24 @@ The phone shows every notification cmux posts, so a [cmux automation](https://gi
 
 Run `cmux automation reload` after editing the file, and `cmux automation test phone-auto-resume --event '{"name":"agent.auto_resume.sent","category":"agent","payload":{"agent":"claude","attempt":1}}'` to check a rule without firing it. The **Alert me when an agent finishes** setting and the filter that drops "waiting for your input" alerts apply to these notifications too.
 
+## Wear OS watch
+
+Muxer has a companion app for Wear OS 3 or later. It needs the phone app, and the phone needs Google Play services and the Wear OS app.
+
+- **Tile:** shows how many agents are waiting for you, up to three of them as "Claude · workspace", and when the phone last updated it. It says "All quiet" when nothing is waiting and "Phone not reachable" before the phone has sent anything. Tap it to open the watch app.
+- **Watch app:** lists waiting agents and those currently working. Open one to read what it wants, then answer from your wrist: Allow, Always or Deny for permissions, Approve, Auto-edit or Reject for plans, or pick an answer to a single question with up to four options. The watch shows whether the computer accepted it. Anything else, such as several questions, typed answers or plan feedback, you answer on the phone.
+- Phone notification actions still show up on the watch as before.
+
+To install, download `muxer-wear-<version>.apk` from the [releases page](../../releases). It is signed with the same key as the phone app (same certificate fingerprint as above), which the watch and phone need to talk to each other. Turn on **Developer options › ADB debugging** and **Wireless debugging** on the watch, then from a computer:
+
+```sh
+adb pair <watch-ip>:<pairing-port>
+adb connect <watch-ip>:<port>
+adb -s <watch-ip>:<port> install muxer-wear-<version>.apk
+```
+
+Keep the phone app running, or turn on background notifications for a computer, so the watch stays up to date. Then add the **Muxer agents** tile from the watch's tile editor.
+
 ## Updating the relay
 
 ```sh
