@@ -18,6 +18,7 @@ import (
 	"github.com/gantoine/muxer/relay/internal/claude"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/host"
 	"github.com/gantoine/muxer/relay/internal/notify"
 )
 
@@ -50,6 +51,10 @@ type Cmux interface {
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
 	SetKeepAwake(ctx context.Context, enabled bool) (bool, error)
 	Top(ctx context.Context) (cmux.Top, error)
+	VMs(ctx context.Context) (cmux.VMList, error)
+	VMStatus(ctx context.Context, id string) (cmux.VM, error)
+	VMStats(ctx context.Context, id string) (cmux.VMStats, error)
+	SetVMPaused(ctx context.Context, id string, paused bool) error
 	Methods(ctx context.Context) ([]string, error)
 	HostName(ctx context.Context) (string, error)
 	SendChat(ctx context.Context, sessionID, text string, images []cmux.ChatImage) error
@@ -82,6 +87,7 @@ type Options struct {
 	ClaudeSession   func(surfaceID string) (claude.SessionRef, bool)
 	Approvals       Approvals
 	Agents          Agents
+	HostUsage       func(context.Context) (host.Usage, error)
 }
 
 type Server struct {

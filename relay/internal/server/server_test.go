@@ -22,6 +22,7 @@ import (
 	"github.com/gantoine/muxer/relay/internal/claude"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/host"
 )
 
 type fakeCmux struct {
@@ -53,6 +54,10 @@ type fakeCmux struct {
 	inputStateErr   error
 	top             cmux.Top
 	topErr          error
+	vmList          cmux.VMList
+	vmErr           error
+	vmStats         map[string]cmux.VMStats
+	vmCalls         []string
 	workspaceList   *cmux.WorkspaceList
 	vaultSessions   []cmux.VaultSession
 	vaultCalls      []string
@@ -121,6 +126,53 @@ func (f *fakeCmux) Top(context.Context) (cmux.Top, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.top, f.topErr
+}
+
+func (f *fakeCmux) VMs(context.Context) (cmux.VMList, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.vmList, f.vmErr
+}
+
+func (f *fakeCmux) VMStatus(_ context.Context, id string) (cmux.VM, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, vm := range f.vmList.VMs {
+		if vm.ID == id {
+			return vm, nil
+		}
+	}
+	return cmux.VM{}, &cmux.RPCError{Code: "not_found", Message: "No such VM"}
+}
+
+func (f *fakeCmux) VMStats(_ context.Context, id string) (cmux.VMStats, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.vmCalls = append(f.vmCalls, "stats "+id)
+	stats, ok := f.vmStats[id]
+	if !ok {
+		return stats, &cmux.RPCError{Code: "unavailable", Message: "No stats"}
+	}
+	return stats, nil
+}
+
+func (f *fakeCmux) SetVMPaused(_ context.Context, id string, paused bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.vmErr != nil {
+		return f.vmErr
+	}
+	status := "running"
+	if paused {
+		status = "paused"
+	}
+	for index := range f.vmList.VMs {
+		if f.vmList.VMs[index].ID == id {
+			f.vmList.VMs[index].Status = status
+		}
+	}
+	f.vmCalls = append(f.vmCalls, status+" "+id)
+	return nil
 }
 
 func (f *fakeCmux) Methods(context.Context) ([]string, error) {
@@ -373,6 +425,9 @@ func startRelay(t *testing.T) testRelay {
 	relay := New(fake, store, nil, Options{
 		MacName: "Test Mac", RelayVersion: "test", PollInterval: intervals, ClaudeConfigDir: claudeDir,
 		ClaudeSession: fake.runningClaude,
+		HostUsage: func(context.Context) (host.Usage, error) {
+			return host.Usage{CPUPercent: 23.5, MemoryUsedBytes: 30 << 30, MemoryTotalBytes: 48 << 30}, nil
+		},
 	}, logger)
 	server := httptest.NewServer(relay.Handler())
 	t.Cleanup(server.Close)

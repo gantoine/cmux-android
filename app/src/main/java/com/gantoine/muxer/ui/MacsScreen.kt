@@ -35,13 +35,17 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,15 +58,24 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.net.ConnectionState
+import com.gantoine.muxer.protocol.HostUsage
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 private sealed interface MacDialog {
     data class Actions(val mac: Mac) : MacDialog
     data class Remove(val mac: Mac) : MacDialog
+    data class Vm(val vmId: String) : MacDialog
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -72,11 +85,26 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
     val connections by app.connections.connectionsFlow.collectAsState()
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf<MacDialog?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val cloud = rememberCloudVms(app, macs.orEmpty().map { it.id })
+    val vms = cloud.vms
+    val usage = rememberHostUsage(app)
+
+    fun setPaused(hosted: HostedVm, paused: Boolean) {
+        val connection = connections[hosted.macId] ?: return
+        scope.launch {
+            cloud.busy += hosted.vm.id
+            connection.setCloudVmPaused(hosted.vm.id, paused)
+                .onSuccess { cloud.replace(it) }
+                .onFailure { snackbar.showSnackbar(it.message ?: "Couldn't ${if (paused) "pause" else "resume"} ${hosted.vm.name}.") }
+            cloud.busy -= hosted.vm.id
+        }
+    }
 
     Scaffold(
         topBar = {
             CmuxTopBar(
-                title = "Computers",
+                title = "Devices",
             )
         },
         floatingActionButton = {
@@ -88,6 +116,7 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
                 )
             }
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         val list = macs
         when {
@@ -113,6 +142,7 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
                 contentPadding = PaddingValues(top = 8.dp, bottom = 112.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                if (vms != null) item(key = "computers-label") { SectionLabel("Computers", Modifier.animateItem(), top = 0.dp) }
                 itemsIndexed(list, key = { _, mac -> mac.id }) { index, mac ->
                     val state by (connections[mac.id]?.state ?: flowOf(ConnectionState.Stopped))
                         .collectAsState(initial = ConnectionState.Stopped)
@@ -120,12 +150,36 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
                     MacRow(
                         mac = mac,
                         state = state,
+                        usage = usage[mac.id],
                         keepAwake = keepAwake == true,
                         shape = groupedShape(index, list.size),
                         onOpen = { onOpenMac(mac) },
                         onLongPress = { dialog = MacDialog.Actions(mac) },
                         modifier = Modifier.animateItem(),
                     )
+                }
+                if (vms != null) {
+                    item(key = "vms-label") { SectionLabel("VMs", Modifier.animateItem()) }
+                    if (vms.isEmpty()) {
+                        item(key = "vms-empty") {
+                            Text(
+                                "No cloud VMs on your cmux account.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.animateItem().padding(horizontal = 28.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                    itemsIndexed(vms, key = { _, hosted -> "vm-${hosted.vm.id}" }) { index, hosted ->
+                        VmRow(
+                            vm = hosted.vm,
+                            busy = hosted.vm.id in cloud.busy,
+                            shape = groupedShape(index, vms.size),
+                            onOpen = { dialog = MacDialog.Vm(hosted.vm.id) },
+                            onSetPaused = { setPaused(hosted, it) },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
                 }
             }
         }
@@ -149,6 +203,23 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
             SheetAction(Icons.AutoMirrored.Filled.OpenInNew, "Open workspaces") { dialog = null; onOpenMac(current.mac) }
             SheetAction(Icons.Outlined.Settings, "Settings") { dialog = null; onOpenSettings(current.mac) }
             SheetAction(Icons.Filled.Delete, "Remove from this phone", destructive = true) { dialog = MacDialog.Remove(current.mac) }
+        }
+        is MacDialog.Vm -> {
+            val hosted = vms?.firstOrNull { it.vm.id == current.vmId }
+            if (hosted == null) {
+                dialog = null
+            } else {
+                VmSheet(
+                    vm = hosted.vm,
+                    macName = macs?.takeIf { it.size > 1 }?.firstOrNull { it.id == hosted.macId }?.name,
+                    busy = hosted.vm.id in cloud.busy,
+                    onDismiss = { dialog = null },
+                    onSetPaused = {
+                        dialog = null
+                        setPaused(hosted, it)
+                    },
+                )
+            }
         }
         is MacDialog.Remove -> RemoveComputerDialog(current.mac, onDismiss = { dialog = null }) {
             scope.launch { app.store.remove(current.mac.id) }
@@ -203,6 +274,7 @@ private fun GhostComputers(modifier: Modifier = Modifier, rows: Int = 4) {
 private fun MacRow(
     mac: Mac,
     state: ConnectionState,
+    usage: HostUsage?,
     keepAwake: Boolean,
     shape: Shape,
     onOpen: () -> Unit,
@@ -231,7 +303,7 @@ private fun MacRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(mac.name, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                describe(state),
+                if (usage != null && state is ConnectionState.Connected) describeUsage(usage) else describe(state),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (state is ConnectionState.Connected) MaterialTheme.colorScheme.onSurfaceVariant else statusColor(state),
                 maxLines = 2,
@@ -258,6 +330,37 @@ private fun MacRow(
         }
     }
 }
+
+private fun describeUsage(usage: HostUsage): String {
+    val ram = if (usage.memoryTotalBytes > 0) usage.memoryUsedBytes * 100.0 / usage.memoryTotalBytes else 0.0
+    return "${Metrics.cpu(usage.cpuPercent)} CPU · ${Metrics.cpu(ram)} RAM"
+}
+
+@Composable
+private fun rememberHostUsage(app: MuxerApplication): Map<String, HostUsage> {
+    val connectedIds by app.connections.connectedMacIds.collectAsState(initial = emptySet())
+    val connections by app.connections.connectionsFlow.collectAsState()
+    val currentConnections by rememberUpdatedState(connections)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var usage by remember { mutableStateOf(emptyMap<String, HostUsage>()) }
+    LaunchedEffect(connectedIds) {
+        usage = usage.filterKeys { it in connectedIds }
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val samples = coroutineScope {
+                    connectedIds.mapNotNull { id -> currentConnections[id]?.let { id to it } }
+                        .map { (id, connection) -> async { id to connection.hostUsage().getOrNull() } }
+                        .awaitAll()
+                }
+                usage = samples.fold(usage) { current, (id, sample) -> if (sample != null) current + (id to sample) else current }
+                delay(HOST_USAGE_REFRESH_MS)
+            }
+        }
+    }
+    return usage
+}
+
+private const val HOST_USAGE_REFRESH_MS = 5_000L
 
 @Composable
 fun MacAvatar(state: ConnectionState, size: androidx.compose.ui.unit.Dp = 52.dp) {

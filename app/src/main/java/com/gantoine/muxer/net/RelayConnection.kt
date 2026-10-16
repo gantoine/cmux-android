@@ -10,8 +10,11 @@ import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.ApprovalsMessage
 import com.gantoine.muxer.protocol.ChatMessage
 import com.gantoine.muxer.protocol.ChatSessionMessage
+import com.gantoine.muxer.protocol.CloudVm
+import com.gantoine.muxer.protocol.CloudVmsResponse
 import com.gantoine.muxer.protocol.DetachedMessage
 import com.gantoine.muxer.protocol.HistoryResponse
+import com.gantoine.muxer.protocol.HostUsage
 import com.gantoine.muxer.protocol.InputStateMessage
 import com.gantoine.muxer.protocol.KeepAwakeMessage
 import com.gantoine.muxer.protocol.MacNotification
@@ -451,6 +454,24 @@ class RelayConnection(
     suspend fun top(): Result<TopSummary> =
         request("top").mapCatching { data ->
             RelayJson.decodeFromJsonElement(TopSummary.serializer(), data ?: error("The computer sent no metrics."))
+        }
+
+    suspend fun hostUsage(): Result<HostUsage> =
+        request("host_usage").mapCatching { data ->
+            RelayJson.decodeFromJsonElement(HostUsage.serializer(), data ?: error("The computer sent no usage."))
+        }
+
+    suspend fun cloudVms(): Result<CloudVmsResponse> =
+        request("vms").mapCatching { data ->
+            RelayJson.decodeFromJsonElement(CloudVmsResponse.serializer(), data ?: error("The computer sent no VMs."))
+        }
+
+    suspend fun setCloudVmPaused(vmId: String, paused: Boolean): Result<CloudVm> =
+        request("set_vm_paused", buildJsonObject {
+            put("vm_id", vmId)
+            put("paused", paused)
+        }).mapCatching { data ->
+            RelayJson.decodeFromJsonElement(CloudVm.serializer(), data ?: error("The computer did not say what the VM is doing."))
         }
 
     suspend fun notifications(): Result<List<MacNotification>> =

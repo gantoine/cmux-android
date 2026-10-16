@@ -477,6 +477,22 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		return map[string]bool{"enabled": enabled}, nil
 	case "top":
 		return s.server.top(ctx)
+	case "host_usage":
+		if s.server.options.HostUsage == nil {
+			return nil, &requestError{Code: "unsupported", Message: "This relay can't measure the computer."}
+		}
+		return s.server.options.HostUsage(ctx)
+	case "vms":
+		return s.server.vms(ctx)
+	case "set_vm_paused":
+		var request struct {
+			VMID   string `json:"vm_id"`
+			Paused *bool  `json:"paused"`
+		}
+		if err := json.Unmarshal(raw, &request); err != nil || request.VMID == "" || request.Paused == nil {
+			return nil, &requestError{Code: "invalid_params", Message: "set_vm_paused needs vm_id and paused."}
+		}
+		return s.server.setVMPaused(ctx, request.VMID, *request.Paused)
 	case "send_images":
 		var request struct {
 			Text   string           `json:"text"`

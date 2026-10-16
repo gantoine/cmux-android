@@ -62,6 +62,9 @@ var readOnlyMethods = map[string]bool{
 	"system.top":             true,
 	"vault.sessions":         true,
 	"vault.search":           true,
+	"vm.list":                true,
+	"vm.status":              true,
+	"vm.stats":               true,
 }
 
 func isConnectionError(err error) bool {

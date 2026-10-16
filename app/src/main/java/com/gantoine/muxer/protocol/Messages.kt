@@ -302,3 +302,30 @@ data class RecentSessionsResponse(val sessions: List<RecentSession> = emptyList(
 
 @Serializable
 data class ResumedSession(val workspaceId: String, val surfaceId: String, val alreadyOpen: Boolean = false)
+
+@Serializable
+data class CloudVmStats(
+    val cpus: Int? = null,
+    val cpuPercent: Double? = null,
+    val memoryUsedMb: Long? = null,
+    val memoryTotalMb: Long? = null,
+    val diskUsedMb: Long? = null,
+    val diskTotalMb: Long? = null,
+)
+
+@Serializable
+data class CloudVm(
+    val id: String,
+    val name: String,
+    val status: String,
+    val image: String = "",
+    val kind: String = "",
+    val createdAt: String? = null,
+    val stats: CloudVmStats? = null,
+)
+
+@Serializable
+data class CloudVmsResponse(val vms: List<CloudVm> = emptyList(), val plan: String? = null)
+
+@Serializable
+data class HostUsage(val cpuPercent: Double = 0.0, val memoryUsedBytes: Long = 0, val memoryTotalBytes: Long = 0)

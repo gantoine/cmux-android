@@ -82,3 +82,22 @@ func TestPhoneSeesWhatUsesTheComputer(t *testing.T) {
 		t.Fatalf("an older cmux must be reported as unsupported: %v", result)
 	}
 }
+
+func TestPhoneSeesHowBusyTheComputerIs(t *testing.T) {
+	relay := startRelay(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := relay.dial(t, ctx, relay.pair(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "host_usage", "id": "2"})
+	result := resultFor(t, ctx, conn, "2")
+	data, _ := result["data"].(map[string]any)
+	if result["ok"] != true || data["cpu_percent"] != 23.5 || data["memory_total_bytes"] != float64(48<<30) {
+		t.Fatalf("host usage must come through: %v", result)
+	}
+}

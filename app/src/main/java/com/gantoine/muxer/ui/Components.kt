@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.net.ConnectionState
@@ -54,12 +55,12 @@ fun groupedShape(index: Int, count: Int): Shape {
 }
 
 @Composable
-fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+fun SectionLabel(text: String, modifier: Modifier = Modifier, top: Dp = 20.dp) {
     Text(
         text,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 8.dp),
+        modifier = modifier.padding(start = 28.dp, end = 28.dp, top = top, bottom = 8.dp),
     )
 }
 

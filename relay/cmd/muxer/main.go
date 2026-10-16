@@ -22,6 +22,7 @@ import (
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
 	"github.com/gantoine/muxer/relay/internal/events"
+	"github.com/gantoine/muxer/relay/internal/host"
 	"github.com/gantoine/muxer/relay/internal/notify"
 	"github.com/gantoine/muxer/relay/internal/server"
 )
@@ -127,7 +128,7 @@ func runServe(args []string) error {
 		}
 	}()
 
-	relay := server.New(client, store, hub, server.Options{MacName: macName, FallbackMacName: defaultMacName(), RelayVersion: version, Approvals: approvalTracker, Agents: agentTracker}, logger)
+	relay := server.New(client, store, hub, server.Options{MacName: macName, FallbackMacName: defaultMacName(), RelayVersion: version, Approvals: approvalTracker, Agents: agentTracker, HostUsage: host.Sample}, logger)
 	httpServer := &http.Server{
 		Addr:              listen,
 		Handler:           relay.Handler(),
