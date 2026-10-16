@@ -196,14 +196,6 @@ private fun ActivityList(summary: TopSummary, state: ConnectionState) {
                 WorkspaceUsageRow(workspace, index, summary.workspaces.size)
             }
         }
-        item(key = "footer") {
-            Text(
-                "Updates every ${Activity.REFRESH_MS / 1000} seconds while this page is open.",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 16.dp),
-            )
-        }
     }
 }
 
