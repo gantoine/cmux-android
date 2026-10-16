@@ -12,6 +12,7 @@ data class WorkspaceShortcut(
     val title: String,
     val color: String,
     val agentName: String?,
+    val shareTarget: Boolean = false,
 ) {
     val id: String get() = ShortcutPlan.id(macId, workspaceId)
 }
@@ -19,6 +20,8 @@ data class WorkspaceShortcut(
 object ShortcutPlan {
     private const val PREFIX = "ws:"
     private const val FALLBACK_TITLE = "Workspace"
+    const val CONVERSATION_CATEGORY = "android.shortcut.conversation"
+    const val SHARE_CATEGORY = "com.gantoine.muxer.category.SHARE_TARGET"
 
     fun id(macId: String, workspaceId: String): String = "$PREFIX$macId:$workspaceId"
 
@@ -35,8 +38,14 @@ object ShortcutPlan {
             title = workspace.title.ifBlank { terminal.title }.ifBlank { FALLBACK_TITLE },
             color = WorkspaceListing.color(workspace),
             agentName = AgentNames.display(agentTerminal?.agentSource),
+            shareTarget = agentTerminal != null,
         )
     }
+
+    fun isShareTarget(workspace: WorkspaceInfo): Boolean = workspace.terminals.any { it.agentSource != null }
+
+    fun categories(shortcut: WorkspaceShortcut): Set<String> =
+        if (shortcut.shareTarget) setOf(CONVERSATION_CATEGORY, SHARE_CATEGORY) else setOf(CONVERSATION_CATEGORY)
 
     fun plan(snapshots: Collection<MacSnapshot>, limit: Int): List<WorkspaceShortcut> {
         if (limit <= 0) return emptyList()

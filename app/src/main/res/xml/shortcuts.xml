@@ -11,4 +11,8 @@
             android:targetClass="com.gantoine.muxer.MainActivity"
             android:targetPackage="com.gantoine.muxer" />
     </shortcut>
+    <share-target android:targetClass="com.gantoine.muxer.MainActivity">
+        <data android:mimeType="text/*" />
+        <category android:name="com.gantoine.muxer.category.SHARE_TARGET" />
+    </share-target>
 </shortcuts>
