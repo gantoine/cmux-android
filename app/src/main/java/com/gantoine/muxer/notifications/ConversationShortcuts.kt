@@ -37,7 +37,7 @@ class ConversationShortcuts(private val context: Context) {
 
     fun agentName(macId: String, workspaceId: String): String? = known[id(macId, workspaceId)]?.agentName
 
-    fun isAgentWorkspace(macId: String, workspaceId: String): Boolean = known.containsKey(id(macId, workspaceId))
+    fun isAgentWorkspace(macId: String, workspaceId: String): Boolean = agentName(macId, workspaceId) != null
 
     fun icon(macId: String, workspaceId: String): IconCompat =
         known[id(macId, workspaceId)]?.let(::iconFor) ?: appIcon()

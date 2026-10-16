@@ -151,8 +151,8 @@ fun TerminalCanvas(
         fun cellAt(position: Offset): CellPosition {
             val currentMetrics = currentMetrics.value
             val terminal = currentContent.value
-            val column = ((position.x + horizontal.value) / currentMetrics.width).toInt().coerceIn(0, terminal.columns - 1)
-            val row = floor(currentTop.value + position.y / currentMetrics.height).toInt().coerceIn(0, terminal.rowCount - 1)
+            val column = ((position.x + horizontal.value) / currentMetrics.width).toInt().coerceIn(0, (terminal.columns - 1).coerceAtLeast(0))
+            val row = floor(currentTop.value + position.y / currentMetrics.height).toInt().coerceIn(0, (terminal.rowCount - 1).coerceAtLeast(0))
             return CellPosition(row, column)
         }
 

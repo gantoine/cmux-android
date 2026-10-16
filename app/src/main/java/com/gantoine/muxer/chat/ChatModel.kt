@@ -16,10 +16,15 @@ object ChatModel {
         if (previous == null || previous.sessionId != message.sessionId) return previous
         if (message.reset) return previous.copy(entries = message.entries, loaded = true)
         val entries = previous.entries.toMutableList()
-        val positions = entries.withIndex().associate { (index, entry) -> entry.id to index }
+        val positions = entries.withIndex().associateTo(mutableMapOf()) { (index, entry) -> entry.id to index }
         for (entry in message.entries) {
             val position = positions[entry.id]
-            if (position != null) entries[position] = entry else entries.add(entry)
+            if (position != null) {
+                entries[position] = entry
+            } else {
+                positions[entry.id] = entries.size
+                entries.add(entry)
+            }
         }
         return previous.copy(entries = entries, loaded = true)
     }

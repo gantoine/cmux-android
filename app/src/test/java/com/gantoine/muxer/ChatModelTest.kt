@@ -34,6 +34,14 @@ class ChatModelTest {
     }
 
     @Test
+    fun anEntryUpdatedTwiceInOneMessageAppearsOnce() {
+        val loaded = ChatModel.apply(ChatState("s1"), ChatMessage("t", "s1", reset = true, entries = listOf(hello)))!!
+        val done = running.copy(tool = running.tool!!.copy(status = "done"))
+        val updated = ChatModel.apply(loaded, ChatMessage("t", "s1", entries = listOf(running, done)))!!
+        assertEquals(listOf(hello, done), updated.entries)
+    }
+
+    @Test
     fun messagesForAnotherSessionAreIgnored() {
         val state = ChatState("s1")
         assertSame(state, ChatModel.apply(state, ChatMessage("t", "old", reset = true, entries = listOf(hello))))
