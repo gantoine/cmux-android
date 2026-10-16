@@ -209,7 +209,7 @@ fun ComputerSettingsScreen(
                     index = 3,
                     count = rows,
                     headline = "Metrics",
-                    supporting = "CPU and memory used by cmux, its agents and each workspace.",
+                    supporting = "CPU and memory use",
                     onClick = { onOpenMetrics(macId) },
                     trailing = {
                         Icon(

@@ -43,6 +43,7 @@ import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.protocol.TopSummary
 import com.gantoine.muxer.protocol.TopWorkspace
+import com.gantoine.muxer.protocol.WorkspaceInfo
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +79,7 @@ fun MetricsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
     val state by (connection?.state ?: remember { MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
     val macs by app.store.macs.collectAsState(initial = emptyList())
     val macName = macs.firstOrNull { it.id == macId }?.name ?: "The computer"
+    val workspaces by (connection?.workspaces ?: remember { MutableStateFlow(null) }).collectAsState()
     var summary by remember { mutableStateOf<TopSummary?>(null) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
     var attempt by remember { mutableStateOf(0) }
@@ -142,14 +144,14 @@ fun MetricsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
                     ConnectionBanner(state)
                     LoadingState(if (connected) "Measuring…" else "Waiting for $macName…")
                 }
-                else -> MetricsList(current, state)
+                else -> MetricsList(current, state, workspaces.orEmpty().associateBy { it.id })
             }
         }
     }
 }
 
 @Composable
-private fun MetricsList(summary: TopSummary, state: ConnectionState) {
+private fun MetricsList(summary: TopSummary, state: ConnectionState, workspaces: Map<String, WorkspaceInfo>) {
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
@@ -193,20 +195,21 @@ private fun MetricsList(summary: TopSummary, state: ConnectionState) {
         if (summary.workspaces.isNotEmpty()) {
             item(key = "workspaces-label") { SectionLabel("Workspaces") }
             itemsIndexed(summary.workspaces, key = { _, workspace -> "workspace-${workspace.id}" }) { index, workspace ->
-                WorkspaceUsageRow(workspace, index, summary.workspaces.size)
+                WorkspaceUsageRow(workspace, workspaces[workspace.id], index, summary.workspaces.size)
             }
         }
     }
 }
 
 @Composable
-private fun WorkspaceUsageRow(workspace: TopWorkspace, index: Int, count: Int) {
+private fun WorkspaceUsageRow(workspace: TopWorkspace, info: WorkspaceInfo?, index: Int, count: Int) {
     UsageRow(
         title = workspace.title.ifBlank { "Workspace" },
         usage = Metrics.usage(workspace.cpuPercent, workspace.memoryBytes),
         detail = null,
         index = index,
         count = count,
+        leading = info?.let { { WorkspaceTile(it, size = 28.dp) } },
     ) {
         workspace.processes.forEach { process ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -236,17 +239,28 @@ private fun UsageRow(
     detail: String?,
     index: Int,
     count: Int,
+    leading: (@Composable () -> Unit)? = null,
     extra: @Composable () -> Unit = {},
 ) {
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .clip(groupedShape(index, count))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
+        if (leading != null) {
+            leading()
+            Spacer(Modifier.width(12.dp))
+        }
+        UsageDetails(title, usage, detail, extra)
+    }
+}
+
+@Composable
+private fun UsageDetails(title: String, usage: String, detail: String?, extra: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 title,
