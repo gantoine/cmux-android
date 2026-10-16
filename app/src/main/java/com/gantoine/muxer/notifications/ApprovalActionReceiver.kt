@@ -19,26 +19,17 @@ class ApprovalActionReceiver : BroadcastReceiver() {
             workspaceId = intent.getStringExtra(EXTRA_WORKSPACE_ID).orEmpty(),
             surfaceId = intent.getStringExtra(EXTRA_SURFACE_ID).orEmpty(),
         )
-        val mode = intent.getStringExtra(EXTRA_MODE)
-        val plan = intent.getBooleanExtra(EXTRA_PLAN, false)
         val typed = intent.getBooleanExtra(EXTRA_TYPED, false)
         val answer = if (typed) typedAnswer(intent) ?: return else intent.getStringExtra(EXTRA_ANSWER)
-        app.notifier.dismissApproval(target.approvalId)
+        val decision = ApprovalDecision(
+            mode = intent.getStringExtra(EXTRA_MODE),
+            answer = answer,
+            plan = intent.getBooleanExtra(EXTRA_PLAN, false),
+        )
         val pending = goAsync()
         app.scope.launch {
             try {
-                val paired = app.store.current().any { it.id == target.macId }
-                if (paired) app.connections.wake(WAKE_MS)
-                val connection = if (paired) app.connections.awaitConnected(target.macId, CONNECT_TIMEOUT_MS) else null
-                val result = when {
-                    !paired -> Result.failure(IllegalStateException("This computer is not paired anymore."))
-                    connection == null -> Result.failure(IllegalStateException("Couldn't reach the computer."))
-                    mode != null && plan -> connection.decidePlan(target.approvalId, mode)
-                    mode != null -> connection.allow(target.approvalId, mode)
-                    answer != null -> connection.answer(target.approvalId, listOf(answer))
-                    else -> Result.success(Unit)
-                }
-                result.onFailure { error ->
+                app.answerApproval(target, decision).onFailure { error ->
                     val macName = app.store.current().firstOrNull { it.id == target.macId }?.name ?: "your computer"
                     app.notifier.showApprovalFailed(macName, target, error.message ?: "The computer did not accept it.")
                 }
@@ -63,8 +54,6 @@ class ApprovalActionReceiver : BroadcastReceiver() {
         private const val EXTRA_MODE = "mode"
         private const val EXTRA_ANSWER = "answer"
         private const val EXTRA_PLAN = "plan"
-        private const val WAKE_MS = 30_000L
-        private const val CONNECT_TIMEOUT_MS = 8_000L
 
         fun intent(context: Context, target: ApprovalTarget, mode: String? = null, answer: String? = null, plan: Boolean = false): PendingIntent {
             val requestCode = listOf(target.approvalId, mode, answer).hashCode()
