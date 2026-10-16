@@ -69,6 +69,10 @@ private sealed interface ApprovalsEntry {
     data class Retrying(val item: RetryItem) : ApprovalsEntry {
         override val key get() = "retry:${item.macId}:${item.retry.surfaceId}".hashCode().toLong()
     }
+
+    data class NeedsYou(val item: NeedsYouItem) : ApprovalsEntry {
+        override val key get() = "needs:${item.macId}:${item.surfaceId}".hashCode().toLong()
+    }
 }
 
 @Composable
@@ -76,7 +80,8 @@ private fun ApprovalsContent(inputs: WidgetInputs) {
     val now = System.currentTimeMillis()
     val snapshots = inputs.paired
     val entries = WidgetData.approvals(snapshots).map { ApprovalsEntry.Waiting(it) } +
-        WidgetData.retries(snapshots).map { ApprovalsEntry.Retrying(it) }
+        WidgetData.retries(snapshots).map { ApprovalsEntry.Retrying(it) } +
+        WidgetData.needsYou(snapshots).map { ApprovalsEntry.NeedsYou(it) }
     WidgetSurface {
         WidgetHeader("Waiting for you", WidgetData.asOf(snapshots, now))
         if (entries.isEmpty()) {
@@ -93,6 +98,7 @@ private fun ApprovalsContent(inputs: WidgetInputs) {
                         when (entry) {
                             is ApprovalsEntry.Waiting -> ApprovalRow(entry.item)
                             is ApprovalsEntry.Retrying -> RetryRow(entry.item, Instant.ofEpochMilli(now))
+                            is ApprovalsEntry.NeedsYou -> NeedsYouRow(entry.item)
                         }
                     }
                 }
@@ -152,6 +158,27 @@ private fun buttonAction(context: Context, item: ApprovalItem, button: ApprovalB
             actionSendBroadcast(ApprovalActionReceiver.broadcastIntent(context, target, mode = button.mode, plan = button.plan))
         is ApprovalButton.Choose -> actionSendBroadcast(ApprovalActionReceiver.broadcastIntent(context, target, answer = button.label))
         is ApprovalButton.OpenTerminal -> open
+    }
+}
+
+@Composable
+private fun NeedsYouRow(item: NeedsYouItem) {
+    val context = LocalContext.current
+    val open = actionStartActivity(Notifier.openTerminal(context, item.macId, item.workspaceId, item.surfaceId))
+    Column(
+        GlanceModifier
+            .fillMaxWidth()
+            .background(GlanceTheme.colors.surfaceVariant)
+            .cornerRadius(16.dp)
+            .padding(10.dp)
+            .clickable(open),
+    ) {
+        Text(
+            item.label,
+            maxLines = 2,
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium),
+        )
+        Text("${item.workspaceTitle} · ${item.macName}", maxLines = 1, style = secondaryText(11))
     }
 }
 

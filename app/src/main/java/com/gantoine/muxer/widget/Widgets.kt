@@ -53,6 +53,8 @@ object Widgets {
         ApprovalsWidget().updateAll(context)
         AgentBoardWidget().updateAll(context)
         PeekWidget().updateAll(context)
+        PeekWidget.refreshAll(context)
+        PeekWidget().updateAll(context)
     }
 
     fun refreshNow(context: Context) {

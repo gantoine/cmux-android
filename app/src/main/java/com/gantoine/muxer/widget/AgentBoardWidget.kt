@@ -124,7 +124,7 @@ private fun ListContent(sections: List<BoardSection>, asOf: String?) {
         listOfNotNull(section.title?.let { BoardEntry.Computer(section) }) + section.rows.map { BoardEntry.Workspace(it) }
     }
     WidgetSurface {
-        WidgetHeader("Agents", asOf)
+        WidgetHeader("Workspaces", asOf)
         if (entries.none { it is BoardEntry.Workspace }) {
             Box(GlanceModifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                 Text("No workspaces yet. Open Muxer to connect.", style = secondaryText(14).copy(textAlign = TextAlign.Center))
@@ -193,6 +193,7 @@ private fun UnreadBadge(count: Int) {
 @Composable
 private fun stateColor(state: WorkspaceState): ColorProvider = when (state) {
     WorkspaceState.Waiting -> GlanceTheme.colors.error
+    WorkspaceState.NeedsYou -> GlanceTheme.colors.tertiary
     WorkspaceState.Retrying -> GlanceTheme.colors.tertiary
     WorkspaceState.Working -> GlanceTheme.colors.primary
     WorkspaceState.Idle -> GlanceTheme.colors.onSurfaceVariant

@@ -14,6 +14,7 @@ import com.gantoine.muxer.protocol.HistoryResponse
 import com.gantoine.muxer.protocol.KeepAwakeMessage
 import com.gantoine.muxer.protocol.NotificationMessage
 import com.gantoine.muxer.protocol.RelayJson
+import com.gantoine.muxer.protocol.PeekResponse
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.RequestError
 import com.gantoine.muxer.protocol.Retry
@@ -359,6 +360,15 @@ class RelayConnection(
     suspend fun history(lines: Int = HISTORY_LINES): Result<HistoryResponse> =
         request("history", buildJsonObject { put("lines", lines) }).mapCatching { data ->
             data?.let { RelayJson.decodeFromJsonElement(HistoryResponse.serializer(), it) } ?: HistoryResponse()
+        }
+
+    suspend fun peek(workspaceId: String, surfaceId: String, lines: Int): Result<List<String>> =
+        request("peek", buildJsonObject {
+            put("workspace_id", workspaceId)
+            put("surface_id", surfaceId)
+            put("lines", lines)
+        }).mapCatching { data ->
+            data?.let { RelayJson.decodeFromJsonElement(PeekResponse.serializer(), it).lines } ?: emptyList()
         }
 
     suspend fun allow(approvalId: String, mode: String): Result<Unit> =

@@ -176,4 +176,45 @@ class WidgetDataTest {
         assertEquals(30, WidgetData.previewColumnCount(widthDp = 238f, paddingDp = 28f, charDp = 7f))
         assertEquals(1, WidgetData.previewColumnCount(widthDp = 20f, paddingDp = 28f, charDp = 7f))
     }
+
+    @Test
+    fun idleAgentsWaitingForInputNeedYou() {
+        val waiting = TerminalInfo(id = "t1", agentSource = "claude", agentState = "Claude is waiting for your input")
+        val ws = workspace("w", waiting, TerminalInfo(id = "t2"))
+        assertEquals(WorkspaceState.NeedsYou, WidgetData.state(ws, snapshot(workspaces = listOf(ws))))
+        assertEquals(WorkspaceState.Working, WidgetData.state(ws, snapshot(workspaces = listOf(ws), busy = setOf("t1"))))
+        assertEquals(WorkspaceState.Waiting, WidgetData.state(ws, snapshot(workspaces = listOf(ws), approvals = listOf(permission("a", "t1")))))
+        val items = WidgetData.needsYou(listOf(snapshot(workspaces = listOf(ws))))
+        assertEquals(1, items.size)
+        assertEquals("Claude is waiting for your input", items.single().label)
+        assertEquals("t1", items.single().surfaceId)
+        assertEquals("w", items.single().workspaceTitle)
+        assertTrue(WidgetData.needsYou(listOf(snapshot(workspaces = listOf(ws), busy = setOf("t1")))).isEmpty())
+    }
+
+    @Test
+    fun workspacePreviewsAndUnreadCountsAlsoNeedYou() {
+        val previewed = workspace("p", TerminalInfo(id = "t1")).copy(preview = "Claude is waiting for your input")
+        val unread = workspace("u", TerminalInfo(id = "t2")).copy(unreadCount = 2, preview = "Build finished")
+        val quiet = workspace("q", TerminalInfo(id = "t3")).copy(preview = "~/workspace/quiet")
+        val snapshot = snapshot(workspaces = listOf(previewed, unread, quiet))
+        assertEquals(WorkspaceState.NeedsYou, WidgetData.state(previewed, snapshot))
+        assertEquals(WorkspaceState.NeedsYou, WidgetData.state(unread, snapshot))
+        assertEquals(WorkspaceState.Idle, WidgetData.state(quiet, snapshot))
+        assertEquals(listOf("Claude is waiting for your input", "Build finished"), WidgetData.needsYou(listOf(snapshot)).map { it.label })
+    }
+
+    @Test
+    fun countsLabelMentionsAgentsThatNeedYou() {
+        assertEquals("1 need you · 1 working", WidgetData.countsLabel(BoardCounts(0, 0, 1, 0, needsYou = 1)))
+    }
+
+    @Test
+    fun peekPlaceholdersExplainWhyThereIsNoOutput() {
+        assertEquals("Reading the terminal…", WidgetData.peekPlaceholder(null, null, connected = true))
+        assertEquals("Connect to the computer to see its terminal", WidgetData.peekPlaceholder(null, null, connected = false))
+        assertEquals("The terminal is empty", WidgetData.peekPlaceholder("", null, connected = true))
+        assertTrue(WidgetData.peekPlaceholder(null, "unsupported", connected = true).contains("Update the relay"))
+        assertEquals("Couldn't read the terminal: boom", WidgetData.peekPlaceholder(null, "boom", connected = true))
+    }
 }

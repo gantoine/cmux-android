@@ -110,6 +110,9 @@ data class HistoryResponse(
 )
 
 @Serializable
+data class PeekResponse(val lines: List<String> = emptyList())
+
+@Serializable
 data class DetachedMessage(val surfaceId: String, val reason: String = "")
 
 @Serializable

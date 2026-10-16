@@ -16,6 +16,7 @@ import java.util.Locale
 
 enum class WorkspaceState(val label: String) {
     Waiting("Waiting for you"),
+    NeedsYou("Needs you"),
     Retrying("Retrying"),
     Working("Working"),
     Idle("Idle"),
@@ -25,7 +26,7 @@ data class BoardRow(val macId: String, val workspace: WorkspaceInfo, val state: 
 
 data class BoardSection(val macId: String, val title: String?, val rows: List<BoardRow>)
 
-data class BoardCounts(val waiting: Int, val retrying: Int, val working: Int, val idle: Int)
+data class BoardCounts(val waiting: Int, val retrying: Int, val working: Int, val idle: Int, val needsYou: Int = 0)
 
 sealed interface ApprovalButton {
     val label: String
@@ -38,6 +39,8 @@ sealed interface ApprovalButton {
 data class ApprovalItem(val macId: String, val macName: String, val approval: Approval, val buttons: List<ApprovalButton>)
 
 data class RetryItem(val macId: String, val macName: String, val retry: Retry, val workspaceId: String?)
+
+data class NeedsYouItem(val macId: String, val macName: String, val workspaceId: String, val surfaceId: String, val label: String, val workspaceTitle: String)
 
 object WidgetData {
     const val STALE_AFTER_MS = 2 * 60_000L
@@ -63,12 +66,41 @@ object WidgetData {
         fun belongs(workspaceId: String?, surfaceId: String) = workspaceId == workspace.id || surfaceId in surfaces
         return when {
             snapshot.approvals.any { belongs(it.workspaceId, it.surfaceId) } -> WorkspaceState.Waiting
+            needsYou(workspace, snapshot) -> WorkspaceState.NeedsYou
             snapshot.retries.any { belongs(it.workspaceId, it.surfaceId) } -> WorkspaceState.Retrying
             workspace.terminals.any { it.id in snapshot.busySurfaces || WorkspaceListing.agentStatus(it) is AgentStatus.Working } ->
                 WorkspaceState.Working
             else -> WorkspaceState.Idle
         }
     }
+
+    fun needsYou(workspace: WorkspaceInfo, snapshot: MacSnapshot): Boolean {
+        val surfaces = workspace.terminals.map { it.id }.toSet()
+        fun belongs(workspaceId: String?, surfaceId: String) = workspaceId == workspace.id || surfaceId in surfaces
+        if (workspace.terminals.any { it.id in snapshot.busySurfaces }) return false
+        if (snapshot.approvals.any { belongs(it.workspaceId, it.surfaceId) } || snapshot.retries.any { belongs(it.workspaceId, it.surfaceId) }) return false
+        return WorkspaceListing.needsYou(workspace) || WorkspaceListing.needsAttention(workspace.preview)
+    }
+
+    fun needsYouLabel(workspace: WorkspaceInfo): String =
+        (WorkspaceListing.agentStatus(workspace) as? AgentStatus.NeedsYou)?.label
+            ?: workspace.preview?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Needs you"
+
+    fun needsYou(snapshots: List<MacSnapshot>): List<NeedsYouItem> =
+        snapshots.flatMap { snapshot ->
+            snapshot.workspaces.filter { needsYou(it, snapshot) }.mapNotNull { workspace ->
+                val surfaceId = agentSurface(workspace) ?: return@mapNotNull null
+                NeedsYouItem(
+                    macId = snapshot.macId,
+                    macName = snapshot.macName,
+                    workspaceId = workspace.id,
+                    surfaceId = surfaceId,
+                    label = needsYouLabel(workspace),
+                    workspaceTitle = workspace.title.ifBlank { "a workspace" },
+                )
+            }
+        }
 
     fun agentSurface(workspace: WorkspaceInfo): String? =
         (workspace.terminals.firstOrNull { it.agentSource != null || it.agentState != null } ?: workspace.terminals.firstOrNull())?.id
@@ -89,11 +121,12 @@ object WidgetData {
             retrying = states.count { it == WorkspaceState.Retrying },
             working = states.count { it == WorkspaceState.Working },
             idle = states.count { it == WorkspaceState.Idle },
+            needsYou = states.count { it == WorkspaceState.NeedsYou },
         )
     }
 
     fun countsLabel(counts: BoardCounts): String {
-        val parts = listOf(counts.waiting to "waiting", counts.retrying to "retrying", counts.working to "working")
+        val parts = listOf(counts.waiting to "waiting", counts.needsYou to "need you", counts.retrying to "retrying", counts.working to "working")
             .filter { (count, _) -> count > 0 }
             .map { (count, label) -> "$count $label" }
         return when {
@@ -152,6 +185,14 @@ object WidgetData {
             .dropLastWhile { it.isEmpty() }
             .takeLast(maxLines)
             .dropWhile { it.isEmpty() }
+    }
+
+    fun peekPlaceholder(text: String?, error: String?, connected: Boolean): String = when {
+        error == "unsupported" -> "Update the relay on your computer to see terminal output here"
+        text != null -> "The terminal is empty"
+        !connected -> "Connect to the computer to see its terminal"
+        error != null -> "Couldn't read the terminal: $error"
+        else -> "Reading the terminal…"
     }
 
     fun previewLineCount(heightDp: Float, chromeDp: Float, lineDp: Float): Int =
