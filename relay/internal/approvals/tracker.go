@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/pubsub"
 )
 
 type Kind string
@@ -94,27 +95,13 @@ type Tracker struct {
 	source Source
 	logger *slog.Logger
 
-	mu          sync.Mutex
-	pending     []Approval
-	subscribers map[chan struct{}]struct{}
+	mu      sync.Mutex
+	pending []Approval
+	changes pubsub.Broadcaster
 }
 
 func NewTracker(source Source, logger *slog.Logger) *Tracker {
-	return &Tracker{source: source, logger: logger, subscribers: map[chan struct{}]struct{}{}}
-}
-
-func (t *Tracker) Run(ctx context.Context) {
-	t.sweep(ctx)
-}
-
-func (t *Tracker) HandleEvent(ctx context.Context, event cmux.Event) {
-	if event.Type == "event" && strings.HasPrefix(event.Name, hookEventPrefix) {
-		t.handle(ctx, event)
-	}
-}
-
-func (t *Tracker) StreamResumed(ctx context.Context) {
-	t.reconcile(ctx)
+	return &Tracker{source: source, logger: logger}
 }
 
 type feedPayload struct {
@@ -126,7 +113,10 @@ type feedPayload struct {
 	Phase         string `json:"phase"`
 }
 
-func (t *Tracker) handle(ctx context.Context, event cmux.Event) {
+func (t *Tracker) HandleEvent(ctx context.Context, event cmux.Event) {
+	if !strings.HasPrefix(event.Name, hookEventPrefix) {
+		return
+	}
 	var payload feedPayload
 	_ = json.Unmarshal(event.Payload, &payload)
 	if payload.WorkspaceID == "" && event.WorkspaceID != nil {
@@ -257,7 +247,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func (t *Tracker) sweep(ctx context.Context) {
+func (t *Tracker) Run(ctx context.Context) {
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
 	for {
@@ -265,11 +255,13 @@ func (t *Tracker) sweep(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if len(t.Pending()) > 0 {
-				t.reconcile(ctx)
-			}
+			t.reconcile(ctx)
 		}
 	}
+}
+
+func (t *Tracker) StreamResumed(ctx context.Context) {
+	t.reconcile(ctx)
 }
 
 func (t *Tracker) reconcile(ctx context.Context) {
@@ -294,17 +286,7 @@ func (t *Tracker) reconcile(ctx context.Context) {
 			settled[approval.ID] = true
 		}
 	}
-	if len(settled) == 0 {
-		return
-	}
-	t.mu.Lock()
-	before := len(t.pending)
-	t.pending = slices.DeleteFunc(t.pending, func(approval Approval) bool { return settled[approval.ID] })
-	changed := len(t.pending) != before
-	t.mu.Unlock()
-	if changed {
-		t.notify()
-	}
+	t.removeWhere(func(approval Approval) bool { return settled[approval.ID] })
 }
 
 func (t *Tracker) feedItems(ctx context.Context) ([]cmux.FeedItem, error) {
@@ -355,15 +337,7 @@ func (t *Tracker) Pending() []Approval {
 }
 
 func (t *Tracker) Subscribe() (<-chan struct{}, func()) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	channel := make(chan struct{}, 1)
-	t.subscribers[channel] = struct{}{}
-	return channel, func() {
-		t.mu.Lock()
-		defer t.mu.Unlock()
-		delete(t.subscribers, channel)
-	}
+	return t.changes.Subscribe()
 }
 
 func (t *Tracker) find(id string) (Approval, bool) {
@@ -390,30 +364,23 @@ func (t *Tracker) add(approval Approval) {
 	}
 	t.pending = append(t.pending, approval)
 	t.mu.Unlock()
-	t.notify()
+	t.changes.Notify()
 }
 
 func (t *Tracker) remove(id string) {
 	if id == "" {
 		return
 	}
+	t.removeWhere(func(approval Approval) bool { return approval.ID == id })
+}
+
+func (t *Tracker) removeWhere(settled func(Approval) bool) {
 	t.mu.Lock()
 	before := len(t.pending)
-	t.pending = slices.DeleteFunc(t.pending, func(approval Approval) bool { return approval.ID == id })
+	t.pending = slices.DeleteFunc(t.pending, settled)
 	changed := len(t.pending) != before
 	t.mu.Unlock()
 	if changed {
-		t.notify()
-	}
-}
-
-func (t *Tracker) notify() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for subscriber := range t.subscribers {
-		select {
-		case subscriber <- struct{}{}:
-		default:
-		}
+		t.changes.Notify()
 	}
 }

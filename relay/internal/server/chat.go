@@ -25,19 +25,18 @@ type chatWatch struct {
 func (s *session) watchChat(ctx context.Context, current *attachment) {
 	var watch chatWatch
 	announced := false
-	cmuxTracksAgents := true
 	for {
 		var agent cmux.AgentSession
 		var err error
-		if cmuxTracksAgents {
+		if s.server.methods.supports(cmux.MethodAgentSession) {
 			callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 			agent, err = s.server.cmux.AgentSession(callCtx, current.workspaceID, current.surfaceID)
 			cancel()
 			if ctx.Err() != nil {
 				return
 			}
-			if cmux.ErrorCode(err) == methodNotFoundErrorCode {
-				cmuxTracksAgents, agent, err = false, cmux.AgentSession{}, nil
+			if s.server.methods.observe(cmux.MethodAgentSession, err) {
+				agent, err = cmux.AgentSession{}, nil
 			}
 		}
 		if err == nil {

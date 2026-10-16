@@ -59,11 +59,10 @@ type WorkspaceList struct {
 }
 
 type Cursor struct {
-	Row      int    `json:"row"`
-	Column   int    `json:"column"`
-	Visible  bool   `json:"visible"`
-	Style    string `json:"style"`
-	Blinking bool   `json:"blinking"`
+	Row     int    `json:"row"`
+	Column  int    `json:"column"`
+	Visible bool   `json:"visible"`
+	Style   string `json:"style"`
 }
 
 type Style struct {
@@ -75,8 +74,6 @@ type Style struct {
 	Italic        bool   `json:"italic"`
 	Underline     bool   `json:"underline"`
 	Strikethrough bool   `json:"strikethrough"`
-	Overline      bool   `json:"overline"`
-	Blink         bool   `json:"blink"`
 	Inverse       bool   `json:"inverse"`
 	Invisible     bool   `json:"invisible"`
 }
@@ -121,13 +118,10 @@ type Notification struct {
 	SurfaceID   string `json:"surface_id"`
 	TabTitle    string `json:"tab_title"`
 	CreatedAt   string `json:"created_at"`
-	IsRead      bool   `json:"is_read"`
 }
 
 type Identity struct {
-	App     string `json:"app"`
 	Version string `json:"version"`
-	Build   string `json:"build"`
 }
 
 type CreatedWorkspace struct {
@@ -148,6 +142,21 @@ type Viewport struct {
 	Generation int
 }
 
+const (
+	MethodAgentSession = "surface.resume.get"
+	MethodTerminalGit  = "debug.terminals"
+	MethodKeepAwake    = "caffeine.status"
+	MethodSetKeepAwake = "caffeine.set"
+)
+
+func (c *Client) Methods(ctx context.Context) ([]string, error) {
+	var capabilities struct {
+		Methods []string `json:"methods"`
+	}
+	err := c.Call(ctx, "system.capabilities", nil, &capabilities)
+	return capabilities.Methods, err
+}
+
 func (c *Client) Identify(ctx context.Context) (Identity, error) {
 	var identity Identity
 	err := c.Call(ctx, "system.identify", nil, &identity)
@@ -162,7 +171,7 @@ func (c *Client) AgentSession(ctx context.Context, workspaceID, surfaceID string
 			Cwd          string `json:"cwd"`
 		} `json:"resume_binding"`
 	}
-	err := c.Call(ctx, "surface.resume.get", map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID}, &result)
+	err := c.Call(ctx, MethodAgentSession, map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID}, &result)
 	if err != nil || result.ResumeBinding == nil {
 		return AgentSession{}, err
 	}
@@ -186,7 +195,7 @@ func (c *Client) TerminalGit(ctx context.Context) ([]TerminalGit, error) {
 	var dump struct {
 		Terminals []TerminalGit `json:"terminals"`
 	}
-	err := c.Call(ctx, "debug.terminals", nil, &dump)
+	err := c.Call(ctx, MethodTerminalGit, nil, &dump)
 	return dump.Terminals, err
 }
 
@@ -362,7 +371,6 @@ type Event struct {
 	Type        string          `json:"type"`
 	Seq         int64           `json:"seq"`
 	Name        string          `json:"name"`
-	Category    string          `json:"category"`
 	WorkspaceID *string         `json:"workspace_id"`
 	SurfaceID   *string         `json:"surface_id"`
 	Payload     json.RawMessage `json:"payload"`
@@ -421,7 +429,7 @@ func (c *Client) KeepAwake(ctx context.Context) (bool, error) {
 	var status struct {
 		Enabled bool `json:"enabled"`
 	}
-	err := c.Call(ctx, "caffeine.status", nil, &status)
+	err := c.Call(ctx, MethodKeepAwake, nil, &status)
 	return status.Enabled, err
 }
 
@@ -429,6 +437,6 @@ func (c *Client) SetKeepAwake(ctx context.Context, enabled bool) (bool, error) {
 	var status struct {
 		Enabled bool `json:"enabled"`
 	}
-	err := c.Call(ctx, "caffeine.set", map[string]any{"enabled": enabled}, &status)
+	err := c.Call(ctx, MethodSetKeepAwake, map[string]any{"enabled": enabled}, &status)
 	return status.Enabled, err
 }

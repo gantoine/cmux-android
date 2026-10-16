@@ -38,7 +38,7 @@ func newTestTracker(source *fakeSource) *Tracker {
 func event(name, surfaceID string, payload map[string]any) cmux.Event {
 	encoded, _ := json.Marshal(payload)
 	workspaceID := "w1"
-	return cmux.Event{Type: "event", Name: name, Category: "agent", SurfaceID: &surfaceID, WorkspaceID: &workspaceID, Payload: encoded}
+	return cmux.Event{Type: "event", Name: name, SurfaceID: &surfaceID, WorkspaceID: &workspaceID, Payload: encoded}
 }
 
 func received(channel <-chan struct{}) bool {
@@ -55,7 +55,7 @@ func TestScheduledResumeBecomesARetryUntilCmuxSendsIt(t *testing.T) {
 	changes, unsubscribe := tracker.SubscribeActivity()
 	defer unsubscribe()
 
-	tracker.handle(event("agent.auto_resume.scheduled", "s1", map[string]any{"agent": "claude", "attempt": 2, "delay_ms": 45000}))
+	tracker.HandleEvent(context.Background(), event("agent.auto_resume.scheduled", "s1", map[string]any{"agent": "claude", "attempt": 2, "delay_ms": 45000}))
 	retries := tracker.Retries()
 	if len(retries) != 1 || retries[0].Attempt != 2 || retries[0].Agent != "claude" || retries[0].WorkspaceID != "w1" {
 		t.Fatalf("retries = %+v", retries)
@@ -67,7 +67,7 @@ func TestScheduledResumeBecomesARetryUntilCmuxSendsIt(t *testing.T) {
 		t.Fatal("subscribers must hear about a new retry")
 	}
 
-	tracker.handle(event("agent.auto_resume.sent", "s1", map[string]any{"agent": "claude", "attempt": 2, "total": 2}))
+	tracker.HandleEvent(context.Background(), event("agent.auto_resume.sent", "s1", map[string]any{"agent": "claude", "attempt": 2, "total": 2}))
 	if len(tracker.Retries()) != 0 || !received(changes) {
 		t.Fatal("a sent resume must clear the retry and tell subscribers")
 	}
@@ -75,15 +75,15 @@ func TestScheduledResumeBecomesARetryUntilCmuxSendsIt(t *testing.T) {
 
 func TestAgentActivityCancelsAPendingRetry(t *testing.T) {
 	tracker := newTestTracker(&fakeSource{})
-	tracker.handle(event("agent.auto_resume.scheduled", "s1", map[string]any{"attempt": 1, "delay_ms": 20000}))
+	tracker.HandleEvent(context.Background(), event("agent.auto_resume.scheduled", "s1", map[string]any{"attempt": 1, "delay_ms": 20000}))
 
-	tracker.handle(event("agent.hook.Notification", "s1", nil))
-	tracker.handle(event("agent.hook.UserPromptSubmit", "s2", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.Notification", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.UserPromptSubmit", "s2", nil))
 	if len(tracker.Retries()) != 1 {
 		t.Fatal("notifications and other terminals must not cancel the retry")
 	}
 
-	tracker.handle(event("agent.hook.UserPromptSubmit", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.UserPromptSubmit", "s1", nil))
 	if len(tracker.Retries()) != 0 {
 		t.Fatal("a new prompt on the terminal cancels the retry, as cmux does")
 	}
@@ -96,7 +96,7 @@ func TestMessageEventsWakeOnlyWatchersOfThatTerminal(t *testing.T) {
 	other, stopOther := tracker.SubscribeMessages("s2")
 	defer stopOther()
 
-	tracker.handle(event("agent.message.delivered", "s1", map[string]any{"id": "m1"}))
+	tracker.HandleEvent(context.Background(), event("agent.message.delivered", "s1", map[string]any{"id": "m1"}))
 	if !received(watching) || received(other) {
 		t.Fatal("only the recipient terminal's watchers should refresh")
 	}
@@ -136,21 +136,21 @@ func TestHooksTrackWhetherTheAgentIsMidTurn(t *testing.T) {
 	changes, unsubscribe := tracker.SubscribeActivity()
 	defer unsubscribe()
 
-	tracker.handle(event("agent.hook.UserPromptSubmit", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.UserPromptSubmit", "s1", nil))
 	if busy := tracker.Busy(); len(busy) != 1 || busy[0] != "s1" || !received(changes) {
 		t.Fatalf("a submitted prompt makes the agent busy: %v", busy)
 	}
-	tracker.handle(event("agent.hook.PreToolUse", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.PreToolUse", "s1", nil))
 	if received(changes) {
 		t.Fatal("staying busy is not a change")
 	}
-	tracker.handle(event("agent.hook.Notification", "s1", nil))
-	tracker.handle(event("agent.hook.Stop", "s1", nil))
-	tracker.handle(event("agent.hook.SubagentStop", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.Notification", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.Stop", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.SubagentStop", "s1", nil))
 	if len(tracker.Busy()) != 0 || !received(changes) {
 		t.Fatal("Stop ends the turn, and Claude Code's background subagents finishing after it don't restart it")
 	}
-	tracker.handle(event("agent.hook.PostToolUse", "s1", nil))
+	tracker.HandleEvent(context.Background(), event("agent.hook.PostToolUse", "s1", nil))
 	if len(tracker.Busy()) != 1 {
 		t.Fatal("a tool running after a blocked Stop means the turn went on")
 	}

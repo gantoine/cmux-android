@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +17,7 @@ import (
 	"github.com/gantoine/muxer/relay/internal/approvals"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/devices"
+	"github.com/gantoine/muxer/relay/internal/pubsub"
 	"github.com/gantoine/muxer/relay/internal/screen"
 )
 
@@ -46,17 +46,16 @@ var DefaultIntervals = Intervals{
 }
 
 const (
-	writeTimeout            = 10 * time.Second
-	pingInterval            = 30 * time.Second
-	revocationCheck         = 10 * time.Second
-	maxConsecutiveErrors    = 10
-	maxInputBytes           = 64 * 1024
-	defaultHistoryLines     = 2000
-	maxHistoryLines         = 5000
-	maxQueuedMessages       = 64
-	callTimeout             = 15 * time.Second
-	terminalGoneErrorCode   = "not_found"
-	methodNotFoundErrorCode = "method_not_found"
+	writeTimeout          = 10 * time.Second
+	pingInterval          = 30 * time.Second
+	revocationCheck       = 10 * time.Second
+	maxConsecutiveErrors  = 10
+	maxInputBytes         = 64 * 1024
+	defaultHistoryLines   = 2000
+	maxHistoryLines       = 5000
+	maxQueuedMessages     = 64
+	callTimeout           = 15 * time.Second
+	terminalGoneErrorCode = "not_found"
 )
 
 type requestError struct {
@@ -86,21 +85,17 @@ type session struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu             sync.Mutex
-	attached       *attachment
-	started        bool
-	workspacesWake chan struct{}
-	keepAwakeWake  chan struct{}
+	mu       sync.Mutex
+	attached *attachment
+	started  bool
 }
 
 func newSession(server *Server, conn *websocket.Conn, device devices.Device) *session {
 	return &session{
-		server:         server,
-		conn:           conn,
-		device:         device,
-		clientID:       "muxer-" + device.ID,
-		workspacesWake: make(chan struct{}, 1),
-		keepAwakeWake:  make(chan struct{}, 1),
+		server:   server,
+		conn:     conn,
+		device:   device,
+		clientID: "muxer-" + device.ID,
 	}
 }
 
@@ -176,9 +171,18 @@ func (s *session) watchRevocation() {
 }
 
 func (s *session) send(message any) {
+	encoded, err := json.Marshal(message)
+	if err != nil {
+		s.cancel()
+		return
+	}
+	s.sendEncoded(encoded)
+}
+
+func (s *session) sendEncoded(encoded []byte) {
 	ctx, cancel := context.WithTimeout(s.ctx, writeTimeout)
 	defer cancel()
-	if err := wsjson.Write(ctx, s.conn, message); err != nil {
+	if err := s.conn.Write(ctx, websocket.MessageText, encoded); err != nil {
 		s.cancel()
 	}
 }
@@ -232,7 +236,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		_ = json.Unmarshal(raw, &hello)
 		return s.hello(ctx, hello.NotificationsAfter)
 	case "refresh":
-		s.wakeWorkspaces()
+		s.server.workspaces.refresh()
 		return nil, nil
 	case "attach":
 		var request struct {
@@ -257,7 +261,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 	case "resync":
 		if current := s.current(); current != nil {
 			current.resync.Store(true)
-			s.wakeTerminal(current)
+			pubsub.Signal(current.wake)
 		}
 		return nil, nil
 	case "input":
@@ -266,8 +270,8 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		}
 		_ = json.Unmarshal(raw, &request)
 		return nil, s.withTerminal(func(current *attachment) error {
-			if request.Text == "" || len(request.Text) > maxInputBytes {
-				return &requestError{Code: "invalid_params", Message: "input needs 1 to 65536 bytes of text."}
+			if err := validText("input", request.Text); err != nil {
+				return err
 			}
 			return s.server.cmux.Input(ctx, current.workspaceID, current.surfaceID, request.Text)
 		})
@@ -289,8 +293,8 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		}
 		_ = json.Unmarshal(raw, &request)
 		return nil, s.withTerminal(func(current *attachment) error {
-			if request.Text == "" || len(request.Text) > maxInputBytes {
-				return &requestError{Code: "invalid_params", Message: "paste needs 1 to 65536 bytes of text."}
+			if err := validText("paste", request.Text); err != nil {
+				return err
 			}
 			return s.server.cmux.Paste(ctx, current.workspaceID, current.surfaceID, request.Text, request.Submit)
 		})
@@ -343,7 +347,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		}
 		_ = json.Unmarshal(raw, &request)
 		created, err := s.server.cmux.CreateWorkspace(ctx, request.Title, request.Cwd)
-		s.wakeWorkspaces()
+		s.server.workspaces.refresh()
 		return created, err
 	case "close_workspace":
 		var request struct {
@@ -354,7 +358,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			return nil, &requestError{Code: "invalid_params", Message: "close_workspace needs workspace_id."}
 		}
 		err := s.server.cmux.CloseWorkspace(ctx, request.WorkspaceID, request.Force)
-		s.wakeWorkspaces()
+		s.server.workspaces.refresh()
 		return nil, err
 	case "rename_workspace":
 		var request struct {
@@ -365,7 +369,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			return nil, &requestError{Code: "invalid_params", Message: "rename_workspace needs workspace_id and title."}
 		}
 		err := s.server.cmux.RenameWorkspace(ctx, request.WorkspaceID, request.Title)
-		s.wakeWorkspaces()
+		s.server.workspaces.refresh()
 		return nil, err
 	case "create_terminal":
 		var request struct {
@@ -375,7 +379,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			return nil, &requestError{Code: "invalid_params", Message: "create_terminal needs workspace_id."}
 		}
 		terminalID, err := s.server.cmux.CreateTerminal(ctx, request.WorkspaceID)
-		s.wakeWorkspaces()
+		s.server.workspaces.refresh()
 		return map[string]string{"surface_id": terminalID}, err
 	case "answer_approval":
 		var request struct {
@@ -398,9 +402,12 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		}
 		return nil, err
 	case "keep_awake":
+		if !s.server.methods.supports(cmux.MethodKeepAwake) {
+			return nil, errKeepAwakeUnsupported
+		}
 		enabled, err := s.server.cmux.KeepAwake(ctx)
 		if err != nil {
-			return nil, keepAwakeError(err)
+			return nil, s.server.keepAwakeError(cmux.MethodKeepAwake, err)
 		}
 		return map[string]bool{"enabled": enabled}, nil
 	case "set_keep_awake":
@@ -410,11 +417,14 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		if err := json.Unmarshal(raw, &request); err != nil || request.Enabled == nil {
 			return nil, &requestError{Code: "invalid_params", Message: "set_keep_awake needs enabled."}
 		}
+		if !s.server.methods.supports(cmux.MethodSetKeepAwake) {
+			return nil, errKeepAwakeUnsupported
+		}
 		enabled, err := s.server.cmux.SetKeepAwake(ctx, *request.Enabled)
 		if err != nil {
-			return nil, keepAwakeError(err)
+			return nil, s.server.keepAwakeError(cmux.MethodSetKeepAwake, err)
 		}
-		signal(s.keepAwakeWake)
+		s.server.keepAwake.refresh()
 		return map[string]bool{"enabled": enabled}, nil
 	case "send_agent_message":
 		var request struct {
@@ -442,11 +452,19 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 	}
 }
 
+func validText(kind, text string) error {
+	if text == "" || len(text) > maxInputBytes {
+		return &requestError{Code: "invalid_params", Message: kind + " needs 1 to 65536 bytes of text."}
+	}
+	return nil
+}
+
 func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, error) {
 	identity, err := s.server.cmux.Identify(ctx)
 	if err != nil {
 		return nil, err
 	}
+	s.server.methods.load(ctx, s.server.cmux)
 	s.mu.Lock()
 	alreadyStarted := s.started
 	s.started = true
@@ -462,41 +480,26 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 		welcome["notification_seq"] = s.server.hub.LatestSeq()
 	}
 	if !alreadyStarted {
-		go s.watchWorkspaces()
+		go s.follow(s.server.workspaces)
 		go s.forwardNotifications(notificationsAfter)
 		go s.forwardApprovals()
 		go s.forwardAgentActivity()
-		go s.watchKeepAwake()
+		go s.follow(s.server.keepAwake)
 	}
 	return welcome, nil
 }
 
-func (s *session) watchWorkspaces() {
-	var lastHash [32]byte
-	git := gitInfo{}
-	for {
-		ctx, cancel := context.WithTimeout(s.ctx, callTimeout)
-		list, err := s.server.cmux.Workspaces(ctx)
-		if err == nil {
-			git.refresh(ctx, s)
-			git.apply(list.Workspaces)
+func (s *Server) pollWorkspaces(git *gitInfo) func(ctx context.Context) ([]byte, bool) {
+	return func(ctx context.Context) ([]byte, bool) {
+		list, err := s.cmux.Workspaces(ctx)
+		if err != nil {
+			s.logger.Warn("could not list workspaces", "error", err)
+			return nil, false
 		}
-		cancel()
-		if err == nil {
-			encoded, _ := json.Marshal(list)
-			if hash := sha256.Sum256(encoded); hash != lastHash {
-				lastHash = hash
-				s.send(map[string]any{"type": "workspaces", "workspaces": list.Workspaces, "groups": list.Groups})
-			}
-		} else {
-			s.server.logger.Warn("could not list workspaces", "error", err)
-		}
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-s.workspacesWake:
-		case <-time.After(s.server.options.PollInterval.Workspaces):
-		}
+		git.refresh(ctx, s)
+		git.apply(list.Workspaces)
+		encoded, err := json.Marshal(map[string]any{"type": "workspaces", "workspaces": list.Workspaces, "groups": list.Groups})
+		return encoded, err == nil
 	}
 }
 
@@ -505,23 +508,25 @@ const failedGitReadsBeforeClearing = 3
 type gitInfo struct {
 	bySurface   map[string]cmux.TerminalGit
 	fetchedAt   time.Time
-	unsupported bool
 	failedReads int
 }
 
-func (g *gitInfo) refresh(ctx context.Context, s *session) {
-	if g.unsupported || time.Since(g.fetchedAt) < s.server.options.PollInterval.Git {
+func (g *gitInfo) refresh(ctx context.Context, s *Server) {
+	if !s.methods.supports(cmux.MethodTerminalGit) {
+		g.bySurface = nil
+		return
+	}
+	if time.Since(g.fetchedAt) < s.options.PollInterval.Git {
 		return
 	}
 	g.fetchedAt = time.Now()
-	terminals, err := s.server.cmux.TerminalGit(ctx)
-	if cmux.ErrorCode(err) == methodNotFoundErrorCode {
-		g.unsupported = true
+	terminals, err := s.cmux.TerminalGit(ctx)
+	if s.methods.observe(cmux.MethodTerminalGit, err) {
 		g.bySurface = nil
 		return
 	}
 	if err != nil {
-		s.server.logger.Warn("could not read terminal git state", "error", err)
+		s.logger.Warn("could not read terminal git state", "error", err)
 		g.failedReads++
 		if g.failedReads >= failedGitReadsBeforeClearing {
 			g.bySurface = nil
@@ -638,44 +643,25 @@ func (s *session) watchAgentMessages(ctx context.Context, current *attachment) {
 	}
 }
 
-func (s *session) watchKeepAwake() {
-	var last *bool
-	for {
-		ctx, cancel := context.WithTimeout(s.ctx, callTimeout)
-		enabled, err := s.server.cmux.KeepAwake(ctx)
-		cancel()
-		if cmux.ErrorCode(err) == methodNotFoundErrorCode {
-			return
-		}
-		if err == nil && (last == nil || *last != enabled) {
-			last = &enabled
-			s.send(map[string]any{"type": "keep_awake", "enabled": enabled})
-		}
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-s.keepAwakeWake:
-		case <-time.After(s.server.options.PollInterval.KeepAwake):
-		}
+func (s *Server) pollKeepAwake(ctx context.Context) ([]byte, bool) {
+	if !s.methods.supports(cmux.MethodKeepAwake) {
+		return nil, false
 	}
+	enabled, err := s.cmux.KeepAwake(ctx)
+	if s.methods.observe(cmux.MethodKeepAwake, err) || err != nil {
+		return nil, false
+	}
+	encoded, err := json.Marshal(map[string]any{"type": "keep_awake", "enabled": enabled})
+	return encoded, err == nil
 }
 
-func keepAwakeError(err error) error {
-	if cmux.ErrorCode(err) == methodNotFoundErrorCode {
-		return &requestError{Code: "unsupported", Message: "This version of cmux can't keep the computer awake. Update cmux."}
+var errKeepAwakeUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't keep the computer awake. Update cmux."}
+
+func (s *Server) keepAwakeError(method string, err error) error {
+	if s.methods.observe(method, err) {
+		return errKeepAwakeUnsupported
 	}
 	return err
-}
-
-func signal(channel chan struct{}) {
-	select {
-	case channel <- struct{}{}:
-	default:
-	}
-}
-
-func (s *session) wakeWorkspaces() {
-	signal(s.workspacesWake)
 }
 
 func (s *session) current() *attachment {
@@ -691,12 +677,8 @@ func (s *session) withTerminal(action func(*attachment) error) error {
 	}
 	current.lastActivity.Store(time.Now().UnixNano())
 	err := action(current)
-	s.wakeTerminal(current)
+	pubsub.Signal(current.wake)
 	return err
-}
-
-func (s *session) wakeTerminal(current *attachment) {
-	signal(current.wake)
 }
 
 func (s *session) attach(workspaceID, surfaceID string) {
@@ -738,20 +720,17 @@ func (s *session) fit(ctx context.Context, columns, rows int) error {
 	if columns < 20 || columns > 300 || rows < 5 || rows > 120 {
 		return &requestError{Code: "invalid_params", Message: "fit needs 20-300 columns and 5-120 rows."}
 	}
-	current := s.current()
-	if current == nil {
-		return &requestError{Code: "not_attached", Message: "Open a terminal first."}
-	}
-	err := s.server.cmux.SetViewport(ctx, current.workspaceID, current.surfaceID, cmux.Viewport{
-		ClientID: s.clientID, Columns: columns, Rows: rows, Generation: s.server.nextViewportGeneration(),
+	return s.withTerminal(func(current *attachment) error {
+		err := s.server.cmux.SetViewport(ctx, current.workspaceID, current.surfaceID, cmux.Viewport{
+			ClientID: s.clientID, Columns: columns, Rows: rows, Generation: s.server.nextViewportGeneration(),
+		})
+		if err == nil {
+			s.mu.Lock()
+			current.fitted = true
+			s.mu.Unlock()
+		}
+		return err
 	})
-	if err == nil {
-		s.mu.Lock()
-		current.fitted = true
-		s.mu.Unlock()
-		s.wakeTerminal(current)
-	}
-	return err
 }
 
 func (s *session) unfit(ctx context.Context) error {
@@ -776,7 +755,7 @@ func (s *session) clearViewport(current *attachment) {
 
 func (s *session) clearViewportWith(ctx context.Context, current *attachment) error {
 	err := s.server.cmux.ClearViewport(ctx, current.workspaceID, current.surfaceID, s.clientID, s.server.nextViewportGeneration())
-	s.wakeTerminal(current)
+	pubsub.Signal(current.wake)
 	return err
 }
 

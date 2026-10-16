@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/pubsub"
 )
 
 const (
@@ -71,32 +72,22 @@ type Tracker struct {
 	logger *slog.Logger
 	now    func() time.Time
 
-	mu                  sync.Mutex
-	retries             map[string]Retry
-	busy                map[string]bool
-	activitySubscribers map[chan struct{}]struct{}
-	messageSubscribers  map[chan struct{}]string
+	activity pubsub.Broadcaster
+
+	mu                 sync.Mutex
+	retries            map[string]Retry
+	busy               map[string]bool
+	messageSubscribers map[chan struct{}]string
 }
 
 func NewTracker(source Source, logger *slog.Logger) *Tracker {
 	return &Tracker{
-		source:              source,
-		logger:              logger,
-		now:                 time.Now,
-		retries:             map[string]Retry{},
-		busy:                map[string]bool{},
-		activitySubscribers: map[chan struct{}]struct{}{},
-		messageSubscribers:  map[chan struct{}]string{},
-	}
-}
-
-func (t *Tracker) Run(ctx context.Context) {
-	t.expireStaleRetries(ctx)
-}
-
-func (t *Tracker) HandleEvent(_ context.Context, event cmux.Event) {
-	if event.Type == "event" {
-		t.handle(event)
+		source:             source,
+		logger:             logger,
+		now:                time.Now,
+		retries:            map[string]Retry{},
+		busy:               map[string]bool{},
+		messageSubscribers: map[chan struct{}]string{},
 	}
 }
 
@@ -109,7 +100,7 @@ type eventPayload struct {
 	SurfaceID string `json:"surface_id"`
 }
 
-func (t *Tracker) handle(event cmux.Event) {
+func (t *Tracker) HandleEvent(_ context.Context, event cmux.Event) {
 	var payload eventPayload
 	_ = json.Unmarshal(event.Payload, &payload)
 	surfaceID := payload.SurfaceID
@@ -149,7 +140,7 @@ func (t *Tracker) handle(event cmux.Event) {
 	}
 }
 
-func (t *Tracker) expireStaleRetries(ctx context.Context) {
+func (t *Tracker) Run(ctx context.Context) {
 	ticker := time.NewTicker(expirySweep)
 	defer ticker.Stop()
 	for {
@@ -168,7 +159,7 @@ func (t *Tracker) expireStaleRetries(ctx context.Context) {
 			changed := len(t.retries) != before
 			t.mu.Unlock()
 			if changed {
-				t.notifyActivity()
+				t.activity.Notify()
 			}
 		}
 	}
@@ -197,15 +188,7 @@ func (t *Tracker) Busy() []string {
 }
 
 func (t *Tracker) SubscribeActivity() (<-chan struct{}, func()) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	channel := make(chan struct{}, 1)
-	t.activitySubscribers[channel] = struct{}{}
-	return channel, func() {
-		t.mu.Lock()
-		defer t.mu.Unlock()
-		delete(t.activitySubscribers, channel)
-	}
+	return t.activity.Subscribe()
 }
 
 func (t *Tracker) SubscribeMessages(surfaceID string) (<-chan struct{}, func()) {
@@ -254,7 +237,7 @@ func (t *Tracker) setRetry(retry Retry) {
 	t.mu.Lock()
 	t.retries[retry.SurfaceID] = retry
 	t.mu.Unlock()
-	t.notifyActivity()
+	t.activity.Notify()
 }
 
 func (t *Tracker) setBusy(surfaceID string, busy bool) {
@@ -267,7 +250,7 @@ func (t *Tracker) setBusy(surfaceID string, busy bool) {
 	}
 	t.mu.Unlock()
 	if changed {
-		t.notifyActivity()
+		t.activity.Notify()
 	}
 }
 
@@ -277,15 +260,7 @@ func (t *Tracker) clearRetry(surfaceID string) {
 	delete(t.retries, surfaceID)
 	t.mu.Unlock()
 	if existed {
-		t.notifyActivity()
-	}
-}
-
-func (t *Tracker) notifyActivity() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for subscriber := range t.activitySubscribers {
-		signal(subscriber)
+		t.activity.Notify()
 	}
 }
 
@@ -294,14 +269,7 @@ func (t *Tracker) notifyMessages(surfaceID string) {
 	defer t.mu.Unlock()
 	for subscriber, watched := range t.messageSubscribers {
 		if watched == surfaceID {
-			signal(subscriber)
+			pubsub.Signal(subscriber)
 		}
-	}
-}
-
-func signal(channel chan struct{}) {
-	select {
-	case channel <- struct{}{}:
-	default:
 	}
 }

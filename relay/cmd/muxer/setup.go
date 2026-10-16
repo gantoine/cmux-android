@@ -170,9 +170,8 @@ func runInstall(args []string) error {
 	if err := os.WriteFile(p.plist, []byte(plist), 0o644); err != nil {
 		return err
 	}
-	domain := "gui/" + strconv.Itoa(os.Getuid())
-	_ = exec.Command("launchctl", "bootout", domain+"/"+launchdLabel).Run()
-	if output, err := exec.Command("launchctl", "bootstrap", domain, p.plist).CombinedOutput(); err != nil {
+	bootout(launchdLabel)
+	if output, err := exec.Command("launchctl", "bootstrap", launchdDomain(), p.plist).CombinedOutput(); err != nil {
 		return fmt.Errorf("launchctl bootstrap failed: %s", strings.TrimSpace(string(output)))
 	}
 	fmt.Println("The relay now runs in the background and starts when you log in.")
@@ -187,6 +186,14 @@ func runInstall(args []string) error {
 	return nil
 }
 
+func launchdDomain() string {
+	return "gui/" + strconv.Itoa(os.Getuid())
+}
+
+func bootout(label string) {
+	_ = exec.Command("launchctl", "bootout", launchdDomain()+"/"+label).Run()
+}
+
 func retireLegacyRelay(p paths) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -194,7 +201,7 @@ func retireLegacyRelay(p paths) error {
 	}
 	legacyPlist := filepath.Join(home, "Library", "LaunchAgents", legacyLaunchdLabel+".plist")
 	if _, err := os.Stat(legacyPlist); err == nil {
-		_ = exec.Command("launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+legacyLaunchdLabel).Run()
+		bootout(legacyLaunchdLabel)
 		if err := os.Remove(legacyPlist); err != nil {
 			return err
 		}
@@ -250,7 +257,7 @@ func runUninstall() error {
 	if err != nil {
 		return err
 	}
-	_ = exec.Command("launchctl", "bootout", "gui/"+strconv.Itoa(os.Getuid())+"/"+launchdLabel).Run()
+	bootout(launchdLabel)
 	if err := os.Remove(p.plist); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

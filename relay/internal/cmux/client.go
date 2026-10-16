@@ -43,6 +43,10 @@ func ErrorCode(err error) string {
 	return ""
 }
 
+func IsMethodNotFound(err error) bool {
+	return ErrorCode(err) == "method_not_found"
+}
+
 var errNotSent = errors.New("request not sent")
 
 var readOnlyMethods = map[string]bool{
@@ -335,12 +339,16 @@ func rateLimitDelay(err error) (time.Duration, bool) {
 	return time.Duration(data.RetryAfterMS) * time.Millisecond, true
 }
 
+func stateDir() (string, error) {
+	home, err := os.UserHomeDir()
+	return filepath.Join(home, ".local", "state", "cmux"), err
+}
+
 func DefaultSocketPath() string {
 	if path := os.Getenv("CMUX_SOCKET_PATH"); path != "" {
 		return path
 	}
-	home, _ := os.UserHomeDir()
-	stateDir := filepath.Join(home, ".local", "state", "cmux")
+	stateDir, _ := stateDir()
 	stable := filepath.Join(stateDir, "cmux.sock")
 	if _, err := os.Stat(stable); err == nil {
 		return stable
@@ -358,11 +366,11 @@ func DefaultPasswordSource() PasswordSource {
 		if password := os.Getenv("CMUX_SOCKET_PASSWORD"); password != "" {
 			return password, nil
 		}
-		home, err := os.UserHomeDir()
+		dir, err := stateDir()
 		if err != nil {
 			return "", err
 		}
-		contents, err := os.ReadFile(filepath.Join(home, ".local", "state", "cmux", "socket-control-password"))
+		contents, err := os.ReadFile(filepath.Join(dir, "socket-control-password"))
 		if errors.Is(err, os.ErrNotExist) {
 			return "", nil
 		}

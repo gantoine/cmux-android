@@ -114,9 +114,7 @@ func (s *Store) Pair(code, deviceName string) (Device, string, error) {
 	}
 	now := s.now()
 	device := Device{ID: id, Name: name, TokenHash: hashToken(token), PairedAt: now, LastSeen: now}
-	s.devices = append(s.devices, device)
-	if err := s.saveLocked(); err != nil {
-		s.devices = s.devices[:len(s.devices)-1]
+	if err := s.saveLocked(append(slices.Clone(s.devices), device)); err != nil {
 		return Device{}, "", err
 	}
 	return device, token, nil
@@ -151,13 +149,7 @@ func (s *Store) Revoke(id string) error {
 	if index < 0 {
 		return ErrUnknownDevice
 	}
-	previous := s.devices
-	s.devices = slices.Delete(slices.Clone(s.devices), index, index+1)
-	if err := s.saveLocked(); err != nil {
-		s.devices = previous
-		return err
-	}
-	return nil
+	return s.saveLocked(slices.Delete(slices.Clone(s.devices), index, index+1))
 }
 
 func (s *Store) IsRevoked(id string) bool {
@@ -171,11 +163,11 @@ func (s *Store) IsRevoked(id string) bool {
 	return true
 }
 
-func (s *Store) saveLocked() error {
+func (s *Store) saveLocked(next []Device) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
-	contents, err := json.MarshalIndent(s.devices, "", "  ")
+	contents, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -183,7 +175,11 @@ func (s *Store) saveLocked() error {
 	if err := os.WriteFile(temporary, contents, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(temporary, s.path)
+	if err := os.Rename(temporary, s.path); err != nil {
+		return err
+	}
+	s.devices = next
+	return nil
 }
 
 func hashToken(token string) string {

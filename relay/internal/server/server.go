@@ -42,6 +42,7 @@ type Cmux interface {
 	KeepAwake(ctx context.Context) (bool, error)
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
 	SetKeepAwake(ctx context.Context, enabled bool) (bool, error)
+	Methods(ctx context.Context) ([]string, error)
 }
 
 type Approvals interface {
@@ -84,6 +85,10 @@ type Server struct {
 	sessions sync.WaitGroup
 
 	viewportGeneration atomic.Int64
+
+	methods    methodSupport
+	workspaces *feed
+	keepAwake  *feed
 }
 
 func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, logger *slog.Logger) *Server {
@@ -112,6 +117,8 @@ func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, l
 	ctx, cancel := context.WithCancel(context.Background())
 	server := &Server{cmux: cmuxAPI, devices: store, hub: hub, options: options, logger: logger, ctx: ctx, cancel: cancel}
 	server.viewportGeneration.Store(time.Now().UnixMilli())
+	server.workspaces = newFeed(options.PollInterval.Workspaces, server.pollWorkspaces(&gitInfo{}))
+	server.keepAwake = newFeed(options.PollInterval.KeepAwake, server.pollKeepAwake)
 	return server
 }
 

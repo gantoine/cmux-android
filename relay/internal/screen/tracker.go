@@ -1,7 +1,6 @@
 package screen
 
 import (
-	"hash/fnv"
 	"strconv"
 	"unicode/utf8"
 
@@ -90,7 +89,7 @@ func (t *Tracker) Update(replay cmux.Replay) (Frame, bool) {
 		Rows:        grid.Rows,
 		Foreground:  grid.TerminalForeground,
 		Background:  grid.TerminalBackground,
-		AltScreen:   grid.ActiveScreen == "alternate",
+		AltScreen:   isAltScreen(grid),
 		Changed:     []Row{},
 	}
 
@@ -104,10 +103,7 @@ func (t *Tracker) Update(replay cmux.Replay) (Frame, bool) {
 	}
 	frame.Full = full
 
-	sourceStyles := make(map[int]cmux.Style, len(grid.Styles))
-	for _, style := range grid.Styles {
-		sourceStyles[style.ID] = style
-	}
+	sourceStyles := stylesByID(grid.Styles)
 
 	rows := make([][]Span, grid.Rows)
 	for _, span := range grid.RowSpans {
@@ -118,11 +114,7 @@ func (t *Tracker) Update(replay cmux.Replay) (Frame, bool) {
 		if isNew {
 			frame.Styles = append(frame.Styles, wireStyle(styleID, sourceStyles[span.StyleID]))
 		}
-		width := utf8.RuneCountInString(span.Text)
-		if span.CellWidth != nil {
-			width = *span.CellWidth
-		}
-		rows[span.Row] = append(rows[span.Row], Span{Column: span.Column, Width: width, Style: styleID, Text: span.Text})
+		rows[span.Row] = append(rows[span.Row], Span{Column: span.Column, Width: spanWidth(span), Style: styleID, Text: span.Text})
 	}
 	if full {
 		frame.Styles = t.allStyles(sourceStyles, frame.Styles)
@@ -147,11 +139,29 @@ func (t *Tracker) Update(replay cmux.Replay) (Frame, bool) {
 		cursor = Cursor{Row: grid.Cursor.Row, Column: grid.Cursor.Column, Visible: grid.Cursor.Visible, Shape: grid.Cursor.Style}
 	}
 	frame.Cursor = &cursor
-	altScreen := grid.ActiveScreen == "alternate"
-	changed := full || len(frame.Changed) > 0 || len(frame.Styles) > 0 || cursor != t.cursor || altScreen != t.altScreen
+	changed := full || len(frame.Changed) > 0 || len(frame.Styles) > 0 || cursor != t.cursor || frame.AltScreen != t.altScreen
 	t.cursor = cursor
-	t.altScreen = altScreen
+	t.altScreen = frame.AltScreen
 	return frame, changed
+}
+
+func isAltScreen(grid *cmux.RenderGrid) bool {
+	return grid.ActiveScreen == "alternate"
+}
+
+func stylesByID(styles []cmux.Style) map[int]cmux.Style {
+	byID := make(map[int]cmux.Style, len(styles))
+	for _, style := range styles {
+		byID[style.ID] = style
+	}
+	return byID
+}
+
+func spanWidth(span cmux.Span) int {
+	if span.CellWidth != nil {
+		return *span.CellWidth
+	}
+	return utf8.RuneCountInString(span.Text)
 }
 
 func (t *Tracker) internStyle(style cmux.Style) (int, bool) {
@@ -231,17 +241,42 @@ func styleFromKey(id int, key styleKey) Style {
 	}
 }
 
-func hashRow(spans []Span) uint64 {
-	hasher := fnv.New64a()
-	for _, span := range spans {
-		_, _ = hasher.Write([]byte(strconv.Itoa(span.Column)))
-		_, _ = hasher.Write([]byte{0})
-		_, _ = hasher.Write([]byte(strconv.Itoa(span.Width)))
-		_, _ = hasher.Write([]byte{0})
-		_, _ = hasher.Write([]byte(strconv.Itoa(span.Style)))
-		_, _ = hasher.Write([]byte{0})
-		_, _ = hasher.Write([]byte(span.Text))
-		_, _ = hasher.Write([]byte{1})
+const (
+	fnvOffset64 = 14695981039346656037
+	fnvPrime64  = 1099511628211
+)
+
+type rowHash uint64
+
+func (h *rowHash) writeByte(value byte) {
+	*h ^= rowHash(value)
+	*h *= fnvPrime64
+}
+
+func (h *rowHash) writeString(text string) {
+	for index := 0; index < len(text); index++ {
+		h.writeByte(text[index])
 	}
-	return hasher.Sum64()
+}
+
+func (h *rowHash) writeInt(value int) {
+	var digits [20]byte
+	for _, digit := range strconv.AppendInt(digits[:0], int64(value), 10) {
+		h.writeByte(digit)
+	}
+}
+
+func hashRow(spans []Span) uint64 {
+	hash := rowHash(fnvOffset64)
+	for _, span := range spans {
+		hash.writeInt(span.Column)
+		hash.writeByte(0)
+		hash.writeInt(span.Width)
+		hash.writeByte(0)
+		hash.writeInt(span.Style)
+		hash.writeByte(0)
+		hash.writeString(span.Text)
+		hash.writeByte(1)
+	}
+	return uint64(hash)
 }

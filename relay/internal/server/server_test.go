@@ -38,6 +38,18 @@ type fakeCmux struct {
 	terminalGitErr  error
 	gitReads        int
 	keepAwakeErr    error
+	keepAwakeReads  int
+	methods         []string
+	workspaceReads  int
+}
+
+func (f *fakeCmux) Methods(context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.methods == nil {
+		return nil, &cmux.RPCError{Code: "method_not_found", Message: "Unknown method"}
+	}
+	return f.methods, nil
 }
 
 func (f *fakeCmux) TerminalGit(context.Context) ([]cmux.TerminalGit, error) {
@@ -50,6 +62,7 @@ func (f *fakeCmux) TerminalGit(context.Context) ([]cmux.TerminalGit, error) {
 func (f *fakeCmux) KeepAwake(context.Context) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.keepAwakeReads++
 	return f.keepAwake, f.keepAwakeErr
 }
 
@@ -92,6 +105,9 @@ func (f *fakeCmux) Identify(context.Context) (cmux.Identity, error) {
 }
 
 func (f *fakeCmux) Workspaces(context.Context) (cmux.WorkspaceList, error) {
+	f.mu.Lock()
+	f.workspaceReads++
+	f.mu.Unlock()
 	return cmux.WorkspaceList{
 		Workspaces: []cmux.Workspace{{ID: "w1", Title: "api", Terminals: []cmux.Terminal{{ID: "t1", Title: "zsh"}}}},
 		Groups:     []cmux.WorkspaceGroup{{ID: "g1", Name: "Q4", MemberWorkspaceIDs: []string{"w1"}}},

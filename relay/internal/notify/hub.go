@@ -50,13 +50,9 @@ func NewHub(source Source, logger *slog.Logger) *Hub {
 	return &Hub{source: source, logger: logger, nextSeq: time.Now().UnixMilli(), subscribers: map[chan Notification]struct{}{}}
 }
 
-func (h *Hub) HandleEvent(ctx context.Context, event cmux.Event) {
-	h.handle(ctx, event)
-}
-
 func (h *Hub) StreamResumed(context.Context) {}
 
-func (h *Hub) handle(ctx context.Context, event cmux.Event) {
+func (h *Hub) HandleEvent(ctx context.Context, event cmux.Event) {
 	var payload struct {
 		NotificationID string   `json:"notification_id"`
 		ReplacedIDs    []string `json:"replaced_notification_ids"`

@@ -227,9 +227,15 @@ func shortPath(value string) string {
 }
 
 func truncate(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
+	if len(text) <= limit {
 		return text
 	}
-	return string(runes[:limit]) + "…"
+	count := 0
+	for index := range text {
+		if count == limit {
+			return text[:index] + "…"
+		}
+		count++
+	}
+	return text
 }

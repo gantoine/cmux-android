@@ -67,7 +67,7 @@ func (f *fakeSource) emit(hook, phase, requestID, surfaceID string) {
 		"surface_id":           surfaceID,
 		"phase":                phase,
 	})
-	f.tracker.HandleEvent(context.Background(), cmux.Event{Type: "event", Name: "agent.hook." + hook, Category: "agent", Payload: payload})
+	f.tracker.HandleEvent(context.Background(), cmux.Event{Type: "event", Name: "agent.hook." + hook, Payload: payload})
 }
 
 func startTracker(t *testing.T, source *fakeSource) *Tracker {

@@ -43,14 +43,14 @@ func TestEachTerminalCarriesItsOwnGitState(t *testing.T) {
 	}
 }
 
-func gitSession(fake *fakeCmux, intervals Intervals) *session {
+func gitServer(fake *fakeCmux, intervals Intervals) *Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return &session{server: &Server{cmux: fake, options: Options{PollInterval: intervals}, logger: logger}}
+	return &Server{cmux: fake, options: Options{PollInterval: intervals}, logger: logger}
 }
 
 func TestFailedGitReadWaitsForTheNextInterval(t *testing.T) {
 	fake := &fakeCmux{terminalGitErr: errors.New("decode debug.terminals result: unexpected shape")}
-	s := gitSession(fake, DefaultIntervals)
+	s := gitServer(fake, DefaultIntervals)
 	git := gitInfo{}
 	git.refresh(context.Background(), s)
 	git.refresh(context.Background(), s)
@@ -62,10 +62,10 @@ func TestFailedGitReadWaitsForTheNextInterval(t *testing.T) {
 func TestGitStateIsDroppedWhenCmuxStopsSupportingIt(t *testing.T) {
 	branch := "main"
 	fake := &fakeCmux{terminalGit: []cmux.TerminalGit{{SurfaceID: "t1", GitBranch: &branch}}}
-	s := gitSession(fake, Intervals{})
+	s := gitServer(fake, Intervals{})
 	git := gitInfo{}
 	git.refresh(context.Background(), s)
-	fake.terminalGitErr = &cmux.RPCError{Code: methodNotFoundErrorCode}
+	fake.terminalGitErr = &cmux.RPCError{Code: "method_not_found"}
 	git.refresh(context.Background(), s)
 	workspaces := []cmux.Workspace{{ID: "w1", Terminals: []cmux.Terminal{{ID: "t1"}}}}
 	git.apply(workspaces)
@@ -77,7 +77,7 @@ func TestGitStateIsDroppedWhenCmuxStopsSupportingIt(t *testing.T) {
 func TestGitStateIsDroppedAfterRepeatedFailedReads(t *testing.T) {
 	branch := "main"
 	fake := &fakeCmux{terminalGit: []cmux.TerminalGit{{SurfaceID: "t1", GitBranch: &branch}}}
-	s := gitSession(fake, Intervals{})
+	s := gitServer(fake, Intervals{})
 	git := gitInfo{}
 	git.refresh(context.Background(), s)
 	fake.terminalGitErr = errors.New("debug.terminals timed out")
@@ -101,7 +101,7 @@ func TestGitStateIsDroppedAfterRepeatedFailedReads(t *testing.T) {
 func TestSuccessfulGitReadResetsTheFailureCount(t *testing.T) {
 	branch := "main"
 	fake := &fakeCmux{terminalGit: []cmux.TerminalGit{{SurfaceID: "t1", GitBranch: &branch}}}
-	s := gitSession(fake, Intervals{})
+	s := gitServer(fake, Intervals{})
 	git := gitInfo{}
 	for range failedGitReadsBeforeClearing - 1 {
 		fake.terminalGitErr = errors.New("debug.terminals timed out")
