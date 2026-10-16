@@ -17,6 +17,7 @@ class NotificationReadReceiver : BroadcastReceiver() {
         val pending = goAsync()
         app.scope.launch {
             try {
+                app.connections.wake(WAKE_MS)
                 app.connections.awaitConnected(macId, CONNECT_TIMEOUT_MS)
                     ?.markNotificationsRead(notificationId = notificationId, surfaceId = surfaceId.takeIf { notificationId == null })
             } finally {
@@ -28,7 +29,8 @@ class NotificationReadReceiver : BroadcastReceiver() {
     companion object {
         private const val ACTION_MARK_READ = "com.gantoine.muxer.MARK_NOTIFICATION_READ"
         private const val EXTRA_NOTIFICATION_ID = "notification_id"
-        private const val CONNECT_TIMEOUT_MS = 5_000L
+        private const val WAKE_MS = 15_000L
+        private const val CONNECT_TIMEOUT_MS = 8_000L
 
         fun notificationIntent(context: Context, macId: String, notificationId: String): PendingIntent =
             pendingIntent(context, "read:$notificationId".hashCode()) {

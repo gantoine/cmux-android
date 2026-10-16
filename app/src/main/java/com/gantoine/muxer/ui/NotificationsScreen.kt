@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.net.ConnectionState
+import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.protocol.MacNotification
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,12 +63,20 @@ fun NotificationsScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var notifications by remember { mutableStateOf<List<MacNotification>?>(null) }
+    var loadFailure by remember { mutableStateOf<Throwable?>(null) }
+    val macs by app.store.macs.collectAsState(initial = emptyList())
+    val macName = macs.firstOrNull { it.id == macId }?.name ?: "The computer"
 
     suspend fun load() {
         val target = connection ?: return
         target.notifications()
-            .onSuccess { notifications = it }
-            .onFailure { snackbar.showSnackbar(it.message ?: "Couldn't load the notifications.") }
+            .onSuccess {
+                notifications = it
+                loadFailure = null
+            }
+            .onFailure { failure ->
+                if (notifications == null) loadFailure = failure else snackbar.showSnackbar(failure.message ?: "Couldn't load the notifications.")
+            }
     }
 
     LaunchedEffect(connection, state is ConnectionState.Connected) {
@@ -99,7 +109,26 @@ fun NotificationsScreen(
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             val list = notifications
+            val failure = loadFailure
             when {
+                list == null && failure is RelayException && failure.code == "unknown_type" -> EmptyState(
+                    icon = Icons.Outlined.NotificationsNone,
+                    title = "Update the relay",
+                    body = "$macName's relay is too old to list notifications. Update it to see them here.",
+                )
+                list == null && failure != null -> Column {
+                    ConnectionBanner(state)
+                    EmptyState(
+                        icon = Icons.Outlined.NotificationsNone,
+                        title = "Couldn't load notifications",
+                        body = failure.message ?: "$macName didn't answer.",
+                    ) {
+                        Button(onClick = {
+                            loadFailure = null
+                            scope.launch { load() }
+                        }) { Text("Try again") }
+                    }
+                }
                 list == null -> Column {
                     ConnectionBanner(state)
                     LoadingState("Fetching notifications…")
