@@ -13,6 +13,7 @@
     </shortcut>
     <share-target android:targetClass="com.gantoine.muxer.MainActivity">
         <data android:mimeType="text/*" />
+        <data android:mimeType="image/*" />
         <category android:name="com.gantoine.muxer.category.SHARE_TARGET" />
     </share-target>
 </shortcuts>

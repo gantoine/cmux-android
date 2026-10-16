@@ -30,13 +30,20 @@ sealed interface ShareRoute {
 
 object ShareRouting {
     private const val SEND_ACTION = "android.intent.action.SEND"
+    private const val SEND_MULTIPLE_ACTION = "android.intent.action.SEND_MULTIPLE"
     private const val TEXT_TYPE_PREFIX = "text/"
+    private const val IMAGE_TYPE_PREFIX = "image/"
 
     fun sharedText(action: String?, mimeType: String?, text: CharSequence?): String? {
         if (action != SEND_ACTION) return null
         if (mimeType?.startsWith(TEXT_TYPE_PREFIX) != true) return null
         return text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
     }
+
+    fun isImageShare(action: String?, mimeType: String?): Boolean =
+        (action == SEND_ACTION || action == SEND_MULTIPLE_ACTION) && mimeType?.startsWith(IMAGE_TYPE_PREFIX) == true
+
+    fun caption(text: CharSequence?): String = text?.toString()?.trim().orEmpty()
 
     fun computers(snapshots: Collection<MacSnapshot>, pairedMacIds: Collection<String>): List<ShareComputer> =
         snapshots

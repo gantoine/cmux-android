@@ -2,6 +2,7 @@ package com.gantoine.muxer.net
 
 import com.gantoine.muxer.chat.ChatModel
 import com.gantoine.muxer.chat.ChatState
+import com.gantoine.muxer.images.EncodedImage
 import com.gantoine.muxer.protocol.AgentActivityMessage
 import com.gantoine.muxer.protocol.AgentMessage
 import com.gantoine.muxer.protocol.AgentMessagesMessage
@@ -38,6 +39,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -384,6 +386,19 @@ class RelayConnection(
         request("paste", buildJsonObject {
             put("text", text)
             put("submit", submit)
+        }).map { }
+
+    suspend fun sendImages(text: String, images: List<EncodedImage>): Result<Unit> =
+        request("send_images", buildJsonObject {
+            if (text.isNotEmpty()) put("text", text)
+            putJsonArray("images") {
+                images.forEach { image ->
+                    addJsonObject {
+                        put("data_b64", image.data)
+                        put("format", image.format)
+                    }
+                }
+            }
         }).map { }
 
     suspend fun history(lines: Int = HISTORY_LINES): Result<HistoryResponse> =

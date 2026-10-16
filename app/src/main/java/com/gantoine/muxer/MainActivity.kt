@@ -1,6 +1,8 @@
 package com.gantoine.muxer
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -39,7 +41,7 @@ class MainActivity : ComponentActivity() {
         intent ?: return null
         if (intent.action == Intent.ACTION_VIEW) PairLink.parse(intent.data)?.let { return it }
         if (intent.action == ACTION_PAIR) return LaunchTarget.PairComputer
-        if (intent.action == Intent.ACTION_SEND) return shareTarget(intent)
+        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) return shareTarget(intent)
         if (intent.action == Notifier.ACTION_OPEN_TERMINAL) {
             val macId = intent.getStringExtra(Notifier.EXTRA_MAC_ID) ?: return null
             val workspaceId = intent.getStringExtra(Notifier.EXTRA_WORKSPACE_ID) ?: return null
@@ -50,10 +52,34 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareTarget(intent: Intent): LaunchTarget? {
+        val shortcutId = intent.getStringExtra(ShortcutManagerCompat.EXTRA_SHORTCUT_ID)
+        if (ShareRouting.isImageShare(intent.action, intent.type)) {
+            val images = sharedImages(intent).takeIf { it.isNotEmpty() } ?: return null
+            return LaunchTarget.Share(ShareRouting.caption(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)), shortcutId, images)
+        }
         val text = ShareRouting.sharedText(intent.action, intent.type, intent.getCharSequenceExtra(Intent.EXTRA_TEXT))
             ?: return null
-        return LaunchTarget.Share(text, intent.getStringExtra(ShortcutManagerCompat.EXTRA_SHORTCUT_ID))
+        return LaunchTarget.Share(text, shortcutId)
     }
+
+    private fun sharedImages(intent: Intent): List<Uri> =
+        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+            }.orEmpty()
+        } else {
+            listOfNotNull(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                },
+            )
+        }
 
     companion object {
         const val ACTION_PAIR = "com.gantoine.muxer.PAIR"

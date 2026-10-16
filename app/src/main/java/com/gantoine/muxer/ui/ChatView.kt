@@ -1,5 +1,6 @@
 package com.gantoine.muxer.ui
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,7 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.CircularProgressIndicator
@@ -83,6 +83,11 @@ fun ChatView(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     onDictate: () -> Unit,
+    dictating: Boolean,
+    images: List<Uri>,
+    sendingImages: Boolean,
+    onAttachImages: () -> Unit,
+    onRemoveImage: (Uri) -> Unit,
     onStop: () -> Unit,
     onShowTerminal: () -> Unit,
     modifier: Modifier = Modifier,
@@ -132,8 +137,13 @@ fun ChatView(
             onDraftChange = onDraftChange,
             working = working,
             messagingAgent = messagingAgent,
+            images = images,
+            sendingImages = sendingImages,
+            onAttachImages = onAttachImages,
+            onRemoveImage = onRemoveImage,
             onSend = onSend,
             onDictate = onDictate,
+            dictating = dictating,
             onStop = onStop,
         )
     }
@@ -299,37 +309,47 @@ private fun ChatComposer(
     onDraftChange: (String) -> Unit,
     working: Boolean,
     messagingAgent: Boolean,
+    images: List<Uri>,
+    sendingImages: Boolean,
+    onAttachImages: () -> Unit,
+    onRemoveImage: (Uri) -> Unit,
     onSend: () -> Unit,
     onDictate: () -> Unit,
+    dictating: Boolean,
     onStop: () -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .navigationBarsPadding()
-            .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        OutlinedTextField(
-            value = draft,
-            onValueChange = onDraftChange,
-            placeholder = { Text(if (messagingAgent) "Send message after you answer" else "Message Claude") },
-            maxLines = 6,
-            shape = RoundedCornerShape(24.dp),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = true),
-            modifier = Modifier.weight(1f),
-        )
-        IconButton(onClick = onDictate) { Icon(Icons.Filled.Mic, contentDescription = "Dictate a message") }
-        when {
-            draft.isNotBlank() -> FilledIconButton(onClick = onSend) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send the message")
-            }
-            working -> FilledIconButton(onClick = onStop) {
-                Icon(Icons.Filled.Stop, contentDescription = "Stop Claude")
-            }
-            else -> FilledIconButton(onClick = onSend, enabled = false) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send the message")
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).navigationBarsPadding()) {
+        AttachedImages(images, onRemove = onRemoveImage)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = onDraftChange,
+                placeholder = { Text(if (messagingAgent) "Send message after you answer" else "Message Claude") },
+            leadingIcon = { AttachImageButton(enabled = !sendingImages, onClick = onAttachImages) },
+                maxLines = 6,
+                shape = RoundedCornerShape(50),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = true),
+                modifier = Modifier.weight(1f),
+            )
+            DictateButton(dictating, onClick = onDictate)
+            when {
+                sendingImages -> FilledIconButton(onClick = {}, enabled = false) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+                draft.isNotBlank() || images.isNotEmpty() -> FilledIconButton(onClick = onSend) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send the message")
+                }
+                working -> FilledIconButton(onClick = onStop) {
+                    Icon(Icons.Filled.Stop, contentDescription = "Stop Claude")
+                }
+                else -> FilledIconButton(onClick = onSend, enabled = false) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send the message")
+                }
             }
         }
     }

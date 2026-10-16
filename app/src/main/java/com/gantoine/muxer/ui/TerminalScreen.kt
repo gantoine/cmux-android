@@ -3,7 +3,9 @@ package com.gantoine.muxer.ui
 import androidx.compose.animation.AnimatedVisibility
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.speech.RecognizerIntent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -12,7 +14,6 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -79,6 +80,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.MacStore
+import com.gantoine.muxer.images.ChatImages
 import com.gantoine.muxer.net.AgentReplyRoute
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.VisibleTerminal
@@ -110,6 +112,7 @@ fun TerminalScreen(
     surfaceId: String,
     onBack: () -> Unit,
     initialMessage: String = "",
+    initialImages: List<Uri> = emptyList(),
 ) {
     val connections by app.connections.connectionsFlow.collectAsState()
     val connection = connections[macId]
@@ -143,11 +146,18 @@ fun TerminalScreen(
     var fontSizeLoaded by remember { mutableStateOf(false) }
     var fitToPhone by remember { mutableStateOf(false) }
     var modifiers by remember { mutableStateOf(StickyModifiers()) }
-    var composerOpen by remember { mutableStateOf(initialMessage.isNotEmpty()) }
+    var composerOpen by remember { mutableStateOf(initialMessage.isNotEmpty() || initialImages.isNotEmpty()) }
     var composerText by rememberSaveable { mutableStateOf(initialMessage) }
+    var dictating by rememberSaveable { mutableStateOf(false) }
     val dictation = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        dictating = false
         val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (!spoken.isNullOrBlank()) composerText = listOf(composerText.trimEnd(), spoken).filter { it.isNotEmpty() }.joinToString(" ")
+    }
+    var images by remember(surfaceId) { mutableStateOf(initialImages.take(ChatImages.MAX_IMAGES)) }
+    var sendingImages by remember { mutableStateOf(false) }
+    val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(ChatImages.MAX_IMAGES)) { picked ->
+        images = ChatImages.merge(images, picked)
     }
     val viewport = remember(surfaceId) { TerminalViewport() }
     var history by remember(surfaceId) { mutableStateOf<TerminalHistory?>(null) }
@@ -234,6 +244,7 @@ fun TerminalScreen(
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         try {
             dictation.launch(intent)
+            dictating = true
         } catch (_: ActivityNotFoundException) {
             scope.launch { snackbar.showSnackbar("No voice input is available on this phone.") }
         }
@@ -248,7 +259,33 @@ fun TerminalScreen(
         }
     }
 
+    fun attachImages() {
+        pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+
+    fun sendImages() {
+        if (messagingAgent) {
+            scope.launch { snackbar.showSnackbar("Answer the open prompt first, then send the images.") }
+            return
+        }
+        val message = composerText.trim()
+        val sending = images
+        sendingImages = true
+        scope.launch {
+            val result = runCatching { sending.map { ChatImages.encode(context.contentResolver, it) } }
+                .fold(onSuccess = { connection.sendImages(message, it) }, onFailure = { Result.failure(it) })
+            sendingImages = false
+            result
+                .onSuccess {
+                    images = images - sending.toSet()
+                    if (composerText.trim() == message) composerText = ""
+                }
+                .onFailure { snackbar.showSnackbar(it.message ?: "The images didn't reach Claude.") }
+        }
+    }
+
     fun sendMessage() {
+        if (images.isNotEmpty()) return sendImages()
         val message = composerText.trim()
         if (message.isEmpty()) return
         composerText = ""
@@ -336,6 +373,11 @@ fun TerminalScreen(
                     onDraftChange = { composerText = it },
                     onSend = ::sendMessage,
                     onDictate = ::dictate,
+                    dictating = dictating,
+                    images = images,
+                    sendingImages = sendingImages,
+                    onAttachImages = ::attachImages,
+                    onRemoveImage = { images = images - it },
                     onStop = { connection.key("escape") },
                     onShowTerminal = { showChat = false },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -401,11 +443,17 @@ fun TerminalScreen(
                     AgentPrompts(retry, approvals, sendingApprovals, ::reply, Modifier.padding(top = 8.dp))
                     AgentMessageReceipts(agentMessages, waitingOnYou)
                     if (composerOpen && !questionOpen) {
+                        AttachedImages(images, onRemove = { images = images - it })
                         Composer(
                             text = composerText,
                             messagingAgent = messagingAgent,
+                            canAttachImages = chat != null || images.isNotEmpty(),
+                            hasImages = images.isNotEmpty(),
+                            sendingImages = sendingImages,
                             onTextChange = { composerText = it },
+                            onAttachImages = ::attachImages,
                             onDictate = ::dictate,
+                            dictating = dictating,
                             onSend = ::sendMessage,
                         )
                     }
@@ -510,22 +558,38 @@ private fun ModifierButton(label: String, active: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun Composer(text: String, messagingAgent: Boolean, onTextChange: (String) -> Unit, onDictate: () -> Unit, onSend: () -> Unit) {
+private fun Composer(
+    text: String,
+    messagingAgent: Boolean,
+    canAttachImages: Boolean,
+    hasImages: Boolean,
+    sendingImages: Boolean,
+    onTextChange: (String) -> Unit,
+    onAttachImages: () -> Unit,
+    onDictate: () -> Unit,
+    dictating: Boolean,
+    onSend: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 6.dp),
-        verticalAlignment = Alignment.Bottom,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
             placeholder = { Text(if (messagingAgent) "Send message after you answer" else "Message") },
+            leadingIcon = if (canAttachImages) {
+                { AttachImageButton(enabled = !sendingImages, onClick = onAttachImages) }
+            } else {
+                null
+            },
             maxLines = 5,
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(50),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = true),
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onDictate) { Icon(Icons.Filled.Mic, contentDescription = "Dictate a message") }
-        IconButton(onClick = onSend, enabled = text.isNotBlank()) {
+        DictateButton(dictating, onClick = onDictate)
+        IconButton(onClick = onSend, enabled = !sendingImages && (text.isNotBlank() || hasImages)) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send the message")
         }
     }
