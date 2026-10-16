@@ -77,6 +77,7 @@ object WidgetData {
     fun needsYou(workspace: WorkspaceInfo, snapshot: MacSnapshot): Boolean {
         val surfaces = workspace.terminals.map { it.id }.toSet()
         fun belongs(workspaceId: String?, surfaceId: String) = workspaceId == workspace.id || surfaceId in surfaces
+        if (!WorkspaceListing.isAgent(workspace)) return false
         if (workspace.terminals.any { it.id in snapshot.busySurfaces }) return false
         if (snapshot.approvals.any { belongs(it.workspaceId, it.surfaceId) } || snapshot.retries.any { belongs(it.workspaceId, it.surfaceId) }) return false
         return WorkspaceListing.needsYou(workspace) || WorkspaceListing.needsAttention(workspace.preview)

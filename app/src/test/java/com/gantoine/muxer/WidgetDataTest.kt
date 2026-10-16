@@ -176,13 +176,16 @@ class WidgetDataTest {
 
     @Test
     fun workspacePreviewsAndUnreadCountsAlsoNeedYou() {
-        val previewed = workspace("p", TerminalInfo(id = "t1")).copy(preview = "Claude is waiting for your input")
-        val unread = workspace("u", TerminalInfo(id = "t2")).copy(unreadCount = 2, preview = "Build finished")
-        val quiet = workspace("q", TerminalInfo(id = "t3")).copy(preview = "~/workspace/quiet")
-        val snapshot = snapshot(workspaces = listOf(previewed, unread, quiet))
+        val agent = TerminalInfo(id = "t1", agentSource = "claude", agentState = "Waiting")
+        val previewed = workspace("p", agent).copy(preview = "Claude is waiting for your input")
+        val unread = workspace("u", agent.copy(id = "t2")).copy(unreadCount = 2, preview = "Build finished")
+        val quiet = workspace("q", agent.copy(id = "t3")).copy(preview = "~/workspace/quiet")
+        val stale = workspace("s", TerminalInfo(id = "t4")).copy(unreadCount = 1, preview = "Claude is waiting for your input")
+        val snapshot = snapshot(workspaces = listOf(previewed, unread, quiet, stale))
         assertEquals(WorkspaceState.NeedsYou, WidgetData.state(previewed, snapshot))
         assertEquals(WorkspaceState.NeedsYou, WidgetData.state(unread, snapshot))
         assertEquals(WorkspaceState.Idle, WidgetData.state(quiet, snapshot))
+        assertEquals(WorkspaceState.Idle, WidgetData.state(stale, snapshot))
         assertEquals(listOf("Claude is waiting for your input", "Build finished"), WidgetData.needsYou(listOf(snapshot)).map { it.label })
     }
 
