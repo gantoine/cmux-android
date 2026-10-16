@@ -38,15 +38,16 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.gantoine.muxer.notifications.AgentNames
+import com.gantoine.muxer.notifications.LiveActivities
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.ApprovalQuestion
 import kotlinx.coroutines.delay
 import java.time.Instant
 
 sealed interface ApprovalReply {
-    data class Permission(val mode: String) : ApprovalReply
+    data class Decision(val mode: String, val feedback: String? = null) : ApprovalReply
     data class Answers(val answers: List<String>) : ApprovalReply
-    data class Plan(val mode: String, val feedback: String? = null) : ApprovalReply
 }
 
 object Approvals {
@@ -58,8 +59,7 @@ object Approvals {
     const val PLAN_DENY = "deny"
     private const val ANSWER_WINDOW_SECONDS = 120L
 
-    fun agentName(approval: Approval): String =
-        approval.agent?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "The agent"
+    private fun agentName(approval: Approval): String = AgentNames.display(approval.agent) ?: "The agent"
 
     fun title(approval: Approval): String = when {
         approval.isPermission -> "${agentName(approval)} wants to use ${approval.tool ?: "a tool"}"
@@ -141,7 +141,7 @@ private fun TimeLeft(approval: Approval) {
     }
     val seconds = Approvals.secondsLeft(approval, Instant.ofEpochMilli(now)) ?: return
     Text(
-        if (seconds == 0L) "Answer in the terminal" else "%d:%02d".format(seconds / 60, seconds % 60),
+        if (seconds == 0L) "Answer in the terminal" else LiveActivities.countdown(seconds),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -168,9 +168,9 @@ private fun PermissionBody(approval: Approval, sending: Boolean, onReply: (Appro
         }
     }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(onClick = { onReply(ApprovalReply.Permission(Approvals.MODE_ONCE)) }, enabled = !sending) { Text("Allow") }
-        OutlinedButton(onClick = { onReply(ApprovalReply.Permission(Approvals.MODE_ALWAYS)) }, enabled = !sending) { Text("Always allow") }
-        TextButton(onClick = { onReply(ApprovalReply.Permission(Approvals.MODE_DENY)) }, enabled = !sending) { Text("Deny") }
+        Button(onClick = { onReply(ApprovalReply.Decision(Approvals.MODE_ONCE)) }, enabled = !sending) { Text("Allow") }
+        OutlinedButton(onClick = { onReply(ApprovalReply.Decision(Approvals.MODE_ALWAYS)) }, enabled = !sending) { Text("Always allow") }
+        TextButton(onClick = { onReply(ApprovalReply.Decision(Approvals.MODE_DENY)) }, enabled = !sending) { Text("Deny") }
     }
 }
 
@@ -195,17 +195,17 @@ private fun PlanBody(approval: Approval, sending: Boolean, onReply: (ApprovalRep
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Button(
-                onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_MANUAL, feedback.trim())) },
+                onClick = { onReply(ApprovalReply.Decision(Approvals.PLAN_MANUAL, feedback.trim())) },
                 enabled = feedback.isNotBlank() && !sending,
             ) { Text("Send changes") }
             TextButton(onClick = { revising = false }, enabled = !sending) { Text("Cancel") }
         }
     } else {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Button(onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_MANUAL)) }, enabled = !sending) { Text("Approve") }
-            OutlinedButton(onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_AUTO_ACCEPT)) }, enabled = !sending) { Text("Approve, auto-edit") }
+            Button(onClick = { onReply(ApprovalReply.Decision(Approvals.PLAN_MANUAL)) }, enabled = !sending) { Text("Approve") }
+            OutlinedButton(onClick = { onReply(ApprovalReply.Decision(Approvals.PLAN_AUTO_ACCEPT)) }, enabled = !sending) { Text("Approve, auto-edit") }
             TextButton(onClick = { revising = true }, enabled = !sending) { Text("Revise") }
-            TextButton(onClick = { onReply(ApprovalReply.Plan(Approvals.PLAN_DENY)) }, enabled = !sending) { Text("Reject") }
+            TextButton(onClick = { onReply(ApprovalReply.Decision(Approvals.PLAN_DENY)) }, enabled = !sending) { Text("Reject") }
         }
     }
 }

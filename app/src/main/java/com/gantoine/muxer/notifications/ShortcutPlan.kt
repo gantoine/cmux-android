@@ -25,6 +25,8 @@ object ShortcutPlan {
 
     fun id(macId: String, workspaceId: String): String = "$PREFIX$macId:$workspaceId"
 
+    fun agentPersonKey(macId: String, workspaceId: String): String = "agent:$macId:$workspaceId"
+
     fun isWorkspaceShortcut(id: String): Boolean = id.startsWith(PREFIX)
 
     fun shortcut(macId: String, macName: String, workspace: WorkspaceInfo): WorkspaceShortcut? {

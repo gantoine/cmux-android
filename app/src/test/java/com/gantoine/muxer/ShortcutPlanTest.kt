@@ -79,6 +79,8 @@ class ShortcutPlanTest {
         assertEquals("Claude", AgentNames.display("claude"))
         assertEquals("Claude", AgentNames.display("claude-code"))
         assertEquals("Codex", AgentNames.display("codex"))
+        assertEquals("Claude", AgentNames.display("claude_code"))
+        assertEquals("Gemini", AgentNames.display("gemini-cli"))
         assertNull(AgentNames.display(null))
         assertNull(AgentNames.display(" "))
     }

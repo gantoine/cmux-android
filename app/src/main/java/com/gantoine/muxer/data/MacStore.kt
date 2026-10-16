@@ -55,17 +55,11 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
         }
     }
 
-    suspend fun setBackgroundNotifications(id: String, enabled: Boolean) = update { macs ->
-        macs.map { if (it.id == id) it.copy(backgroundNotifications = enabled) else it }
-    }
+    suspend fun setBackgroundNotifications(id: String, enabled: Boolean) = updateMac(id) { copy(backgroundNotifications = enabled) }
 
-    suspend fun setCompletionNotifications(id: String, enabled: Boolean) = update { macs ->
-        macs.map { if (it.id == id) it.copy(completionNotifications = enabled) else it }
-    }
+    suspend fun setCompletionNotifications(id: String, enabled: Boolean) = updateMac(id) { copy(completionNotifications = enabled) }
 
-    suspend fun setShowActivity(id: String, enabled: Boolean) = update { macs ->
-        macs.map { if (it.id == id) it.copy(showActivity = enabled) else it }
-    }
+    suspend fun setShowActivity(id: String, enabled: Boolean) = updateMac(id) { copy(showActivity = enabled) }
 
     suspend fun migrateGlobalBackgroundSetting() {
         context.dataStore.edit { preferences ->
@@ -91,12 +85,18 @@ class MacStore(private val context: Context, private val cipher: TokenCipher = T
 
     suspend fun current(): List<Mac> = macs.first()
 
+    suspend fun find(id: String): Mac? = current().firstOrNull { it.id == id }
+
     suspend fun setFontSize(size: Float) {
         context.dataStore.edit { it[FONT_SIZE] = size }
     }
 
     suspend fun setFitToPhone(enabled: Boolean) {
         context.dataStore.edit { it[FIT_TO_PHONE] = enabled }
+    }
+
+    private suspend fun updateMac(id: String, transform: Mac.() -> Mac) = update { macs ->
+        macs.map { if (it.id == id) it.transform() else it }
     }
 
     private suspend fun update(transform: (List<Mac>) -> List<Mac>) {

@@ -77,7 +77,6 @@ class RelayConnection(
     private val notificationsAfter: suspend () -> Long,
     private val onNotification: suspend (String, RelayNotification) -> Unit,
     private val onWelcome: suspend (String, Welcome) -> Unit = { _, _ -> },
-    private val approvalsOutliveDropsForMs: Long = APPROVALS_OUTLIVE_DROPS_FOR_MS,
 ) {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Stopped)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -94,8 +93,8 @@ class RelayConnection(
     private val _chat = MutableStateFlow<ChatState?>(null)
     val chat: StateFlow<ChatState?> = _chat.asStateFlow()
 
-    private val _approvals = MutableStateFlow<List<Approval>>(emptyList())
-    val approvals: StateFlow<List<Approval>> = _approvals.asStateFlow()
+    private val _approvals = MutableStateFlow<List<Approval>?>(null)
+    val approvals: StateFlow<List<Approval>?> = _approvals.asStateFlow()
 
     private val _retries = MutableStateFlow<List<Retry>>(emptyList())
     val retries: StateFlow<List<Retry>> = _retries.asStateFlow()
@@ -119,6 +118,7 @@ class RelayConnection(
     @Volatile private var socket: WebSocket? = null
     private var loop: Job? = null
     @Volatile private var attachment: Attachment? = null
+    @Volatile private var suspended = false
 
     fun start() {
         if (loop?.isActive == true) return
@@ -138,16 +138,19 @@ class RelayConnection(
         socket?.close(1000, "closing")
         socket = null
         failPending("The connection closed.")
-        _approvals.value = emptyList()
+        clearLiveState()
+        _state.value = ConnectionState.Stopped
+    }
+
+    private fun clearLiveState() {
+        _approvals.value = null
         _retries.value = emptyList()
         _busySurfaces.value = emptySet()
         _keepAwake.value = null
-        _state.value = ConnectionState.Stopped
     }
 
     private suspend fun runLoop() {
         var backoffMs = 1_000L
-        var lastConnectedAt = System.currentTimeMillis()
         while (true) {
             _state.value = ConnectionState.Connecting
             val closed = CompletableDeferred<CloseReason>()
@@ -171,11 +174,7 @@ class RelayConnection(
                 return
             }
             if (reason.wasConnected) backoffMs = 1_000L
-            if (_state.value is ConnectionState.Connected) lastConnectedAt = System.currentTimeMillis()
-            if (System.currentTimeMillis() - lastConnectedAt >= approvalsOutliveDropsForMs) _approvals.value = emptyList()
-            _retries.value = emptyList()
-            _busySurfaces.value = emptySet()
-            _keepAwake.value = null
+            clearLiveState()
             _state.value = ConnectionState.Disconnected(reason.message)
             delay(backoffMs)
             backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
@@ -220,7 +219,7 @@ class RelayConnection(
         hello.onSuccess { data ->
             val welcome = data?.let { RelayJson.decodeFromJsonElement(Welcome.serializer(), it) } ?: return
             _state.value = ConnectionState.Connected(welcome)
-            attachment?.let { sendAttach(it) }
+            if (!suspended) attachment?.let { sendAttach(it) }
             onWelcome(macId, welcome)
         }.onFailure {
             _state.value = ConnectionState.Disconnected(it.message ?: "The computer rejected the connection.")
@@ -239,7 +238,7 @@ class RelayConnection(
             }
             "screen" -> {
                 val frame = RelayJson.decodeFromJsonElement(ScreenFrame.serializer(), message)
-                if (frame.surfaceId != attachment?.surfaceId) return
+                if (suspended || frame.surfaceId != attachment?.surfaceId) return
                 val next = TerminalModel.apply(_screen.value, frame)
                 if (next == null) send("resync") else _screen.value = next
             }
@@ -255,6 +254,7 @@ class RelayConnection(
                 val detached = RelayJson.decodeFromJsonElement(DetachedMessage.serializer(), message)
                 if (detached.surfaceId == attachment?.surfaceId) {
                     attachment = null
+                    suspended = false
                     clearTerminalState()
                 }
                 _detached.tryEmit(detached)
@@ -327,15 +327,32 @@ class RelayConnection(
         val next = Attachment(nextAttachmentId.incrementAndGet(), workspaceId, surfaceId, fit)
         if (attachment?.surfaceId != surfaceId) clearTerminalState()
         attachment = next
+        suspended = false
         sendAttach(next)
         return next.id
     }
 
-    fun isAttachedTo(surfaceId: String): Boolean = attachment?.surfaceId == surfaceId
+    val attachedSurfaceId: String? get() = attachment?.surfaceId
+
+    fun isAttachedTo(surfaceId: String): Boolean = !suspended && attachment?.surfaceId == surfaceId
+
+    fun suspendAttachment() {
+        if (attachment == null || suspended) return
+        suspended = true
+        clearTerminalState()
+        send("detach")
+    }
+
+    fun resumeAttachment() {
+        if (!suspended) return
+        suspended = false
+        attachment?.let { sendAttach(it) }
+    }
 
     fun setFit(fit: Pair<Int, Int>?) {
         val current = attachment ?: return
         attachment = current.copy(fit = fit)
+        if (suspended) return
         if (fit == null) {
             send("unfit")
         } else {
@@ -350,7 +367,7 @@ class RelayConnection(
         if (attachment?.id != attachmentId) return
         attachment = null
         clearTerminalState()
-        send("detach")
+        if (suspended) suspended = false else send("detach")
     }
 
     private fun clearTerminalState() {
@@ -361,18 +378,20 @@ class RelayConnection(
 
     fun resync() = send("resync")
 
+    fun key(name: String) = send("key", buildJsonObject { put("key", name) })
+
+    suspend fun paste(text: String, submit: Boolean): Result<Unit> =
+        request("paste", buildJsonObject {
+            put("text", text)
+            put("submit", submit)
+        }).map { }
+
     suspend fun history(lines: Int = HISTORY_LINES): Result<HistoryResponse> =
         request("history", buildJsonObject { put("lines", lines) }).mapCatching { data ->
             data?.let { RelayJson.decodeFromJsonElement(HistoryResponse.serializer(), it) } ?: HistoryResponse()
         }
 
-    suspend fun allow(approvalId: String, mode: String): Result<Unit> =
-        request("answer_approval", buildJsonObject {
-            put("approval_id", approvalId)
-            put("mode", mode)
-        }).map { forget(approvalId) }
-
-    suspend fun decidePlan(approvalId: String, mode: String, feedback: String? = null): Result<Unit> =
+    suspend fun decide(approvalId: String, mode: String, feedback: String? = null): Result<Unit> =
         request("answer_approval", buildJsonObject {
             put("approval_id", approvalId)
             put("mode", mode)
@@ -400,7 +419,7 @@ class RelayConnection(
         }
 
     private fun forget(approvalId: String) {
-        _approvals.value = _approvals.value.filterNot { it.id == approvalId }
+        _approvals.value = _approvals.value?.filterNot { it.id == approvalId }
     }
 
     private fun sendAttach(target: Attachment) {
@@ -418,7 +437,6 @@ class RelayConnection(
 
     private companion object {
         const val REQUEST_TIMEOUT_MS = 20_000L
-        const val APPROVALS_OUTLIVE_DROPS_FOR_MS = 60_000L
         const val HISTORY_LINES = 2_000
     }
 }

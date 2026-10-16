@@ -228,24 +228,12 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
         scope.launch { app.store.rename(mac.id, name) }
     }
 
-    if (removing && mac != null) {
-        AlertDialog(
-            onDismissRequest = { removing = false },
-            title = { Text("Remove ${mac.name}?") },
-            text = {
-                Text("This phone forgets the computer. To also revoke its access on the computer, run `muxer devices` and `muxer revoke`.")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    removing = false
-                    scope.launch {
-                        app.store.remove(mac.id)
-                        onRemoved()
-                    }
-                }) { Text("Remove") }
-            },
-            dismissButton = { TextButton(onClick = { removing = false }) { Text("Cancel") } },
-        )
+    if (removing && mac != null) RemoveComputerDialog(mac, onDismiss = { removing = false }) {
+        removing = false
+        scope.launch {
+            app.store.remove(mac.id)
+            onRemoved()
+        }
     }
 }
 

@@ -60,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -78,12 +79,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.MacStore
+import com.gantoine.muxer.net.AgentReplyRoute
 import com.gantoine.muxer.net.ConnectionState
-import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.net.VisibleTerminal
 import com.gantoine.muxer.notifications.ConversationShortcuts
 import androidx.compose.ui.platform.LocalContext
-import java.util.concurrent.atomic.AtomicLong
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.terminal.TerminalBottomPadding
@@ -95,11 +95,9 @@ import com.gantoine.muxer.terminal.TerminalInputView
 import com.gantoine.muxer.terminal.TerminalViewport
 import com.gantoine.muxer.terminal.fittingGrid
 import com.gantoine.muxer.terminal.rememberCellMetrics
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -124,15 +122,15 @@ fun TerminalScreen(
     val workspaces by connection.workspaces.collectAsState()
     val chat by connection.chat.collectAsState()
     val allApprovals by connection.approvals.collectAsState()
-    val approvals = allApprovals.filter { it.surfaceId == surfaceId }
+    val approvals = allApprovals.orEmpty().filter { it.surfaceId == surfaceId }
     var sendingApprovals by remember { mutableStateOf(emptySet<String>()) }
     val retries by connection.retries.collectAsState()
     val retry = retries.firstOrNull { it.surfaceId == surfaceId }
     val agentMessages by connection.agentMessages.collectAsState()
     val busySurfaces by connection.busySurfaces.collectAsState()
     val midTurn = surfaceId in busySurfaces
-    val terminal = workspaces?.firstOrNull { it.id == workspaceId }?.terminals?.firstOrNull { it.id == surfaceId }
     val workspace = workspaces?.firstOrNull { it.id == workspaceId }
+    val terminal = workspace?.terminals?.firstOrNull { it.id == surfaceId }
     val agentStatus = terminal?.let(WorkspaceListing::agentStatus)
     val messagingAgent = AgentMessaging.shouldMessage(agentStatus, approvals.isNotEmpty())
     val waitingOnYou = approvals.isNotEmpty() || agentStatus is AgentStatus.NeedsYou
@@ -172,31 +170,22 @@ fun TerminalScreen(
 
     val context = LocalContext.current
     val visible = remember(macId, surfaceId) { VisibleTerminal(macId, surfaceId) }
-    val attachment = remember(connection, surfaceId) { AtomicLong(NO_ATTACHMENT) }
-    var requestedFit by remember(connection, surfaceId) { mutableStateOf<Pair<Int, Int>?>(null) }
+    var attachment by remember(connection, surfaceId) { mutableLongStateOf(NO_ATTACHMENT) }
     DisposableEffect(connection, workspaceId, surfaceId) {
-        attachment.set(connection.attach(workspaceId, surfaceId))
+        attachment = connection.attach(workspaceId, surfaceId)
         app.connections.visibleTerminal.value = visible
         ConversationShortcuts.reportUsed(context, macId, workspaceId)
         onDispose {
-            connection.detach(attachment.get())
+            connection.detach(attachment)
             if (app.connections.visibleTerminal.value === visible) app.connections.visibleTerminal.value = null
         }
     }
-    var backgroundDetach by remember(connection, surfaceId) { mutableStateOf<Job?>(null) }
     LifecycleEventEffect(Lifecycle.Event.ON_START) {
-        backgroundDetach?.cancel()
-        backgroundDetach = null
-        if (!connection.isAttachedTo(surfaceId)) attachment.set(connection.attach(workspaceId, surfaceId, requestedFit))
+        if (connection.attachedSurfaceId != surfaceId) attachment = connection.attach(workspaceId, surfaceId)
         app.connections.visibleTerminal.value = visible
     }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         if (app.connections.visibleTerminal.value === visible) app.connections.visibleTerminal.value = null
-        backgroundDetach?.cancel()
-        backgroundDetach = scope.launch {
-            delay(BACKGROUND_DETACH_MS)
-            connection.detach(attachment.get())
-        }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { connection.resync() }
     LaunchedEffect(connection) {
@@ -208,21 +197,12 @@ fun TerminalScreen(
         }
     }
 
-    fun perform(type: String, build: JsonObjectBuilder.() -> Unit = {}) {
-        scope.launch {
-            connection.request(type, buildJsonObject(build)).onFailure {
-                snackbar.showSnackbar(it.message ?: "The computer did not accept that.")
-            }
-        }
-    }
-
     fun reply(approval: Approval, reply: ApprovalReply) {
         sendingApprovals = sendingApprovals + approval.id
         scope.launch {
             val result = when (reply) {
-                is ApprovalReply.Permission -> connection.allow(approval.id, reply.mode)
+                is ApprovalReply.Decision -> connection.decide(approval.id, reply.mode, reply.feedback)
                 is ApprovalReply.Answers -> connection.answer(approval.id, reply.answers)
-                is ApprovalReply.Plan -> connection.decidePlan(approval.id, reply.mode, reply.feedback)
             }
             sendingApprovals = sendingApprovals - approval.id
             result.onFailure { snackbar.showSnackbar(it.message ?: "Could not send your answer.") }
@@ -259,11 +239,12 @@ fun TerminalScreen(
         }
     }
 
-    fun pasteMessage(message: String) {
+    fun paste(text: String, submit: Boolean) {
         if (!viewport.isLive) goLive()
-        perform("paste") {
-            put("text", message)
-            put("submit", true)
+        scope.launch {
+            connection.paste(text, submit).onFailure {
+                snackbar.showSnackbar(it.message ?: "The computer did not accept that.")
+            }
         }
     }
 
@@ -272,13 +253,13 @@ fun TerminalScreen(
         if (message.isEmpty()) return
         composerText = ""
         if (!messagingAgent) {
-            pasteMessage(message)
+            paste(message, submit = true)
             return
         }
         scope.launch {
             connection.sendAgentMessage(message).onFailure { error ->
-                if (error is RelayException && error.code in AgentMessaging.relayCannotMessage) {
-                    pasteMessage(message)
+                if (AgentReplyRoute.shouldPasteInstead(error)) {
+                    paste(message, submit = true)
                 } else {
                     if (composerText.isBlank()) composerText = message
                     snackbar.showSnackbar(error.message ?: "The message didn't reach the agent.")
@@ -294,7 +275,7 @@ fun TerminalScreen(
                 modifiers = StickyModifiers()
                 if (!viewport.isLive) goLive()
                 when (input) {
-                    is TerminalKeys.Input.Key -> connection.send("key", buildJsonObject { put("key", input.name) })
+                    is TerminalKeys.Input.Key -> connection.key(input.name)
                     is TerminalKeys.Input.Text -> connection.send("input", buildJsonObject { put("text", input.text) })
                 }
             }
@@ -303,7 +284,7 @@ fun TerminalScreen(
                 val input = TerminalKeys.keyWithModifiers(name, modifiers)
                 modifiers = StickyModifiers()
                 if (!viewport.isLive) goLive()
-                connection.send("key", buildJsonObject { put("key", input.name) })
+                connection.key(input.name)
             }
         }
     }
@@ -355,7 +336,7 @@ fun TerminalScreen(
                     onDraftChange = { composerText = it },
                     onSend = ::sendMessage,
                     onDictate = ::dictate,
-                    onStop = { connection.send("key", buildJsonObject { put("key", "escape") }) },
+                    onStop = { connection.key("escape") },
                     onShowTerminal = { showChat = false },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     overlay = { AgentPrompts(retry, approvals, sendingApprovals, ::reply) },
@@ -368,10 +349,9 @@ fun TerminalScreen(
                     val metrics = rememberCellMetrics(measurer, fontSize.sp)
                     val bottomPadding = with(LocalDensity.current) { TerminalBottomPadding.roundToPx() }
                     val grid = fittingGrid(constraints.maxWidth, constraints.maxHeight - bottomPadding, metrics)
-                    LaunchedEffect(fitToPhone, grid) {
+                    LaunchedEffect(fitToPhone, grid, attachment) {
                         if (fitToPhone) delay(FIT_SETTLE_MS)
-                        requestedFit = if (fitToPhone) grid else null
-                        connection.setFit(requestedFit)
+                        connection.setFit(if (fitToPhone) grid else null)
                     }
                     val current = screen
                     LaunchedEffect(current?.altScreen) {
@@ -438,11 +418,7 @@ fun TerminalScreen(
                         onComposer = { composerOpen = !composerOpen },
                         onPaste = {
                             clipboard.getText()?.text?.takeIf { it.isNotEmpty() }?.let { pasted ->
-                                if (!viewport.isLive) goLive()
-                                perform("paste") {
-                                    put("text", pasted)
-                                    put("submit", false)
-                                }
+                                paste(pasted, submit = false)
                             }
                         },
                         inputHost = {
@@ -474,7 +450,6 @@ private fun AgentPrompts(
 }
 
 private const val FIT_SETTLE_MS = 300L
-private const val BACKGROUND_DETACH_MS = 30_000L
 private const val NO_ATTACHMENT = -1L
 
 private val KEYS = listOf(

@@ -27,10 +27,6 @@ class TerminalInputView(context: Context) : View(context) {
         inputMethodManager().showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
     }
 
-    fun hideKeyboard() {
-        inputMethodManager().hideSoftInputFromWindow(windowToken, 0)
-    }
-
     override fun onCheckIsTextEditor(): Boolean = true
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {

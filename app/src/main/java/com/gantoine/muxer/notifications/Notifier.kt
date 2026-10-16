@@ -211,9 +211,9 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
         }
         if (approval.isPlan) {
             return listOf(
-                action("Approve", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_MANUAL, plan = true)),
-                action("Auto-edit", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_AUTO_ACCEPT, plan = true)),
-                action("Reject", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_DENY, plan = true)),
+                action("Approve", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_MANUAL)),
+                action("Auto-edit", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_AUTO_ACCEPT)),
+                action("Reject", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_DENY)),
             )
         }
         val question = approval.questions.singleOrNull() ?: return emptyList()
@@ -253,7 +253,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
     }
 
     private fun agentPerson(target: ConversationTarget, name: String): Person =
-        Person.Builder().setName(name).setKey("agent:${target.macId}:${target.workspaceId}").build()
+        Person.Builder().setName(name).setKey(ShortcutPlan.agentPersonKey(target.macId, target.workspaceId)).build()
 
     private fun personFor(sender: Sender, agent: Person): Person? = when (sender) {
         Sender.Agent -> agent
@@ -311,7 +311,6 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
         const val EXTRA_MAC_ID = "mac_id"
         const val EXTRA_WORKSPACE_ID = "workspace_id"
         const val EXTRA_SURFACE_ID = "surface_id"
-        private const val MAX_NOTIFICATION_ACTIONS = 3
 
         fun openTerminal(context: Context, macId: String, workspaceId: String?, surfaceId: String?): Intent =
             Intent(context, MainActivity::class.java).apply {

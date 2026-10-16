@@ -1,6 +1,8 @@
 package com.gantoine.muxer.widget
 
 import com.gantoine.muxer.data.MacSnapshot
+import com.gantoine.muxer.notifications.AgentNames
+import com.gantoine.muxer.notifications.LiveActivities
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.WorkspaceInfo
@@ -31,7 +33,7 @@ data class BoardCounts(val waiting: Int, val retrying: Int, val working: Int, va
 sealed interface ApprovalButton {
     val label: String
 
-    data class Decide(override val label: String, val mode: String, val plan: Boolean) : ApprovalButton
+    data class Decide(override val label: String, val mode: String) : ApprovalButton
     data class Choose(override val label: String) : ApprovalButton
     data class OpenTerminal(override val label: String = "Answer") : ApprovalButton
 }
@@ -62,25 +64,27 @@ object WidgetData {
     }
 
     fun state(workspace: WorkspaceInfo, snapshot: MacSnapshot): WorkspaceState {
-        val surfaces = workspace.terminals.map { it.id }.toSet()
-        fun belongs(workspaceId: String?, surfaceId: String) = workspaceId == workspace.id || surfaceId in surfaces
+        val belongs = belongsTo(workspace)
         return when {
             snapshot.approvals.any { belongs(it.workspaceId, it.surfaceId) } -> WorkspaceState.Waiting
             needsYou(workspace, snapshot) -> WorkspaceState.NeedsYou
             snapshot.retries.any { belongs(it.workspaceId, it.surfaceId) } -> WorkspaceState.Retrying
-            workspace.terminals.any { it.id in snapshot.busySurfaces || WorkspaceListing.agentStatus(it) is AgentStatus.Working } ->
-                WorkspaceState.Working
+            workspace.terminals.any { LiveActivities.isWorking(it, snapshot.busySurfaces) } -> WorkspaceState.Working
             else -> WorkspaceState.Idle
         }
     }
 
     fun needsYou(workspace: WorkspaceInfo, snapshot: MacSnapshot): Boolean {
-        val surfaces = workspace.terminals.map { it.id }.toSet()
-        fun belongs(workspaceId: String?, surfaceId: String) = workspaceId == workspace.id || surfaceId in surfaces
+        val belongs = belongsTo(workspace)
         if (!WorkspaceListing.isAgent(workspace)) return false
         if (workspace.terminals.any { it.id in snapshot.busySurfaces }) return false
         if (snapshot.approvals.any { belongs(it.workspaceId, it.surfaceId) } || snapshot.retries.any { belongs(it.workspaceId, it.surfaceId) }) return false
         return WorkspaceListing.needsYou(workspace) || WorkspaceListing.needsAttention(workspace.preview)
+    }
+
+    private fun belongsTo(workspace: WorkspaceInfo): (String?, String) -> Boolean {
+        val surfaces = workspace.terminals.map { it.id }.toSet()
+        return { workspaceId, surfaceId -> workspaceId == workspace.id || surfaceId in surfaces }
     }
 
     fun needsYouLabel(workspace: WorkspaceInfo): String =
@@ -140,16 +144,16 @@ object WidgetData {
     fun buttons(approval: Approval): List<ApprovalButton> {
         if (approval.isPermission) {
             return listOf(
-                ApprovalButton.Decide("Allow", Approvals.MODE_ONCE, plan = false),
-                ApprovalButton.Decide("Always", Approvals.MODE_ALWAYS, plan = false),
-                ApprovalButton.Decide("Deny", Approvals.MODE_DENY, plan = false),
+                ApprovalButton.Decide("Allow", Approvals.MODE_ONCE),
+                ApprovalButton.Decide("Always", Approvals.MODE_ALWAYS),
+                ApprovalButton.Decide("Deny", Approvals.MODE_DENY),
             )
         }
         if (approval.isPlan) {
             return listOf(
-                ApprovalButton.Decide("Approve", Approvals.PLAN_MANUAL, plan = true),
-                ApprovalButton.Decide("Auto-edit", Approvals.PLAN_AUTO_ACCEPT, plan = true),
-                ApprovalButton.Decide("Reject", Approvals.PLAN_DENY, plan = true),
+                ApprovalButton.Decide("Approve", Approvals.PLAN_MANUAL),
+                ApprovalButton.Decide("Auto-edit", Approvals.PLAN_AUTO_ACCEPT),
+                ApprovalButton.Decide("Reject", Approvals.PLAN_DENY),
             )
         }
         val question = approval.questions.singleOrNull()
@@ -167,14 +171,14 @@ object WidgetData {
     fun retries(snapshots: List<MacSnapshot>): List<RetryItem> =
         snapshots.flatMap { snapshot ->
             snapshot.retries.map { retry ->
-                val workspaceId = retry.workspaceId ?: snapshot.workspaces.firstOrNull { w -> w.terminals.any { it.id == retry.surfaceId } }?.id
+                val workspaceId = WorkspaceListing.workspaceFor(snapshot.workspaces, retry.workspaceId, retry.surfaceId)?.id ?: retry.workspaceId
                 RetryItem(snapshot.macId, snapshot.macName, retry, workspaceId)
             }
         }
 
     fun retryLabel(retry: Retry, now: Instant): String {
-        val agent = retry.agent?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "The agent"
+        val agent = AgentNames.display(retry.agent) ?: "The agent"
         val seconds = AgentMessaging.secondsUntil(retry, now)
-        return if (seconds == null || seconds == 0L) "$agent retries now" else "$agent retries in %d:%02d".format(seconds / 60, seconds % 60)
+        return if (seconds == null || seconds == 0L) "$agent retries now" else "$agent retries in ${LiveActivities.countdown(seconds)}"
     }
 }

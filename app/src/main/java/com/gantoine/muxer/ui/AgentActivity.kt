@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.gantoine.muxer.notifications.AgentNames
+import com.gantoine.muxer.notifications.LiveActivities
 import com.gantoine.muxer.protocol.AgentMessage
 import com.gantoine.muxer.protocol.Retry
 import kotlinx.coroutines.delay
@@ -72,10 +74,10 @@ fun RetryBanner(retry: Retry, modifier: Modifier = Modifier) {
         }
     }
     val seconds = AgentMessaging.secondsUntil(retry, Instant.ofEpochMilli(now))
-    val agent = retry.agent?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "The agent"
+    val agent = AgentNames.display(retry.agent) ?: "The agent"
     val countdown = when {
         seconds == null || seconds == 0L -> "Retrying now"
-        else -> "Retrying in %d:%02d".format(seconds / 60, seconds % 60)
+        else -> "Retrying in ${LiveActivities.countdown(seconds)}"
     }
     Surface(
         shape = RoundedCornerShape(20.dp),

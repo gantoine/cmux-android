@@ -27,7 +27,6 @@ data class TerminalInfo(
     val id: String,
     val title: String = "",
     val currentDirectory: String? = null,
-    val isFocused: Boolean = false,
     val agentSource: String? = null,
     val agentState: String? = null,
     val gitBranch: String? = null,
@@ -38,12 +37,10 @@ data class TerminalInfo(
 @Serializable
 data class WorkspaceInfo(
     val id: String,
-    val windowId: String? = null,
     val title: String = "",
     val description: String? = null,
     val customColor: String? = null,
     val currentDirectory: String? = null,
-    val isSelected: Boolean = false,
     val isPinned: Boolean = false,
     val groupId: String? = null,
     val preview: String? = null,
@@ -216,7 +213,6 @@ data class AgentActivityMessage(val retries: List<Retry> = emptyList(), val busy
 @Serializable
 data class AgentMessage(
     val id: String,
-    val senderName: String = "",
     val body: String = "",
     val state: String,
     val createdAt: Double = 0.0,

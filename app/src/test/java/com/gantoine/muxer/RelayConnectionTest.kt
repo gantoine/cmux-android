@@ -21,6 +21,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -118,7 +119,7 @@ class RelayConnectionTest {
         }
     }
 
-    private fun connectionDroppingAfterApproval(approvalsOutliveDropsForMs: Long) = RelayConnection(
+    private fun connection() = RelayConnection(
         macId = "mac",
         baseUrl = server.url("/").toString().trimEnd('/'),
         token = "secret-token",
@@ -126,29 +127,40 @@ class RelayConnectionTest {
         scope = scope,
         notificationsAfter = { 0L },
         onNotification = { _, _ -> },
-        approvalsOutliveDropsForMs = approvalsOutliveDropsForMs,
     )
 
     @Test
-    fun approvalsSurviveABriefDrop() = runBlocking {
+    fun approvalsClearWhenTheConnectionDrops() = runBlocking {
         server.enqueue(MockResponse.Builder().webSocketUpgrade(relayWithApproval()).build())
-        val connection = connectionDroppingAfterApproval(approvalsOutliveDropsForMs = 60_000L)
+        val connection = connection()
         connection.start()
-        withTimeout(5_000) { connection.approvals.first { it.isNotEmpty() } }
+        withTimeout(5_000) { connection.approvals.first { !it.isNullOrEmpty() } }
         withTimeout(5_000) { connection.state.first { it is ConnectionState.Disconnected } }
-        assertEquals("r1", connection.approvals.value.single().id)
+        assertNull(connection.approvals.value)
         connection.stop()
-        assertTrue(connection.approvals.value.isEmpty())
     }
 
     @Test
-    fun approvalsAreDroppedOnceTheComputerStaysUnreachable() = runBlocking {
-        server.enqueue(MockResponse.Builder().webSocketUpgrade(relayWithApproval()).build())
-        val connection = connectionDroppingAfterApproval(approvalsOutliveDropsForMs = 0L)
+    fun suspendedAttachmentResumesWithItsFit() = runBlocking {
+        server.enqueue(MockResponse.Builder().webSocketUpgrade(fakeRelay()).build())
+        val connection = connection()
         connection.start()
-        withTimeout(5_000) { connection.approvals.first { it.isNotEmpty() } }
-        withTimeout(5_000) { connection.state.first { it is ConnectionState.Disconnected } }
-        assertTrue(connection.approvals.value.isEmpty())
+        withTimeout(5_000) { connection.state.first { it is ConnectionState.Connected } }
+        connection.attach("w1", "t1")
+        connection.setFit(40 to 20)
+        withTimeout(5_000) { connection.screen.first { it != null } }
+
+        connection.suspendAttachment()
+        assertNull(connection.screen.value)
+        assertFalse(connection.isAttachedTo("t1"))
+        assertEquals("t1", connection.attachedSurfaceId)
+
+        connection.resumeAttachment()
+        withTimeout(5_000) { connection.screen.first { it != null } }
+        assertTrue(connection.isAttachedTo("t1"))
+        val types = received.map { Json.parseToJsonElement(it).jsonObject["type"]?.jsonPrimitive?.content }
+        assertEquals(listOf("hello", "attach", "fit", "detach", "attach"), types)
+        assertTrue(received.last().contains("\"fit\":{\"columns\":40,\"rows\":20}"))
         connection.stop()
     }
 

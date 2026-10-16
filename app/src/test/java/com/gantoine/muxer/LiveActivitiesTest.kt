@@ -56,10 +56,10 @@ class LiveActivitiesTest {
     }
 
     @Test
-    fun terminalsOnScreenRetryingOrWaitingAreNotWorking() {
+    fun terminalsRetryingOrWaitingAreNotWorking() {
         val retry = Retry(surfaceId = "retrying", workspaceId = "w2", agent = "claude", dueAt = "2026-10-15T12:00:42Z")
-        val working = LiveActivities.working(activity(busy = setOf("busy", "retrying"), retries = listOf(retry))) { it == "busy" }
-        assertEquals(listOf("running"), working.map { it.surfaceId })
+        val working = LiveActivities.working(activity(busy = setOf("busy", "retrying"), retries = listOf(retry)))
+        assertEquals(listOf("busy", "running"), working.map { it.surfaceId })
         val askedWhileBusy = LiveActivities.working(activity(approvals = listOf(permission)))
         assertEquals(listOf("running"), askedWhileBusy.map { it.surfaceId })
     }
@@ -87,7 +87,6 @@ class LiveActivitiesTest {
         assertEquals("docs", retry.workspaceTitle)
         assertEquals(42, LiveActivities.secondsUntil(retry, now))
         assertEquals("retry:mac:retrying", retry.key)
-        assertTrue(LiveActivities.retries(activity(retries = listOf(pending)), now) { it == "retrying" }.isEmpty())
     }
 
     @Test
@@ -95,13 +94,6 @@ class LiveActivitiesTest {
         assertEquals("0:00", LiveActivities.countdown(-3))
         assertEquals("0:09", LiveActivities.countdown(9))
         assertEquals("2:05", LiveActivities.countdown(125))
-    }
-
-    @Test
-    fun agentNamesAreReadable() {
-        assertEquals("Claude", LiveActivities.agentName("claude_code"))
-        assertEquals("Gemini cli", LiveActivities.agentName("gemini-cli"))
-        assertNull(LiveActivities.agentName(" "))
     }
 
     @Test

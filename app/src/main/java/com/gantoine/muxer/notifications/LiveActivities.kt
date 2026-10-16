@@ -73,18 +73,18 @@ data class ActivitySummary(
 data class Chronometer(val at: Long, val countDown: Boolean)
 
 object LiveActivities {
-    fun working(activity: ComputerActivity, isLookingAt: (String) -> Boolean = { false }): List<WorkingAgent> {
+    fun working(activity: ComputerActivity): List<WorkingAgent> {
         val retrying = activity.retries.map { it.surfaceId }.toSet()
         val waiting = activity.approvals.map { it.surfaceId }.toSet()
         return activity.workspaces.flatMap { workspace ->
             workspace.terminals
-                .filter { isWorking(it, activity.busySurfaces) && it.id !in retrying && it.id !in waiting && !isLookingAt(it.id) }
+                .filter { isWorking(it, activity.busySurfaces) && it.id !in retrying && it.id !in waiting }
                 .map { terminal ->
                     WorkingAgent(
                         macId = activity.macId,
                         workspaceId = workspace.id,
                         surfaceId = terminal.id,
-                        agent = agentName(terminal.agentSource),
+                        agent = AgentNames.display(terminal.agentSource),
                         workspaceTitle = title(workspace, terminal),
                     )
                 }
@@ -93,29 +93,29 @@ object LiveActivities {
 
     fun waiting(activity: ComputerActivity): List<WaitingAgent> =
         activity.approvals.map { approval ->
-            val workspace = workspaceFor(activity, approval.workspaceId, approval.surfaceId)
+            val workspace = WorkspaceListing.workspaceFor(activity.workspaces, approval.workspaceId, approval.surfaceId)
             val terminal = workspace?.terminals?.firstOrNull { it.id == approval.surfaceId }
             WaitingAgent(
                 macId = activity.macId,
                 workspaceId = approval.workspaceId,
                 surfaceId = approval.surfaceId,
-                agent = agentName(approval.agent) ?: agentName(terminal?.agentSource),
+                agent = AgentNames.display(approval.agent) ?: AgentNames.display(terminal?.agentSource),
                 workspaceTitle = title(workspace, terminal),
                 request = request(approval),
             )
         }.distinctBy { it.surfaceId }
 
-    fun retries(activity: ComputerActivity, now: Instant, isLookingAt: (String) -> Boolean = { false }): List<RetryCountdown> =
+    fun retries(activity: ComputerActivity, now: Instant): List<RetryCountdown> =
         activity.retries.mapNotNull { retry ->
             val dueAt = runCatching { Instant.parse(retry.dueAt) }.getOrNull() ?: return@mapNotNull null
-            if (!dueAt.isAfter(now) || isLookingAt(retry.surfaceId)) return@mapNotNull null
-            val workspace = workspaceFor(activity, retry.workspaceId, retry.surfaceId)
+            if (!dueAt.isAfter(now)) return@mapNotNull null
+            val workspace = WorkspaceListing.workspaceFor(activity.workspaces, retry.workspaceId, retry.surfaceId)
             val terminal = workspace?.terminals?.firstOrNull { it.id == retry.surfaceId }
             RetryCountdown(
                 macId = activity.macId,
                 workspaceId = retry.workspaceId ?: workspace?.id,
                 surfaceId = retry.surfaceId,
-                agent = agentName(retry.agent) ?: agentName(terminal?.agentSource),
+                agent = AgentNames.display(retry.agent) ?: AgentNames.display(terminal?.agentSource),
                 workspaceTitle = title(workspace, terminal),
                 attempt = retry.attempt,
                 dueAt = dueAt,
@@ -124,12 +124,6 @@ object LiveActivities {
 
     fun isWorking(terminal: TerminalInfo, busySurfaces: Set<String>): Boolean =
         terminal.id in busySurfaces || WorkspaceListing.agentStatus(terminal) is AgentStatus.Working
-
-    fun agentName(source: String?): String? {
-        val trimmed = source?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        if (trimmed.contains("claude", ignoreCase = true)) return "Claude"
-        return trimmed.replace('_', ' ').replace('-', ' ').replaceFirstChar { it.uppercase() }
-    }
 
     fun request(approval: Approval): String = when {
         approval.isPermission -> "wants to use ${approval.tool ?: "a tool"}"
@@ -184,10 +178,6 @@ object LiveActivities {
         val clamped = seconds.coerceAtLeast(0)
         return "%d:%02d".format(clamped / 60, clamped % 60)
     }
-
-    private fun workspaceFor(activity: ComputerActivity, workspaceId: String?, surfaceId: String): WorkspaceInfo? =
-        activity.workspaces.firstOrNull { it.id == workspaceId }
-            ?: activity.workspaces.firstOrNull { workspace -> workspace.terminals.any { it.id == surfaceId } }
 
     private fun title(workspace: WorkspaceInfo?, terminal: TerminalInfo?): String =
         workspace?.title?.takeIf { it.isNotBlank() } ?: terminal?.title?.takeIf { it.isNotBlank() } ?: "a workspace"

@@ -25,6 +25,7 @@ import okhttp3.WebSocketListener
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -94,16 +95,16 @@ class ApprovalsTest {
         connection.start()
         withTimeout(5_000) { connection.state.first { it is ConnectionState.Connected } }
 
-        val pending = withTimeout(5_000) { connection.approvals.first { it.isNotEmpty() } }
-        assertEquals(listOf("r1", "q1", "p1"), pending.map { it.id })
+        val pending = withTimeout(5_000) { connection.approvals.first { !it.isNullOrEmpty() } }
+        assertEquals(listOf("r1", "q1", "p1"), pending!!.map { it.id })
         assertTrue(pending[2].isPlan)
         assertTrue(pending[0].isPermission)
         assertEquals("npm test", pending[0].detail)
         assertTrue(pending[1].questions.single().multiSelect)
 
-        assertTrue(connection.allow("r1", Approvals.MODE_ONCE).isSuccess)
+        assertTrue(connection.decide("r1", Approvals.MODE_ONCE).isSuccess)
         assertTrue(connection.answer("q1", listOf("A, B")).isSuccess)
-        assertTrue(connection.decidePlan("p1", Approvals.PLAN_MANUAL, "Split step 1").isSuccess)
+        assertTrue(connection.decide("p1", Approvals.PLAN_MANUAL, "Split step 1").isSuccess)
         assertEquals(
             listOf(
                 mapOf("approval_id" to "r1", "mode" to "once"),
@@ -112,10 +113,10 @@ class ApprovalsTest {
             ),
             answers.toList(),
         )
-        assertTrue("answered requests leave the list right away", connection.approvals.value.isEmpty())
+        assertTrue("answered requests leave the list right away", connection.approvals.value!!.isEmpty())
 
         connection.stop()
-        assertTrue(connection.approvals.value.isEmpty())
+        assertNull(connection.approvals.value)
     }
 
     @Test

@@ -117,7 +117,7 @@ class WidgetDataTest {
         val plan = Approval(id = "p", kind = Approval.KIND_PLAN, workspaceId = "w", surfaceId = "t")
         val planButtons = WidgetData.buttons(plan)
         assertEquals(listOf("Approve", "Auto-edit", "Reject"), planButtons.map { it.label })
-        assertEquals(ApprovalButton.Decide("Auto-edit", Approvals.PLAN_AUTO_ACCEPT, plan = true), planButtons[1])
+        assertEquals(ApprovalButton.Decide("Auto-edit", Approvals.PLAN_AUTO_ACCEPT), planButtons[1])
 
         fun question(options: Int, multiSelect: Boolean = false) = ApprovalQuestion(
             prompt = "Which?",

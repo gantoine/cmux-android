@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.LaptopMac
 import androidx.compose.material.icons.outlined.Coffee
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -37,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -152,20 +150,10 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
             SheetAction(Icons.Outlined.Settings, "Settings") { dialog = null; onOpenSettings(current.mac) }
             SheetAction(Icons.Filled.Delete, "Remove from this phone", destructive = true) { dialog = MacDialog.Remove(current.mac) }
         }
-        is MacDialog.Remove -> AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text("Remove ${current.mac.name}?") },
-            text = {
-                Text("This phone forgets the computer. To also revoke its access on the computer, run `muxer devices` and `muxer revoke`.")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch { app.store.remove(current.mac.id) }
-                    dialog = null
-                }) { Text("Remove") }
-            },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
-        )
+        is MacDialog.Remove -> RemoveComputerDialog(current.mac, onDismiss = { dialog = null }) {
+            scope.launch { app.store.remove(current.mac.id) }
+            dialog = null
+        }
     }
 }
 

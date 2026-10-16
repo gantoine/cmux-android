@@ -155,7 +155,7 @@ private fun buttonAction(context: Context, item: ApprovalItem, button: ApprovalB
     val target = ApprovalTarget(item.macId, item.approval.id, item.approval.workspaceId, item.approval.surfaceId)
     return when (button) {
         is ApprovalButton.Decide ->
-            actionSendBroadcast(ApprovalActionReceiver.broadcastIntent(context, target, mode = button.mode, plan = button.plan))
+            actionSendBroadcast(ApprovalActionReceiver.broadcastIntent(context, target, mode = button.mode))
         is ApprovalButton.Choose -> actionSendBroadcast(ApprovalActionReceiver.broadcastIntent(context, target, answer = button.label))
         is ApprovalButton.OpenTerminal -> open
     }

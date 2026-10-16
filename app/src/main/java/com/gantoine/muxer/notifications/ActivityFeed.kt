@@ -9,6 +9,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -32,10 +33,11 @@ class ActivityFeed(private val store: MacStore, private val connections: Connect
                 val retrying = watched.any { it.activity?.retries?.isNotEmpty() == true }
                 if (retrying) ticking().map { now -> summarize(watched, now) } else flowOf(summarize(watched, Instant.now()))
             }
+            .distinctUntilChanged { old, new -> old.summary == new.summary && new.summary.retries.isEmpty() }
 
     private fun watch(mac: Mac, connection: RelayConnection): Flow<Watched> =
         combine(connection.state, connection.workspaces, connection.busySurfaces, connection.retries, connection.approvals) { state, workspaces, busy, retries, approvals ->
-            val activity = ComputerActivity(mac.id, workspaces.orEmpty(), busy, retries, approvals)
+            val activity = ComputerActivity(mac.id, workspaces.orEmpty(), busy, retries, approvals.orEmpty())
                 .takeIf { state is ConnectionState.Connected && mac.showActivity }
             Watched(mac, state, activity)
         }

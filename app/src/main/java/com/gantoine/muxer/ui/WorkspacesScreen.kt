@@ -129,10 +129,6 @@ private sealed interface WorkspaceLine {
     data class Anchor(val group: WorkspaceGroupInfo, val workspace: WorkspaceInfo) : WorkspaceLine {
         override val key get() = workspace.id
     }
-
-    data class Member(val workspace: WorkspaceInfo) : WorkspaceLine {
-        override val key get() = workspace.id
-    }
 }
 
 private fun cards(entries: List<WorkspaceEntry>, collapsed: (WorkspaceGroupInfo) -> Boolean): List<List<WorkspaceLine>> {
@@ -148,7 +144,7 @@ private fun cards(entries: List<WorkspaceEntry>, collapsed: (WorkspaceGroupInfo)
                 val card = mutableListOf<WorkspaceLine>(WorkspaceLine.Header(entry, folded))
                 if (!folded) {
                     if (entry.showAnchor && entry.anchor != null) card += WorkspaceLine.Anchor(entry.group, entry.anchor)
-                    entry.members.forEach { card += WorkspaceLine.Member(it) }
+                    entry.members.forEach { card += WorkspaceLine.Plain(it) }
                 }
                 cards += card
             }
@@ -272,8 +268,10 @@ fun WorkspacesScreen(
                 }
                 else -> {
                     val narrowed = filter != WorkspaceFilter.All || query.isNotBlank()
-                    val cards = cards(WorkspaceListing.entries(all, groups, filter, query)) { group ->
-                        !narrowed && group.isCollapsed != (group.id in toggledGroups)
+                    val cards = remember(all, groups, filter, query, toggledGroups) {
+                        cards(WorkspaceListing.entries(all, groups, filter, query)) { group ->
+                            !narrowed && group.isCollapsed != (group.id in toggledGroups)
+                        }
                     }
                     fun toggle(group: WorkspaceGroupInfo) {
                         toggledGroups = if (group.id in toggledGroups) toggledGroups - group.id else toggledGroups + group.id
@@ -303,13 +301,6 @@ fun WorkspacesScreen(
                                 )
                                 when (line) {
                                     is WorkspaceLine.Plain -> WorkspaceRow(
-                                        workspace = line.workspace,
-                                        shape = shape,
-                                        onOpen = { open(line.workspace) },
-                                        onLongPress = { dialog = WorkspaceDialog.Actions(line.workspace) },
-                                        modifier = modifier,
-                                    )
-                                    is WorkspaceLine.Member -> WorkspaceRow(
                                         workspace = line.workspace,
                                         shape = shape,
                                         onOpen = { open(line.workspace) },
@@ -447,8 +438,9 @@ private fun FilterRow(all: List<WorkspaceInfo>, groups: List<WorkspaceGroupInfo>
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val counts = remember(all, groups) { WorkspaceFilter.entries.associateWith { WorkspaceListing.count(all, groups, it) } }
         WorkspaceFilter.entries.forEach { filter ->
-            val count = WorkspaceListing.count(all, groups, filter)
+            val count = counts.getValue(filter)
             if (filter == WorkspaceFilter.All || count > 0 || filter == selected) {
                 val active = filter == selected
                 FilterChip(
@@ -477,7 +469,7 @@ private fun WorkspaceRow(
 ) {
     val haptics = LocalHapticFeedback.current
     val status = WorkspaceListing.agentStatus(workspace)
-    val unread = workspace.unreadCount > 0 || workspace.hasUnread
+    val unread = WorkspaceListing.isUnread(workspace)
     Row(
         modifier
             .fillMaxWidth()
@@ -642,7 +634,7 @@ private fun GroupTerminalsRow(
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
-    val unread = workspace.unreadCount > 0 || workspace.hasUnread
+    val unread = WorkspaceListing.isUnread(workspace)
     Row(
         modifier
             .fillMaxWidth()

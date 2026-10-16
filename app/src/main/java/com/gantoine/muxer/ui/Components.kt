@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -27,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.layout.RowScope
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.net.ConnectionState
 import androidx.compose.foundation.clickable
 
@@ -202,5 +205,18 @@ fun CmuxTopBar(
         navigationIcon = navigationIcon,
         actions = actions,
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = background, scrolledContainerColor = background),
+    )
+}
+
+@Composable
+fun RemoveComputerDialog(mac: Mac, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove ${mac.name}?") },
+        text = {
+            Text("This phone forgets the computer. To also revoke its access on the computer, run `muxer devices` and `muxer revoke`.")
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Remove") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

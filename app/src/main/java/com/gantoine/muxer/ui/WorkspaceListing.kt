@@ -40,6 +40,7 @@ sealed interface WorkspaceEntry {
 }
 
 object WorkspaceListing {
+    private val macHome = Regex("^/Users/[^/]+")
     val fallbackColors = listOf("#8CAAEE", "#A6D189", "#EF9F76", "#CA9EE6", "#81C8BE", "#E5C890", "#F4B8E4", "#99D1DB")
 
     private val attentionWords = listOf("input", "attention", "permission", "approv", "question", "blocked", "need", "review")
@@ -137,8 +138,13 @@ object WorkspaceListing {
     fun needsAttention(text: String?): Boolean =
         text?.let { candidate -> attentionWords.any { candidate.contains(it, ignoreCase = true) } } ?: false
 
-    fun needsYou(workspace: WorkspaceInfo): Boolean =
-        workspace.unreadCount > 0 || workspace.hasUnread || agentStatus(workspace) is AgentStatus.NeedsYou
+    fun isUnread(workspace: WorkspaceInfo): Boolean = workspace.unreadCount > 0 || workspace.hasUnread
+
+    fun workspaceFor(workspaces: List<WorkspaceInfo>, workspaceId: String?, surfaceId: String): WorkspaceInfo? =
+        workspaces.firstOrNull { it.id == workspaceId }
+            ?: workspaces.firstOrNull { workspace -> workspace.terminals.any { it.id == surfaceId } }
+
+    fun needsYou(workspace: WorkspaceInfo): Boolean = isUnread(workspace) || agentStatus(workspace) is AgentStatus.NeedsYou
 
     fun agentStatus(workspace: WorkspaceInfo): AgentStatus? = agentStatus(listOf(workspace))
 
@@ -167,7 +173,7 @@ object WorkspaceListing {
         workspace.customColor ?: fallbackColors[Math.floorMod(workspace.id.hashCode(), fallbackColors.size)]
 
     fun shortPath(path: String): String {
-        val home = Regex("^/Users/[^/]+").find(path)?.value ?: return path
+        val home = macHome.find(path)?.value ?: return path
         return "~" + path.removePrefix(home)
     }
 

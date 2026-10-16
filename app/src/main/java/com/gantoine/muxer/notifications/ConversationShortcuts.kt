@@ -87,7 +87,7 @@ class ConversationShortcuts(private val context: Context) {
     private fun build(shortcut: WorkspaceShortcut, rank: Int): ShortcutInfoCompat {
         val agent = Person.Builder()
             .setName(shortcut.agentName ?: "Agent")
-            .setKey("agent:${shortcut.macId}:${shortcut.workspaceId}")
+            .setKey(ShortcutPlan.agentPersonKey(shortcut.macId, shortcut.workspaceId))
             .build()
         return ShortcutInfoCompat.Builder(context, shortcut.id)
             .setShortLabel(shortcut.title)

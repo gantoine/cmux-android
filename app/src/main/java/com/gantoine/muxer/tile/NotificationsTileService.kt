@@ -9,7 +9,7 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
-import com.gantoine.muxer.MainActivity
+import com.gantoine.muxer.widget.Widgets
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.R
 import kotlinx.coroutines.Dispatchers
@@ -66,7 +66,7 @@ class NotificationsTileService : TileService() {
 
     @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun openApp() {
-        val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Widgets.openApp(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startActivityAndCollapse(PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE))
         } else {
