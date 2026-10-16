@@ -22,6 +22,7 @@ import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.RequestError
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.ScreenFrame
+import com.gantoine.muxer.protocol.TopSummary
 import com.gantoine.muxer.protocol.Welcome
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.protocol.WorkspaceGroupInfo
@@ -442,6 +443,11 @@ class RelayConnection(
             val confirmed = data?.let { RelayJson.decodeFromJsonElement(KeepAwakeMessage.serializer(), it).enabled } ?: enabled
             _keepAwake.value = confirmed
             confirmed
+        }
+
+    suspend fun top(): Result<TopSummary> =
+        request("top").mapCatching { data ->
+            RelayJson.decodeFromJsonElement(TopSummary.serializer(), data ?: error("The computer sent no activity."))
         }
 
     suspend fun notifications(): Result<List<MacNotification>> =

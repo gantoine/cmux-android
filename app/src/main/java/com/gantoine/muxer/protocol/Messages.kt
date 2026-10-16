@@ -255,3 +255,30 @@ data class InputStateMessage(
     val blocksTyping: Boolean = false,
     val waitingOnHuman: Boolean = false,
 )
+
+@Serializable
+data class TopSummary(
+    val sampledAt: String? = null,
+    val cpuPercent: Double = 0.0,
+    val memoryBytes: Long = 0,
+    val processCount: Int = 0,
+    val appMemoryBytes: Long = 0,
+    val agents: List<TopAgent> = emptyList(),
+    val workspaces: List<TopWorkspace> = emptyList(),
+)
+
+@Serializable
+data class TopAgent(val name: String, val cpuPercent: Double = 0.0, val memoryBytes: Long = 0, val processCount: Int = 0)
+
+@Serializable
+data class TopWorkspace(
+    val id: String,
+    val title: String = "",
+    val cpuPercent: Double = 0.0,
+    val memoryBytes: Long = 0,
+    val processCount: Int = 0,
+    val processes: List<TopProcess> = emptyList(),
+)
+
+@Serializable
+data class TopProcess(val pid: Int, val name: String, val cpuPercent: Double = 0.0, val memoryBytes: Long = 0)

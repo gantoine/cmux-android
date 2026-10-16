@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
@@ -170,6 +171,7 @@ fun WorkspacesScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onOpenActivity: () -> Unit,
     onOpenTerminal: (workspaceId: String, surfaceId: String) -> Unit,
 ) {
     val connections by app.connections.connectionsFlow.collectAsState()
@@ -227,6 +229,9 @@ fun WorkspacesScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
+                    IconButton(onClick = onOpenActivity) {
+                        Icon(Icons.Outlined.Speed, contentDescription = "What's using $macName")
+                    }
                     IconButton(onClick = onOpenNotifications) {
                         Icon(Icons.Outlined.Notifications, contentDescription = "Notifications from $macName")
                     }

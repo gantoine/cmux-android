@@ -46,6 +46,7 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 | `answer_approval {approval_id, mode?, answers?, feedback?}` | Answer an agent's permission request, question or plan. |
 | `send_agent_message {text}` | Send up to 32 KB to the agent in the attached terminal as a cmux agent message. |
 | `keep_awake` / `set_keep_awake {enabled}` | Read or change whether cmux keeps the computer awake. |
+| `top` | CPU and memory in cmux: totals, each coding agent, and each workspace with its five heaviest processes. The app asks every 3 seconds while its Activity page is open. |
 <<<<<<< HEAD
 | `notifications` | List the notifications in cmux's notification center, read ones included, with `is_read`. |
 | `mark_notifications_read {notification_id? \| surface_id? \| all?}` | Mark one notification, one terminal's notifications or all of them read on the Mac. |

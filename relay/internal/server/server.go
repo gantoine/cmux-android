@@ -46,6 +46,7 @@ type Cmux interface {
 	KeepAwake(ctx context.Context) (bool, error)
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
 	SetKeepAwake(ctx context.Context, enabled bool) (bool, error)
+	Top(ctx context.Context) (cmux.Top, error)
 	Methods(ctx context.Context) ([]string, error)
 	HostName(ctx context.Context) (string, error)
 	SendChat(ctx context.Context, sessionID, text string, images []cmux.ChatImage) error

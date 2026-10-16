@@ -51,6 +51,8 @@ type fakeCmux struct {
 	closeErr        error
 	inputState      cmux.InputState
 	inputStateErr   error
+	top             cmux.Top
+	topErr          error
 }
 
 type sentChat struct {
@@ -108,6 +110,12 @@ func (f *fakeCmux) marked() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.markedRead...)
+}
+
+func (f *fakeCmux) Top(context.Context) (cmux.Top, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.top, f.topErr
 }
 
 func (f *fakeCmux) Methods(context.Context) ([]string, error) {

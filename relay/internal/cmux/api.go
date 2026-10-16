@@ -155,6 +155,7 @@ const (
 	MethodRenameTerminal  = "surface.action"
 	MethodRestartTerminal = "surface.respawn"
 	MethodInputState      = "surface.input_state"
+	MethodTop             = "system.top"
 )
 
 type ChatImage struct {
@@ -507,4 +508,57 @@ func (c *Client) SetKeepAwake(ctx context.Context, enabled bool) (bool, error) {
 	}
 	err := c.Call(ctx, MethodSetKeepAwake, map[string]any{"enabled": enabled}, &status)
 	return status.Enabled, err
+}
+
+type Resources struct {
+	CPUPercent   float64 `json:"cpu_percent"`
+	MemoryBytes  int64   `json:"memory_bytes"`
+	ProcessCount int     `json:"process_count"`
+}
+
+type TopProcess struct {
+	PID       int          `json:"pid"`
+	Name      string       `json:"name"`
+	Path      string       `json:"path"`
+	Resources Resources    `json:"resources"`
+	Children  []TopProcess `json:"children"`
+}
+
+type TopWorkspace struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Resources Resources `json:"resources"`
+	Panes     []struct {
+		Surfaces []struct {
+			Processes []TopProcess `json:"processes"`
+		} `json:"surfaces"`
+	} `json:"panes"`
+}
+
+type TopAgent struct {
+	ID          string    `json:"id"`
+	DisplayName string    `json:"display_name"`
+	Resources   Resources `json:"resources"`
+}
+
+type Top struct {
+	Sample struct {
+		SampledAt string `json:"sampled_at"`
+	} `json:"sample"`
+	Totals           Resources `json:"totals"`
+	MemoryDiagnostic struct {
+		App struct {
+			PhysicalFootprintBytes int64 `json:"physical_footprint_bytes"`
+		} `json:"app"`
+	} `json:"memory_diagnostic"`
+	Windows []struct {
+		Workspaces []TopWorkspace `json:"workspaces"`
+	} `json:"windows"`
+	CodingAgents []TopAgent `json:"coding_agents"`
+}
+
+func (c *Client) Top(ctx context.Context) (Top, error) {
+	var top Top
+	err := c.Call(ctx, MethodTop, map[string]any{"include_processes": true}, &top)
+	return top, err
 }

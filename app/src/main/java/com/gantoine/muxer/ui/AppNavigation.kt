@@ -28,6 +28,7 @@ private object Routes {
     const val WORKSPACES = "mac/{macId}"
     const val SETTINGS = "mac/{macId}/settings"
     const val NOTIFICATIONS = "mac/{macId}/notifications"
+    const val ACTIVITY = "mac/{macId}/activity"
     const val TERMINAL = "terminal/{macId}/{workspaceId}/{surfaceId}?message={message}&images={images}"
     const val SHARE = "share?text={text}&images={images}"
 
@@ -35,6 +36,7 @@ private object Routes {
     fun workspaces(macId: String) = "mac/${Uri.encode(macId)}"
     fun settings(macId: String) = "mac/${Uri.encode(macId)}/settings"
     fun notifications(macId: String) = "mac/${Uri.encode(macId)}/notifications"
+    fun activity(macId: String) = "mac/${Uri.encode(macId)}/activity"
     fun terminal(macId: String, workspaceId: String, surfaceId: String, message: String = "", images: List<Uri> = emptyList()) =
         "terminal/${Uri.encode(macId)}/${Uri.encode(workspaceId)}/${Uri.encode(surfaceId)}?message=${Uri.encode(message)}&images=${encodeImages(images)}"
     fun share(text: String, images: List<Uri>) = "share?text=${Uri.encode(text)}&images=${encodeImages(images)}"
@@ -113,6 +115,7 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 onBack = { navController.popBackStack() },
                 onOpenSettings = { navController.navigate(Routes.settings(macId)) },
                 onOpenNotifications = { navController.navigate(Routes.notifications(macId)) },
+                onOpenActivity = { navController.navigate(Routes.activity(macId)) },
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
             )
         }
@@ -123,6 +126,13 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 macId = macId,
                 onBack = { navController.popBackStack() },
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
+            )
+        }
+        composable(Routes.ACTIVITY, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
+            ActivityScreen(
+                app = app,
+                macId = entry.arguments?.getString("macId").orEmpty(),
+                onBack = { navController.popBackStack() },
             )
         }
         composable(Routes.SETTINGS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->

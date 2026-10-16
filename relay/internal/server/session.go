@@ -452,6 +452,8 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		}
 		s.server.keepAwake.refresh()
 		return map[string]bool{"enabled": enabled}, nil
+	case "top":
+		return s.server.top(ctx)
 	case "send_images":
 		var request struct {
 			Text   string           `json:"text"`
