@@ -35,13 +35,16 @@ type fakeCmux struct {
 	running         claude.SessionRef
 	keepAwake       bool
 	terminalGit     []cmux.TerminalGit
+	terminalGitErr  error
+	gitReads        int
 	keepAwakeErr    error
 }
 
 func (f *fakeCmux) TerminalGit(context.Context) ([]cmux.TerminalGit, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.terminalGit, nil
+	f.gitReads++
+	return f.terminalGit, f.terminalGitErr
 }
 
 func (f *fakeCmux) KeepAwake(context.Context) (bool, error) {

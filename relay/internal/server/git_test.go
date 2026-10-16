@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -37,5 +40,80 @@ func TestEachTerminalCarriesItsOwnGitState(t *testing.T) {
 	}
 	if ports := terminal["listening_ports"].([]any); len(ports) != 2 || ports[0] != float64(3000) {
 		t.Fatalf("terminal must carry its listening ports: %v", terminal)
+	}
+}
+
+func gitSession(fake *fakeCmux, intervals Intervals) *session {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return &session{server: &Server{cmux: fake, options: Options{PollInterval: intervals}, logger: logger}}
+}
+
+func TestFailedGitReadWaitsForTheNextInterval(t *testing.T) {
+	fake := &fakeCmux{terminalGitErr: errors.New("decode debug.terminals result: unexpected shape")}
+	s := gitSession(fake, DefaultIntervals)
+	git := gitInfo{}
+	git.refresh(context.Background(), s)
+	git.refresh(context.Background(), s)
+	if fake.gitReads != 1 {
+		t.Fatalf("a failed read must not be retried on every workspace poll, got %d reads", fake.gitReads)
+	}
+}
+
+func TestGitStateIsDroppedWhenCmuxStopsSupportingIt(t *testing.T) {
+	branch := "main"
+	fake := &fakeCmux{terminalGit: []cmux.TerminalGit{{SurfaceID: "t1", GitBranch: &branch}}}
+	s := gitSession(fake, Intervals{})
+	git := gitInfo{}
+	git.refresh(context.Background(), s)
+	fake.terminalGitErr = &cmux.RPCError{Code: methodNotFoundErrorCode}
+	git.refresh(context.Background(), s)
+	workspaces := []cmux.Workspace{{ID: "w1", Terminals: []cmux.Terminal{{ID: "t1"}}}}
+	git.apply(workspaces)
+	if workspaces[0].Terminals[0].GitBranch != nil {
+		t.Fatalf("stale git state must not outlive cmux support: %v", *workspaces[0].Terminals[0].GitBranch)
+	}
+}
+
+func TestGitStateIsDroppedAfterRepeatedFailedReads(t *testing.T) {
+	branch := "main"
+	fake := &fakeCmux{terminalGit: []cmux.TerminalGit{{SurfaceID: "t1", GitBranch: &branch}}}
+	s := gitSession(fake, Intervals{})
+	git := gitInfo{}
+	git.refresh(context.Background(), s)
+	fake.terminalGitErr = errors.New("debug.terminals timed out")
+	branchAfter := func() *string {
+		workspaces := []cmux.Workspace{{ID: "w1", Terminals: []cmux.Terminal{{ID: "t1"}}}}
+		git.apply(workspaces)
+		return workspaces[0].Terminals[0].GitBranch
+	}
+	for range failedGitReadsBeforeClearing - 1 {
+		git.refresh(context.Background(), s)
+	}
+	if branchAfter() == nil {
+		t.Fatal("a brief run of failed reads must keep the last git state")
+	}
+	git.refresh(context.Background(), s)
+	if branchAfter() != nil {
+		t.Fatal("git state must be dropped once reads keep failing")
+	}
+}
+
+func TestSuccessfulGitReadResetsTheFailureCount(t *testing.T) {
+	branch := "main"
+	fake := &fakeCmux{terminalGit: []cmux.TerminalGit{{SurfaceID: "t1", GitBranch: &branch}}}
+	s := gitSession(fake, Intervals{})
+	git := gitInfo{}
+	for range failedGitReadsBeforeClearing - 1 {
+		fake.terminalGitErr = errors.New("debug.terminals timed out")
+		git.refresh(context.Background(), s)
+		fake.terminalGitErr = nil
+		git.refresh(context.Background(), s)
+	}
+	fake.terminalGitErr = errors.New("debug.terminals timed out")
+	git.refresh(context.Background(), s)
+	workspaces := []cmux.Workspace{{ID: "w1", Terminals: []cmux.Terminal{{ID: "t1"}}}}
+	git.apply(workspaces)
+	if workspaces[0].Terminals[0].GitBranch == nil {
+		t.Fatal("only consecutive failed reads may drop git state")
 	}
 }

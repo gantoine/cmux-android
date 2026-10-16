@@ -500,31 +500,40 @@ func (s *session) watchWorkspaces() {
 	}
 }
 
+const failedGitReadsBeforeClearing = 3
+
 type gitInfo struct {
 	bySurface   map[string]cmux.TerminalGit
 	fetchedAt   time.Time
 	unsupported bool
+	failedReads int
 }
 
 func (g *gitInfo) refresh(ctx context.Context, s *session) {
 	if g.unsupported || time.Since(g.fetchedAt) < s.server.options.PollInterval.Git {
 		return
 	}
+	g.fetchedAt = time.Now()
 	terminals, err := s.server.cmux.TerminalGit(ctx)
 	if cmux.ErrorCode(err) == methodNotFoundErrorCode {
 		g.unsupported = true
+		g.bySurface = nil
 		return
 	}
 	if err != nil {
 		s.server.logger.Warn("could not read terminal git state", "error", err)
+		g.failedReads++
+		if g.failedReads >= failedGitReadsBeforeClearing {
+			g.bySurface = nil
+		}
 		return
 	}
+	g.failedReads = 0
 	fetched := make(map[string]cmux.TerminalGit, len(terminals))
 	for _, terminal := range terminals {
 		fetched[terminal.SurfaceID] = terminal
 	}
 	g.bySurface = fetched
-	g.fetchedAt = time.Now()
 }
 
 func (g *gitInfo) apply(workspaces []cmux.Workspace) {
@@ -666,10 +675,7 @@ func signal(channel chan struct{}) {
 }
 
 func (s *session) wakeWorkspaces() {
-	select {
-	case s.workspacesWake <- struct{}{}:
-	default:
-	}
+	signal(s.workspacesWake)
 }
 
 func (s *session) current() *attachment {
@@ -690,10 +696,7 @@ func (s *session) withTerminal(action func(*attachment) error) error {
 }
 
 func (s *session) wakeTerminal(current *attachment) {
-	select {
-	case current.wake <- struct{}{}:
-	default:
-	}
+	signal(current.wake)
 }
 
 func (s *session) attach(workspaceID, surfaceID string) {

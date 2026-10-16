@@ -51,9 +51,16 @@ object WorkspaceListing {
         status is AgentStatus.NeedsYou && terminalPromptWords.any { status.label.contains(it, ignoreCase = true) }
 
     fun gitSummary(terminal: TerminalInfo): String? {
-        val branch = terminal.gitBranch?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val branch = branch(terminal) ?: return null
         return if (terminal.gitDirty == true) "$branch*" else branch
     }
+
+    fun gitDescription(terminal: TerminalInfo): String? {
+        val branch = branch(terminal) ?: return null
+        return if (terminal.gitDirty == true) "$branch, uncommitted changes" else branch
+    }
+
+    private fun branch(terminal: TerminalInfo): String? = terminal.gitBranch?.trim()?.takeIf { it.isNotEmpty() }
 
     fun portsSummary(terminal: TerminalInfo): String? = when (terminal.listeningPorts.size) {
         0 -> null
@@ -73,6 +80,7 @@ object WorkspaceListing {
                 add(terminal.title)
                 terminal.currentDirectory?.let(::add)
                 terminal.agentState?.let(::add)
+                branch(terminal)?.let(::add)
             }
         }
         return haystack.any { it.contains(needle, ignoreCase = true) }

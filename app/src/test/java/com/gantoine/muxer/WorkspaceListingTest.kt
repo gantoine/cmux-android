@@ -35,6 +35,16 @@ class WorkspaceListingTest {
     }
 
     @Test
+    fun searchMatchesTerminalBranches() {
+        val onBranch = workspace.copy(
+            terminals = listOf(TerminalInfo(id = "t1", title = "zsh", gitBranch = "feat/approvals", gitDirty = true)),
+        )
+        assertTrue(WorkspaceListing.matches(onBranch, "feat/approvals"))
+        assertTrue(WorkspaceListing.matches(onBranch, "APPROVALS"))
+        assertFalse(WorkspaceListing.matches(onBranch, "approvals*"))
+    }
+
+    @Test
     fun timesReadLikeAMessagingApp() {
         val zone = ZoneId.of("America/New_York")
         val now = Instant.parse("2026-10-14T18:00:00Z")

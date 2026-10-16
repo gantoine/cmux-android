@@ -21,6 +21,13 @@ class GitSummaryTest {
     }
 
     @Test
+    fun spellsOutUncommittedChangesForScreenReaders() {
+        assertNull(WorkspaceListing.gitDescription(terminal()))
+        assertEquals("main", WorkspaceListing.gitDescription(terminal(branch = "main", dirty = false)))
+        assertEquals("feat/x, uncommitted changes", WorkspaceListing.gitDescription(terminal(branch = "feat/x", dirty = true)))
+    }
+
+    @Test
     fun summarisesListeningPorts() {
         assertNull(WorkspaceListing.portsSummary(terminal()))
         assertEquals("port 3000", WorkspaceListing.portsSummary(terminal(ports = listOf(3000))))

@@ -778,6 +778,9 @@ private fun TerminalGitLine(terminal: TerminalInfo) {
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.semantics {
+                contentDescription = listOfNotNull(WorkspaceListing.gitDescription(terminal), ports).joinToString(", ")
+            },
         )
     }
 }
