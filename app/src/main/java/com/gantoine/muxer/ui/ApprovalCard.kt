@@ -20,7 +20,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -184,10 +183,10 @@ private fun PlanBody(approval: Approval, sending: Boolean, onReply: (ApprovalRep
         }
     }
     if (revising) {
-        OutlinedTextField(
+        LabeledTextField(
             value = feedback,
             onValueChange = { feedback = it },
-            placeholder = { Text("What should change?") },
+            label = "What should change?",
             maxLines = 5,
             enabled = !sending,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -256,10 +255,10 @@ private fun QuestionBody(approval: Approval, sending: Boolean, onReply: (Approva
                     onClick = { choose(otherIndex) },
                 )
                 if (typing) {
-                    OutlinedTextField(
+                    LabeledTextField(
                         value = typed[questionIndex],
                         onValueChange = { text -> typed = typed.toMutableList().also { it[questionIndex] = text } },
-                        placeholder = { Text("Your answer") },
+                        label = "Your answer",
                         maxLines = 4,
                         enabled = !sending,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),

@@ -41,7 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -171,23 +170,21 @@ fun PairScreen(app: MuxerApplication, initialUrl: String, initialCode: String, o
                     Text("Scan QR code", style = MaterialTheme.typography.titleMedium)
                 }
                 OrDivider()
-                OutlinedTextField(
+                LabeledTextField(
                     value = address,
                     onValueChange = { address = it },
-                    label = { Text("Computer address") },
-                    placeholder = { Text("https://my-mac.tailnet.ts.net:8765") },
+                    label = "Computer address",
+                    placeholder = "https://my-mac.tailnet.ts.net:8765",
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                LabeledTextField(
                     value = code,
                     onValueChange = { code = it.uppercase().take(9) },
-                    label = { Text("Pairing code") },
-                    placeholder = { Text("ABCD-EFGH") },
+                    label = "Pairing code",
+                    placeholder = "ABCD-EFGH",
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
                 )
