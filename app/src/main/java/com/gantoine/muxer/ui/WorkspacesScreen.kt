@@ -867,7 +867,7 @@ internal fun TerminalChoice(terminal: TerminalInfo, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TextInputDialog(
+internal fun TextInputDialog(
     title: String,
     fields: List<Pair<String, String>>,
     confirm: String,

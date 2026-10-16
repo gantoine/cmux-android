@@ -25,6 +25,7 @@ class AgentMessagingTest {
         assertFalse(AgentMessaging.shouldMessage(AgentStatus.NeedsYou("Needs input"), approvalsPending = false))
         assertFalse(AgentMessaging.shouldMessage(AgentStatus.Idle("Idle"), approvalsPending = false))
         assertFalse(AgentMessaging.shouldMessage(null, approvalsPending = false))
+        assertTrue(AgentMessaging.shouldMessage(AgentStatus.Working("Running"), approvalsPending = false, promptOpen = true))
     }
 
     @Test

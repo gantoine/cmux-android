@@ -12,8 +12,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -83,6 +88,7 @@ import com.gantoine.muxer.data.MacStore
 import com.gantoine.muxer.images.ChatImages
 import com.gantoine.muxer.net.AgentReplyRoute
 import com.gantoine.muxer.net.ConnectionState
+import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.net.VisibleTerminal
 import com.gantoine.muxer.notifications.ConversationShortcuts
 import androidx.compose.ui.platform.LocalContext
@@ -130,12 +136,13 @@ fun TerminalScreen(
     val retries by connection.retries.collectAsState()
     val retry = retries.firstOrNull { it.surfaceId == surfaceId }
     val agentMessages by connection.agentMessages.collectAsState()
+    val inputState by connection.inputState.collectAsState()
     val busySurfaces by connection.busySurfaces.collectAsState()
     val midTurn = surfaceId in busySurfaces
     val workspace = workspaces?.firstOrNull { it.id == workspaceId }
     val terminal = workspace?.terminals?.firstOrNull { it.id == surfaceId }
     val agentStatus = terminal?.let(WorkspaceListing::agentStatus)
-    val messagingAgent = AgentMessaging.shouldMessage(agentStatus, approvals.isNotEmpty())
+    val messagingAgent = AgentMessaging.shouldMessage(agentStatus, approvals.isNotEmpty(), inputState?.waitingOnHuman == true)
     val waitingOnYou = approvals.isNotEmpty() || agentStatus is AgentStatus.NeedsYou
     val questionOpen = approvals.any { it.isQuestion }
     val snackbar = remember { SnackbarHostState() }
@@ -164,6 +171,8 @@ fun TerminalScreen(
     var loadingHistory by remember(surfaceId) { mutableStateOf(false) }
     var inputView by remember { mutableStateOf<TerminalInputView?>(null) }
     var showChat by remember(surfaceId) { mutableStateOf(false) }
+    var terminalDialog by remember(surfaceId) { mutableStateOf<TerminalDialog?>(null) }
+    var closing by remember(surfaceId) { mutableStateOf(false) }
     LaunchedEffect(chat?.sessionId) { showChat = chat != null }
 
     LaunchedEffect(Unit) {
@@ -200,7 +209,7 @@ fun TerminalScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { connection.resync() }
     LaunchedEffect(connection) {
         connection.detached.collect { detached ->
-            if (detached.surfaceId == surfaceId) {
+            if (detached.surfaceId == surfaceId && !closing) {
                 snackbar.showSnackbar("This terminal closed on the computer.")
                 onBack()
             }
@@ -305,6 +314,28 @@ fun TerminalScreen(
         }
     }
 
+    fun terminalRequest(type: String, force: Boolean = false, title: String? = null, onSuccess: () -> Unit = {}) {
+        scope.launch {
+            connection.request(type, buildJsonObject {
+                put("workspace_id", workspaceId)
+                put("surface_id", surfaceId)
+                if (force) put("force", true)
+                if (title != null) put("title", title)
+            })
+                .onSuccess { onSuccess() }
+                .onFailure { failure ->
+                    closing = false
+                    val confirming = terminalDialog as? TerminalDialog.Close
+                    if (failure is RelayException && failure.code == "confirmation_required" && confirming != null) {
+                        terminalDialog = confirming.copy(force = true)
+                    } else {
+                        terminalDialog = null
+                        snackbar.showSnackbar(failure.message ?: "That did not work.")
+                    }
+                }
+        }
+    }
+
     val sink = remember(connection) {
         object : TerminalInputSink {
             override fun text(text: String) {
@@ -349,6 +380,11 @@ fun TerminalScreen(
                             scope.launch { app.store.setFitToPhone(it) }
                         }) {
                             Icon(Icons.Filled.FitScreen, contentDescription = "Fit the terminal to this phone")
+                        }
+                    }
+                    if (terminal != null) {
+                        IconButton(onClick = { terminalDialog = TerminalDialog.Actions }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Terminal actions")
                         }
                     }
                 },
@@ -481,6 +517,71 @@ fun TerminalScreen(
             }
         }
     }
+
+    val terminalTitle = terminal?.title?.ifBlank { null } ?: "this terminal"
+    when (val current = terminalDialog) {
+        null -> Unit
+        TerminalDialog.Actions -> ActionSheet(onDismiss = { terminalDialog = null }) {
+            SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename") { terminalDialog = TerminalDialog.Rename }
+            SheetAction(Icons.Filled.RestartAlt, "Restart") { terminalDialog = TerminalDialog.Restart }
+            if ((workspace?.terminals?.size ?: 0) > 1) {
+                SheetAction(Icons.Filled.Close, "Close terminal", destructive = true) {
+                    terminalDialog = TerminalDialog.Close(force = false)
+                }
+            }
+        }
+        TerminalDialog.Rename -> TextInputDialog(
+            title = "Rename terminal",
+            fields = listOf("Name (leave empty for the automatic one)" to (terminal?.title ?: "")),
+            confirm = "Rename",
+            onDismiss = { terminalDialog = null },
+        ) { (title) ->
+            terminalDialog = null
+            terminalRequest("rename_terminal", title = title)
+        }
+        TerminalDialog.Restart -> AlertDialog(
+            onDismissRequest = { terminalDialog = null },
+            title = { Text("Restart $terminalTitle?") },
+            text = { Text("This stops whatever is running in it and starts a new shell in the same folder on your computer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    terminalDialog = null
+                    terminalRequest("restart_terminal", onSuccess = { goLive(); connection.resync() })
+                }) { Text("Restart") }
+            },
+            dismissButton = { TextButton(onClick = { terminalDialog = null }) { Text("Cancel") } },
+        )
+        is TerminalDialog.Close -> AlertDialog(
+            onDismissRequest = { terminalDialog = null },
+            title = { Text("Close $terminalTitle?") },
+            text = {
+                Text(
+                    if (current.force) {
+                        "Something is still running in it. Closing stops it on your computer."
+                    } else {
+                        "This closes the terminal on your computer. The rest of the workspace stays open."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    closing = true
+                    terminalRequest("close_terminal", force = current.force, onSuccess = {
+                        terminalDialog = null
+                        onBack()
+                    })
+                }) { Text(if (current.force) "Close anyway" else "Close") }
+            },
+            dismissButton = { TextButton(onClick = { terminalDialog = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+private sealed interface TerminalDialog {
+    data object Actions : TerminalDialog
+    data object Rename : TerminalDialog
+    data object Restart : TerminalDialog
+    data class Close(val force: Boolean) : TerminalDialog
 }
 
 @Composable

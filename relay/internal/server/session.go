@@ -32,6 +32,7 @@ type Intervals struct {
 	Chat       time.Duration
 	KeepAwake  time.Duration
 	Git        time.Duration
+	InputState time.Duration
 }
 
 var DefaultIntervals = Intervals{
@@ -44,6 +45,7 @@ var DefaultIntervals = Intervals{
 	Chat:       500 * time.Millisecond,
 	KeepAwake:  30 * time.Second,
 	Git:        10 * time.Second,
+	InputState: time.Second,
 }
 
 const (
@@ -376,6 +378,19 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		err := s.server.cmux.RenameWorkspace(ctx, request.WorkspaceID, request.Title)
 		s.server.workspaces.refresh()
 		return nil, err
+	case "close_terminal", "rename_terminal", "restart_terminal":
+		request, err := parseTerminalRequest(kind, raw)
+		if err != nil {
+			return nil, err
+		}
+		switch kind {
+		case "close_terminal":
+			return nil, s.server.closeTerminal(ctx, request)
+		case "rename_terminal":
+			return nil, s.server.renameTerminal(ctx, request)
+		default:
+			return nil, s.server.restartTerminal(ctx, request)
+		}
 	case "create_terminal":
 		var request struct {
 			WorkspaceID string `json:"workspace_id"`
@@ -763,6 +778,7 @@ func (s *session) attach(workspaceID, surfaceID string) {
 	go s.pollTerminal(ctx, current)
 	go s.watchChat(ctx, current)
 	go s.watchAgentMessages(ctx, current)
+	go s.watchInputState(ctx, current)
 	go s.markAttachedRead(ctx, surfaceID)
 }
 

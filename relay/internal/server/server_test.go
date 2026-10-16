@@ -47,6 +47,10 @@ type fakeCmux struct {
 	hostNameErr     error
 	chats           []sentChat
 	chatErr         error
+	terminalCalls   []string
+	closeErr        error
+	inputState      cmux.InputState
+	inputStateErr   error
 }
 
 type sentChat struct {
@@ -244,6 +248,33 @@ func (f *fakeCmux) CloseWorkspace(context.Context, string, bool) error    { retu
 func (f *fakeCmux) RenameWorkspace(context.Context, string, string) error { return nil }
 func (f *fakeCmux) CreateTerminal(context.Context, string) (string, error) {
 	return "t3", nil
+}
+
+func (f *fakeCmux) CloseTerminal(_ context.Context, workspaceID, surfaceID string, force bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.terminalCalls = append(f.terminalCalls, fmt.Sprintf("close %s/%s force=%v", workspaceID, surfaceID, force))
+	return f.closeErr
+}
+
+func (f *fakeCmux) RenameTerminal(_ context.Context, workspaceID, surfaceID, title string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.terminalCalls = append(f.terminalCalls, fmt.Sprintf("rename %s/%s %q", workspaceID, surfaceID, title))
+	return nil
+}
+
+func (f *fakeCmux) RestartTerminal(_ context.Context, workspaceID, surfaceID, command string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.terminalCalls = append(f.terminalCalls, fmt.Sprintf("restart %s/%s %s", workspaceID, surfaceID, command))
+	return nil
+}
+
+func (f *fakeCmux) InputState(context.Context, string, string) (cmux.InputState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.inputState, f.inputStateErr
 }
 
 func (f *fakeCmux) snapshot() (inputs, keys, viewports []string) {

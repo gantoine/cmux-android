@@ -38,6 +38,10 @@ type Cmux interface {
 	CloseWorkspace(ctx context.Context, workspaceID string, force bool) error
 	RenameWorkspace(ctx context.Context, workspaceID, title string) error
 	CreateTerminal(ctx context.Context, workspaceID string) (string, error)
+	CloseTerminal(ctx context.Context, workspaceID, surfaceID string, force bool) error
+	RenameTerminal(ctx context.Context, workspaceID, surfaceID, title string) error
+	RestartTerminal(ctx context.Context, workspaceID, surfaceID, command string) error
+	InputState(ctx context.Context, workspaceID, surfaceID string) (cmux.InputState, error)
 	AgentSession(ctx context.Context, workspaceID, surfaceID string) (cmux.AgentSession, error)
 	KeepAwake(ctx context.Context) (bool, error)
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
@@ -106,6 +110,9 @@ func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, l
 	}
 	if options.PollInterval.Git == 0 {
 		options.PollInterval.Git = DefaultIntervals.Git
+	}
+	if options.PollInterval.InputState == 0 {
+		options.PollInterval.InputState = DefaultIntervals.InputState
 	}
 	if options.PollInterval.KeepAwake == 0 {
 		options.PollInterval.KeepAwake = DefaultIntervals.KeepAwake

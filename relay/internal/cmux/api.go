@@ -145,12 +145,16 @@ type Viewport struct {
 }
 
 const (
-	MethodAgentSession = "surface.resume.get"
-	MethodTerminalGit  = "debug.terminals"
-	MethodKeepAwake    = "caffeine.status"
-	MethodSetKeepAwake = "caffeine.set"
-	MethodHostStatus   = "mobile.host.status"
-	MethodChatSend     = "mobile.chat.send"
+	MethodAgentSession    = "surface.resume.get"
+	MethodTerminalGit     = "debug.terminals"
+	MethodKeepAwake       = "caffeine.status"
+	MethodSetKeepAwake    = "caffeine.set"
+	MethodHostStatus      = "mobile.host.status"
+	MethodChatSend        = "mobile.chat.send"
+	MethodCloseTerminal   = "surface.close"
+	MethodRenameTerminal  = "surface.action"
+	MethodRestartTerminal = "surface.respawn"
+	MethodInputState      = "surface.input_state"
 )
 
 type ChatImage struct {
@@ -329,6 +333,37 @@ func (c *Client) CreateTerminal(ctx context.Context, workspaceID string) (string
 	}
 	err := c.Call(ctx, "mobile.terminal.create", map[string]any{"workspace_id": workspaceID}, &created)
 	return created.CreatedTerminalID, err
+}
+
+func (c *Client) CloseTerminal(ctx context.Context, workspaceID, surfaceID string, force bool) error {
+	return c.Call(ctx, MethodCloseTerminal, map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID, "force": force}, nil)
+}
+
+func (c *Client) RenameTerminal(ctx context.Context, workspaceID, surfaceID, title string) error {
+	params := map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID, "action": "rename", "title": title}
+	if title == "" {
+		params = map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID, "action": "clear_name"}
+	}
+	return c.Call(ctx, MethodRenameTerminal, params, nil)
+}
+
+func (c *Client) RestartTerminal(ctx context.Context, workspaceID, surfaceID, command string) error {
+	return c.Call(ctx, MethodRestartTerminal, map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID, "command": command}, nil)
+}
+
+type InputState struct {
+	SurfaceID      string `json:"surface_id"`
+	Agent          bool   `json:"agent"`
+	Lifecycle      string `json:"lifecycle"`
+	State          string `json:"state"`
+	BlocksTyping   bool   `json:"blocks_typing"`
+	WaitingOnHuman bool   `json:"waiting_on_human"`
+}
+
+func (c *Client) InputState(ctx context.Context, workspaceID, surfaceID string) (InputState, error) {
+	var state InputState
+	err := c.Call(ctx, MethodInputState, map[string]any{"workspace_id": workspaceID, "surface_id": surfaceID}, &state)
+	return state, err
 }
 
 func (c *Client) Notifications(ctx context.Context) ([]Notification, error) {

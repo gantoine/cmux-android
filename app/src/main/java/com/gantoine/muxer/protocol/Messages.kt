@@ -247,3 +247,11 @@ data class AgentMessagesMessage(val surfaceId: String, val messages: List<AgentM
 
 @Serializable
 data class KeepAwakeMessage(val enabled: Boolean)
+
+@Serializable
+data class InputStateMessage(
+    val surfaceId: String,
+    val state: String = "",
+    val blocksTyping: Boolean = false,
+    val waitingOnHuman: Boolean = false,
+)

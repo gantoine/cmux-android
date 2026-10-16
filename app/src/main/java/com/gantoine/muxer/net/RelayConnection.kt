@@ -12,6 +12,7 @@ import com.gantoine.muxer.protocol.ChatMessage
 import com.gantoine.muxer.protocol.ChatSessionMessage
 import com.gantoine.muxer.protocol.DetachedMessage
 import com.gantoine.muxer.protocol.HistoryResponse
+import com.gantoine.muxer.protocol.InputStateMessage
 import com.gantoine.muxer.protocol.KeepAwakeMessage
 import com.gantoine.muxer.protocol.MacNotification
 import com.gantoine.muxer.protocol.NotificationMessage
@@ -108,6 +109,9 @@ class RelayConnection(
 
     private val _agentMessages = MutableStateFlow<List<AgentMessage>>(emptyList())
     val agentMessages: StateFlow<List<AgentMessage>> = _agentMessages.asStateFlow()
+
+    private val _inputState = MutableStateFlow<InputStateMessage?>(null)
+    val inputState: StateFlow<InputStateMessage?> = _inputState.asStateFlow()
 
     private val _keepAwake = MutableStateFlow<Boolean?>(null)
     val keepAwake: StateFlow<Boolean?> = _keepAwake.asStateFlow()
@@ -275,6 +279,10 @@ class RelayConnection(
                 val listing = RelayJson.decodeFromJsonElement(AgentMessagesMessage.serializer(), message)
                 if (listing.surfaceId == attachment?.surfaceId) _agentMessages.value = listing.messages
             }
+            "input_state" -> {
+                val state = RelayJson.decodeFromJsonElement(InputStateMessage.serializer(), message)
+                if (state.surfaceId == attachment?.surfaceId) _inputState.value = state
+            }
             "keep_awake" -> {
                 _keepAwake.value = RelayJson.decodeFromJsonElement(KeepAwakeMessage.serializer(), message).enabled
             }
@@ -378,6 +386,7 @@ class RelayConnection(
         _screen.value = null
         _chat.value = null
         _agentMessages.value = emptyList()
+        _inputState.value = null
     }
 
     fun resync() = send("resync")

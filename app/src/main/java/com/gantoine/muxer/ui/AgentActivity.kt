@@ -39,8 +39,8 @@ import java.time.Instant
 object AgentMessaging {
     val relayCannotMessage = setOf("unknown_type", "unsupported")
 
-    fun shouldMessage(status: AgentStatus?, approvalsPending: Boolean): Boolean =
-        approvalsPending || WorkspaceListing.needsTerminalAnswer(status)
+    fun shouldMessage(status: AgentStatus?, approvalsPending: Boolean, promptOpen: Boolean = false): Boolean =
+        approvalsPending || promptOpen || WorkspaceListing.needsTerminalAnswer(status)
 
     fun unread(messages: List<AgentMessage>): List<AgentMessage> =
         messages.filter { it.state != AgentMessage.READ }.sortedBy { it.createdAt }

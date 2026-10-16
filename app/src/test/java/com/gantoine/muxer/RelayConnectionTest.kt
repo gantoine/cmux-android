@@ -62,9 +62,13 @@ class RelayConnectionTest {
                     """{"type":"result","id":"$id","ok":true,"data":{"notifications":[{"id":"n1","title":"Claude Code","workspace_id":"w1","surface_id":"t1","created_at":"2026-10-16T17:59:08Z","is_read":true,"surface_ref":"surface:1"}]}}""",
                 )
                 "mark_notifications_read" -> webSocket.send("""{"type":"result","id":"$id","ok":true}""")
-                "attach" -> webSocket.send(
-                    """{"type":"screen","workspace_id":"w1","surface_id":"t1","full":true,"columns":80,"rows":2,"foreground":"#FFFFFF","background":"#000000","styles":[{"id":0,"fg":"#FFFFFF","bg":"#000000"}],"changed":[{"row":0,"spans":[{"column":0,"width":2,"style":0,"text":"$ "}]}]}""",
-                )
+                "attach" -> {
+                    webSocket.send("""{"type":"input_state","surface_id":"t9","state":"empty","blocks_typing":false,"waiting_on_human":false}""")
+                    webSocket.send("""{"type":"input_state","surface_id":"t1","state":"dialog","blocks_typing":true,"waiting_on_human":true}""")
+                    webSocket.send(
+                        """{"type":"screen","workspace_id":"w1","surface_id":"t1","full":true,"columns":80,"rows":2,"foreground":"#FFFFFF","background":"#000000","styles":[{"id":0,"fg":"#FFFFFF","bg":"#000000"}],"changed":[{"row":0,"spans":[{"column":0,"width":2,"style":0,"text":"$ "}]}]}""",
+                    )
+                }
             }
         }
 
@@ -98,6 +102,7 @@ class RelayConnectionTest {
         val attachment = connection.attach("w1", "t1")
         val screen = withTimeout(5_000) { connection.screen.first { it != null } }!!
         assertEquals("$", screen.text(0))
+        assertTrue(connection.inputState.value!!.waitingOnHuman)
 
         withTimeout(5_000) { while (notifications.isEmpty()) kotlinx.coroutines.delay(10) }
         assertEquals("Waiting for input", notifications.single().body)
@@ -108,6 +113,7 @@ class RelayConnectionTest {
         assertNotNull(connection.screen.value)
         connection.detach(reopened)
         assertNull(connection.screen.value)
+        assertNull(connection.inputState.value)
         connection.stop()
     }
 
