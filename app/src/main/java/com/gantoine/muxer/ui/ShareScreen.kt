@@ -26,6 +26,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -49,6 +51,7 @@ fun ShareScreen(app: MuxerApplication, onBack: () -> Unit, onPick: (ShareTarget)
         }
     }
     val computers by computersFlow.collectAsState(initial = null)
+    var choosing by remember { mutableStateOf<ShareTarget?>(null) }
 
     Scaffold(
         topBar = {
@@ -69,7 +72,17 @@ fun ShareScreen(app: MuxerApplication, onBack: () -> Unit, onPick: (ShareTarget)
             when {
                 list == null -> Unit
                 list.isEmpty() -> item(key = "empty") { NoAgents(onBack) }
-                else -> list.forEach { computer -> computerSection(computer, onPick) }
+                else -> list.forEach { computer -> computerSection(computer) { target -> if (target.needsTerminalChoice) choosing = target else onPick(target) } }
+            }
+        }
+    }
+    choosing?.let { target ->
+        ActionSheet(onDismiss = { choosing = null }) {
+            target.agentTerminals.forEach { terminal ->
+                TerminalChoice(terminal) {
+                    choosing = null
+                    onPick(target.copy(surfaceId = terminal.id))
+                }
             }
         }
     }

@@ -2,6 +2,7 @@ package com.gantoine.muxer.share
 
 import com.gantoine.muxer.data.MacSnapshot
 import com.gantoine.muxer.notifications.ShortcutPlan
+import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
 
 data class ShareTarget(
@@ -10,7 +11,10 @@ data class ShareTarget(
     val surfaceId: String,
     val title: String,
     val agentName: String?,
-)
+    val agentTerminals: List<TerminalInfo> = emptyList(),
+) {
+    val needsTerminalChoice: Boolean get() = agentTerminals.size > 1
+}
 
 data class ShareComputer(
     val macId: String,
@@ -46,7 +50,7 @@ object ShareRouting {
     fun route(shortcutId: String?, snapshots: Collection<MacSnapshot>, pairedMacIds: Collection<String>): ShareRoute {
         shortcutId?.let { forShortcut(it, snapshots, pairedMacIds) }?.let { return ShareRoute.Open(it) }
         val only = computers(snapshots, pairedMacIds).flatMap { it.targets }.singleOrNull()
-        return if (only != null) ShareRoute.Open(only) else ShareRoute.Pick
+        return if (only != null && !only.needsTerminalChoice) ShareRoute.Open(only) else ShareRoute.Pick
     }
 
     private fun forShortcut(shortcutId: String, snapshots: Collection<MacSnapshot>, pairedMacIds: Collection<String>): ShareTarget? =
@@ -60,7 +64,8 @@ object ShareRouting {
 
     private fun target(snapshot: MacSnapshot, workspace: WorkspaceInfo): ShareTarget? {
         val shortcut = ShortcutPlan.shortcut(snapshot.macId, snapshot.macName, workspace) ?: return null
-        return ShareTarget(snapshot.macId, workspace, shortcut.surfaceId, shortcut.title, shortcut.agentName)
+        val agentTerminals = workspace.terminals.filter { it.agentSource != null }
+        return ShareTarget(snapshot.macId, workspace, shortcut.surfaceId, shortcut.title, shortcut.agentName, agentTerminals)
     }
 
     private fun byRecency(workspaces: List<WorkspaceInfo>): List<WorkspaceInfo> =

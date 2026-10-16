@@ -113,4 +113,15 @@ class ShareRoutingTest {
         assertEquals(setOf(ShortcutPlan.CONVERSATION_CATEGORY, ShortcutPlan.SHARE_CATEGORY), ShortcutPlan.categories(agent))
         assertEquals(setOf(ShortcutPlan.CONVERSATION_CATEGORY), ShortcutPlan.categories(plain))
     }
+
+    @Test
+    fun workspacesWithSeveralAgentsOfferATerminalChoice() {
+        val snapshots = listOf(snapshot("a", workspace("w", 1.0, shell("s1"), claude("c1"), claude("c2"))))
+        val target = ShareRouting.computers(snapshots, listOf("a")).single().targets.single()
+        assertEquals(listOf("c1", "c2"), target.agentTerminals.map { it.id })
+        assertEquals(true, target.needsTerminalChoice)
+        assertEquals(ShareRoute.Pick, ShareRouting.route(null, snapshots, listOf("a")))
+        val single = ShareRouting.computers(listOf(snapshot("a", workspace("w", 1.0, claude("c1")))), listOf("a")).single().targets.single()
+        assertEquals(false, single.needsTerminalChoice)
+    }
 }

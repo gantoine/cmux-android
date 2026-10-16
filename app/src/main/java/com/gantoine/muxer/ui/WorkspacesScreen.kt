@@ -822,7 +822,7 @@ private fun SearchDock(query: String, onQueryChange: (String) -> Unit, onCreate:
 }
 
 @Composable
-private fun TerminalChoice(terminal: TerminalInfo, onClick: () -> Unit) {
+internal fun TerminalChoice(terminal: TerminalInfo, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(terminal.title.ifBlank { "Terminal" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
