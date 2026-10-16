@@ -92,7 +92,7 @@ class ConversationShortcuts(private val context: Context) {
             .build()
         return ShortcutInfoCompat.Builder(context, shortcut.id)
             .setShortLabel(shortcut.title)
-            .setLongLabel("${shortcut.title} · ${shortcut.macName}")
+            .setLongLabel("${shortcut.title} (${shortcut.macName})")
             .setIcon(iconFor(shortcut))
             .setIntent(openIntent(shortcut))
             .setLongLived(true)
