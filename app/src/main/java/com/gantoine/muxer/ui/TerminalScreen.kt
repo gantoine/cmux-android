@@ -95,6 +95,7 @@ import com.gantoine.muxer.terminal.TerminalInputView
 import com.gantoine.muxer.terminal.TerminalViewport
 import com.gantoine.muxer.terminal.fittingGrid
 import com.gantoine.muxer.terminal.rememberCellMetrics
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -182,12 +183,20 @@ fun TerminalScreen(
             if (app.connections.visibleTerminal.value === visible) app.connections.visibleTerminal.value = null
         }
     }
+    var backgroundDetach by remember(connection, surfaceId) { mutableStateOf<Job?>(null) }
     LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        backgroundDetach?.cancel()
+        backgroundDetach = null
         if (!connection.isAttachedTo(surfaceId)) attachment.set(connection.attach(workspaceId, surfaceId, requestedFit))
         app.connections.visibleTerminal.value = visible
     }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         if (app.connections.visibleTerminal.value === visible) app.connections.visibleTerminal.value = null
+        backgroundDetach?.cancel()
+        backgroundDetach = scope.launch {
+            delay(BACKGROUND_DETACH_MS)
+            connection.detach(attachment.get())
+        }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { connection.resync() }
     LaunchedEffect(connection) {
@@ -465,6 +474,7 @@ private fun AgentPrompts(
 }
 
 private const val FIT_SETTLE_MS = 300L
+private const val BACKGROUND_DETACH_MS = 30_000L
 private const val NO_ATTACHMENT = -1L
 
 private val KEYS = listOf(
