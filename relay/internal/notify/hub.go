@@ -54,8 +54,9 @@ func (h *Hub) StreamResumed(context.Context) {}
 
 func (h *Hub) HandleEvent(ctx context.Context, event cmux.Event) {
 	var payload struct {
-		NotificationID string   `json:"notification_id"`
-		ReplacedIDs    []string `json:"replaced_notification_ids"`
+		NotificationID  string   `json:"notification_id"`
+		NotificationIDs []string `json:"notification_ids"`
+		ReplacedIDs     []string `json:"replaced_notification_ids"`
 	}
 	_ = json.Unmarshal(event.Payload, &payload)
 	switch event.Name {
@@ -80,7 +81,10 @@ func (h *Hub) HandleEvent(ctx context.Context, event cmux.Event) {
 		})
 	case "notification.read", "notification.removed":
 		if payload.NotificationID != "" {
-			h.publish(Notification{Kind: KindDismissed, ID: payload.NotificationID})
+			payload.NotificationIDs = append(payload.NotificationIDs, payload.NotificationID)
+		}
+		for _, id := range payload.NotificationIDs {
+			h.publish(Notification{Kind: KindDismissed, ID: id})
 		}
 	}
 }

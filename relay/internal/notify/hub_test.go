@@ -27,7 +27,7 @@ func TestHubResolvesRedactedTextAndReplaysOnlyForReturningPhones(t *testing.T) {
 	source := &fakeSource{
 		events: []cmux.Event{
 			event("notification.created", `{"notification_id":"n1","replaced_notification_ids":["old"]}`, 1),
-			event("notification.read", `{"notification_id":"n1"}`, 2),
+			event("notification.read", `{"count":1,"notification_ids":["n1"]}`, 2),
 		},
 		notifications: []cmux.Notification{{ID: "n1", Title: "Claude Code", Body: "Claude is waiting for your input", WorkspaceID: "w1"}},
 	}
@@ -60,5 +60,23 @@ func TestHubResolvesRedactedTextAndReplaysOnlyForReturningPhones(t *testing.T) {
 	unsubscribe()
 	if len(afterCreated) != 1 || afterCreated[0].Seq != history[2].Seq {
 		t.Fatalf("a returning phone gets only what it missed: %+v", afterCreated)
+	}
+}
+
+func TestHubDismissesEveryNotificationReadOrRemovedOnTheMac(t *testing.T) {
+	hub := NewHub(&fakeSource{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	hub.HandleEvent(context.Background(), event("notification.read", `{"count":2,"notification_ids":["n1","n2"]}`, 1))
+	hub.HandleEvent(context.Background(), event("notification.removed", `{"notification_id":"n3"}`, 2))
+
+	_, history, unsubscribe := hub.Subscribe(1)
+	unsubscribe()
+	var dismissed []string
+	for _, notification := range history {
+		if notification.Kind == KindDismissed {
+			dismissed = append(dismissed, notification.ID)
+		}
+	}
+	if len(dismissed) != 3 || dismissed[0] != "n1" || dismissed[1] != "n2" || dismissed[2] != "n3" {
+		t.Fatalf("every read or removed notification must be dismissed on the phone, got %v", dismissed)
 	}
 }
