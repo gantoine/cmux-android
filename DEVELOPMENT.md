@@ -47,11 +47,10 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 | `send_agent_message {text}` | Send up to 32 KB to the agent in the attached terminal as a cmux agent message. |
 | `keep_awake` / `set_keep_awake {enabled}` | Read or change whether cmux keeps the computer awake. |
 | `top` | CPU and memory in cmux: totals, each coding agent, and each workspace with its five heaviest processes. The app asks every 3 seconds while its Metrics page is open. |
-<<<<<<< HEAD
 | `notifications` | List the notifications in cmux's notification center, read ones included, with `is_read`. |
 | `mark_notifications_read {notification_id? \| surface_id? \| all?}` | Mark one notification, one terminal's notifications or all of them read on the Mac. |
-=======
 | `send_images {images, text?}` | Paste 1 to 4 images (`{data_b64, format}`, up to 5 MB each) and optional text into the Claude session in the attached terminal, then submit. |
->>>>>>> main
+| `recent_sessions {query?, limit?}` | List past agent sessions from cmux's Vault, newest first, or search their transcripts. A session running in a terminal comes with that terminal's `workspace_id` and `surface_id`. The default limit is 50 and the most is 200. |
+| `resume_session {agent, session_id}` | Open a session that is already running, or open a workspace in the session's folder and run its resume command there. The answer is `{workspace_id, surface_id, already_open}`. |
 
 The relay sends `workspaces` (with the workspace `groups`, each naming its anchor workspace and members), `screen` (row diffs with a style table), `detached`, `notification` and `result {id, ok, data | error}`. It also sends `approvals` with the agent requests waiting for an answer, `agent_activity {retries, busy}`, `keep_awake {enabled}`, and `agent_messages {surface_id, messages}` for the attached terminal. For the attached terminal it also sends `chat_session {surface_id, session_id}`, with `session_id` null when no Claude Code session runs there, and `chat {surface_id, session_id, reset, entries}`, where each entry is a user message, an assistant reply, a tool call or a notice. `reset` replaces the conversation; otherwise entries with a known `id` replace the old ones and new ones are added at the end. Add an `id` to any message to get a `result` back.

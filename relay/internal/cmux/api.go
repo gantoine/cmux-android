@@ -156,6 +156,8 @@ const (
 	MethodRestartTerminal = "surface.respawn"
 	MethodInputState      = "surface.input_state"
 	MethodTop             = "system.top"
+	MethodVaultSessions   = "vault.sessions"
+	MethodVaultSearch     = "vault.search"
 )
 
 type ChatImage struct {
@@ -334,6 +336,51 @@ func (c *Client) CreateTerminal(ctx context.Context, workspaceID string) (string
 	}
 	err := c.Call(ctx, "mobile.terminal.create", map[string]any{"workspace_id": workspaceID}, &created)
 	return created.CreatedTerminalID, err
+}
+
+func (c *Client) RunCommand(ctx context.Context, workspaceID, surfaceID, command string) (bool, error) {
+	var result struct {
+		Submitted bool `json:"submitted"`
+	}
+	err := c.Call(ctx, "mobile.terminal.paste", map[string]any{
+		"workspace_id": workspaceID,
+		"surface_id":   surfaceID,
+		"text":         command,
+		"submit_key":   "return",
+	}, &result)
+	return result.Submitted, err
+}
+
+type VaultSession struct {
+	Agent         string `json:"agent"`
+	SessionID     string `json:"session_id"`
+	Title         string `json:"title"`
+	Cwd           string `json:"cwd"`
+	GitBranch     string `json:"git_branch"`
+	Created       string `json:"created"`
+	Modified      string `json:"modified"`
+	MessageCount  *int   `json:"message_count"`
+	ResumeCommand string `json:"resume_command"`
+}
+
+func (c *Client) VaultSessions(ctx context.Context, agent string, limit int) ([]VaultSession, error) {
+	params := map[string]any{"limit": limit}
+	if agent != "" {
+		params["agent"] = agent
+	}
+	var list struct {
+		Sessions []VaultSession `json:"sessions"`
+	}
+	err := c.Call(ctx, MethodVaultSessions, params, &list)
+	return list.Sessions, err
+}
+
+func (c *Client) VaultSearch(ctx context.Context, query string, limit int) ([]VaultSession, error) {
+	var list struct {
+		Sessions []VaultSession `json:"sessions"`
+	}
+	err := c.Call(ctx, MethodVaultSearch, map[string]any{"query": query, "limit": limit}, &list)
+	return list.Sessions, err
 }
 
 func (c *Client) CloseTerminal(ctx context.Context, workspaceID, surfaceID string, force bool) error {

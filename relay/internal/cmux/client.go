@@ -60,6 +60,8 @@ var readOnlyMethods = map[string]bool{
 	"caffeine.status":        true,
 	"debug.terminals":        true,
 	"system.top":             true,
+	"vault.sessions":         true,
+	"vault.search":           true,
 }
 
 func isConnectionError(err error) bool {

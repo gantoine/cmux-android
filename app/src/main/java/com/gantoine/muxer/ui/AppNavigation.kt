@@ -28,6 +28,7 @@ private object Routes {
     const val WORKSPACES = "mac/{macId}"
     const val SETTINGS = "mac/{macId}/settings"
     const val NOTIFICATIONS = "mac/{macId}/notifications"
+    const val SESSIONS = "mac/{macId}/sessions"
     const val METRICS = "mac/{macId}/metrics"
     const val TERMINAL = "terminal/{macId}/{workspaceId}/{surfaceId}?message={message}&images={images}"
     const val SHARE = "share?text={text}&images={images}"
@@ -36,6 +37,7 @@ private object Routes {
     fun workspaces(macId: String) = "mac/${Uri.encode(macId)}"
     fun settings(macId: String) = "mac/${Uri.encode(macId)}/settings"
     fun notifications(macId: String) = "mac/${Uri.encode(macId)}/notifications"
+    fun sessions(macId: String) = "mac/${Uri.encode(macId)}/sessions"
     fun metrics(macId: String) = "mac/${Uri.encode(macId)}/metrics"
     fun terminal(macId: String, workspaceId: String, surfaceId: String, message: String = "", images: List<Uri> = emptyList()) =
         "terminal/${Uri.encode(macId)}/${Uri.encode(workspaceId)}/${Uri.encode(surfaceId)}?message=${Uri.encode(message)}&images=${encodeImages(images)}"
@@ -127,6 +129,15 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
             )
         }
+        composable(Routes.SESSIONS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
+            val macId = entry.arguments?.getString("macId").orEmpty()
+            SessionsScreen(
+                app = app,
+                macId = macId,
+                onBack = { navController.popBackStack() },
+                onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
+            )
+        }
         composable(Routes.METRICS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
             MetricsScreen(
                 app = app,
@@ -140,6 +151,7 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 macId = entry.arguments?.getString("macId").orEmpty(),
                 onBack = { navController.popBackStack() },
                 onOpenMetrics = { navController.navigate(Routes.metrics(it)) },
+                onOpenSessions = { navController.navigate(Routes.sessions(it)) },
                 onRemoved = { navController.popBackStack(Routes.MACS, inclusive = false) },
             )
         }

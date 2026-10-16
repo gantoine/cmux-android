@@ -282,3 +282,23 @@ data class TopWorkspace(
 
 @Serializable
 data class TopProcess(val pid: Int, val name: String, val cpuPercent: Double = 0.0, val memoryBytes: Long = 0)
+
+@Serializable
+data class RecentSession(
+    val agent: String,
+    val sessionId: String,
+    val title: String = "",
+    val cwd: String? = null,
+    val gitBranch: String? = null,
+    val created: String? = null,
+    val modified: String = "",
+    val messageCount: Int? = null,
+    val workspaceId: String? = null,
+    val surfaceId: String? = null,
+)
+
+@Serializable
+data class RecentSessionsResponse(val sessions: List<RecentSession> = emptyList())
+
+@Serializable
+data class ResumedSession(val workspaceId: String, val surfaceId: String, val alreadyOpen: Boolean = false)

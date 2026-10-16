@@ -42,6 +42,9 @@ type Cmux interface {
 	RenameTerminal(ctx context.Context, workspaceID, surfaceID, title string) error
 	RestartTerminal(ctx context.Context, workspaceID, surfaceID, command string) error
 	InputState(ctx context.Context, workspaceID, surfaceID string) (cmux.InputState, error)
+	RunCommand(ctx context.Context, workspaceID, surfaceID, command string) (bool, error)
+	VaultSessions(ctx context.Context, agent string, limit int) ([]cmux.VaultSession, error)
+	VaultSearch(ctx context.Context, query string, limit int) ([]cmux.VaultSession, error)
 	AgentSession(ctx context.Context, workspaceID, surfaceID string) (cmux.AgentSession, error)
 	KeepAwake(ctx context.Context) (bool, error)
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)

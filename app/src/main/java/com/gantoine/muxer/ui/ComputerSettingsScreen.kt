@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,7 +29,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -62,6 +60,7 @@ fun ComputerSettingsScreen(
     macId: String,
     onBack: () -> Unit,
     onOpenMetrics: (macId: String) -> Unit,
+    onOpenSessions: (macId: String) -> Unit,
     onRemoved: () -> Unit,
 ) {
     val macs by app.store.macs.collectAsState(initial = null)
@@ -181,7 +180,7 @@ fun ComputerSettingsScreen(
 
             SectionLabel("This computer")
             val welcome = (state as? ConnectionState.Connected)?.welcome
-            val rows = 4 + if (welcome != null) 1 else 0
+            val rows = 5 + if (welcome != null) 1 else 0
             SettingsGroup {
                 SettingsRow(
                     index = 0,
@@ -219,9 +218,23 @@ fun ComputerSettingsScreen(
                         )
                     },
                 )
+                SettingsRow(
+                    index = 4,
+                    count = rows,
+                    headline = "Recent sessions",
+                    supporting = "Find and resume past agent sessions",
+                    onClick = { onOpenSessions(macId) },
+                    trailing = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
                 if (welcome != null) {
                     SettingsRow(
-                        index = 4,
+                        index = 5,
                         count = rows,
                         headline = "Versions",
                         supporting = "cmux ${welcome.cmuxVersion} · relay ${welcome.relayVersion}",
@@ -308,12 +321,11 @@ private fun RenameDialog(mac: Mac, onDismiss: () -> Unit, onRename: (String) -> 
         onDismissRequest = onDismiss,
         title = { Text("Rename computer") },
         text = {
-            OutlinedTextField(
+            LabeledTextField(
                 value = name,
                 onValueChange = { name = it.take(60) },
                 singleLine = true,
-                label = { Text("Name") },
-                shape = RoundedCornerShape(16.dp),
+                label = "Name",
                 modifier = Modifier.padding(top = 4.dp),
             )
         },

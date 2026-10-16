@@ -53,6 +53,11 @@ type fakeCmux struct {
 	inputStateErr   error
 	top             cmux.Top
 	topErr          error
+	workspaceList   *cmux.WorkspaceList
+	vaultSessions   []cmux.VaultSession
+	vaultCalls      []string
+	commands        []string
+	submitted       bool
 }
 
 type sentChat struct {
@@ -182,7 +187,11 @@ func (f *fakeCmux) Identify(context.Context) (cmux.Identity, error) {
 func (f *fakeCmux) Workspaces(context.Context) (cmux.WorkspaceList, error) {
 	f.mu.Lock()
 	f.workspaceReads++
+	override := f.workspaceList
 	f.mu.Unlock()
+	if override != nil {
+		return *override, nil
+	}
 	return cmux.WorkspaceList{
 		Workspaces: []cmux.Workspace{{ID: "w1", Title: "api", Terminals: []cmux.Terminal{{ID: "t1", Title: "zsh"}}}},
 		Groups:     []cmux.WorkspaceGroup{{ID: "g1", Name: "Q4", MemberWorkspaceIDs: []string{"w1"}}},
@@ -190,6 +199,7 @@ func (f *fakeCmux) Workspaces(context.Context) (cmux.WorkspaceList, error) {
 }
 
 func (f *fakeCmux) Replay(_ context.Context, workspaceID, surfaceID string) (cmux.Replay, error) {
+	f.wakeTerminal(workspaceID, surfaceID)
 	if surfaceID != "t1" {
 		return cmux.Replay{}, &cmux.RPCError{Code: "not_found", Message: "no such terminal"}
 	}
@@ -277,6 +287,55 @@ func (f *fakeCmux) RestartTerminal(_ context.Context, workspaceID, surfaceID, co
 	defer f.mu.Unlock()
 	f.terminalCalls = append(f.terminalCalls, fmt.Sprintf("restart %s/%s %s", workspaceID, surfaceID, command))
 	return nil
+}
+
+func (f *fakeCmux) wakeTerminal(workspaceID, surfaceID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.workspaceList == nil {
+		return
+	}
+	for w := range f.workspaceList.Workspaces {
+		workspace := &f.workspaceList.Workspaces[w]
+		for t := range workspace.Terminals {
+			if workspace.ID == workspaceID && workspace.Terminals[t].ID == surfaceID {
+				workspace.Terminals[t].IsReady = true
+			}
+		}
+	}
+}
+
+func (f *fakeCmux) RunCommand(_ context.Context, workspaceID, surfaceID, command string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commands = append(f.commands, fmt.Sprintf("%s/%s %s", workspaceID, surfaceID, command))
+	return f.submitted, nil
+}
+
+func (f *fakeCmux) VaultSessions(_ context.Context, agent string, limit int) ([]cmux.VaultSession, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.vaultCalls = append(f.vaultCalls, fmt.Sprintf("sessions agent=%q limit=%d", agent, limit))
+	var matched []cmux.VaultSession
+	for _, entry := range f.vaultSessions {
+		if agent == "" || entry.Agent == agent {
+			matched = append(matched, entry)
+		}
+	}
+	return matched, nil
+}
+
+func (f *fakeCmux) VaultSearch(_ context.Context, query string, limit int) ([]cmux.VaultSession, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.vaultCalls = append(f.vaultCalls, fmt.Sprintf("search %q limit=%d", query, limit))
+	var matched []cmux.VaultSession
+	for _, entry := range f.vaultSessions {
+		if strings.Contains(entry.Title, query) {
+			matched = append(matched, entry)
+		}
+	}
+	return matched, nil
 }
 
 func (f *fakeCmux) InputState(context.Context, string, string) (cmux.InputState, error) {

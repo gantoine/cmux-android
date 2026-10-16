@@ -391,6 +391,29 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		default:
 			return nil, s.server.restartTerminal(ctx, request)
 		}
+	case "recent_sessions":
+		request, err := parseSessionQuery(raw)
+		if err != nil {
+			return nil, err
+		}
+		sessions, err := s.server.recentSessions(ctx, request)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"sessions": sessions}, nil
+	case "resume_session":
+		var request struct {
+			Agent     string `json:"agent"`
+			SessionID string `json:"session_id"`
+		}
+		if err := json.Unmarshal(raw, &request); err != nil || request.Agent == "" || request.SessionID == "" {
+			return nil, &requestError{Code: "invalid_params", Message: "resume_session needs agent and session_id."}
+		}
+		resumed, err := s.server.resumeSession(ctx, request.Agent, request.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		return resumed, nil
 	case "create_terminal":
 		var request struct {
 			WorkspaceID string `json:"workspace_id"`

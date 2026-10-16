@@ -17,9 +17,12 @@ import com.gantoine.muxer.protocol.KeepAwakeMessage
 import com.gantoine.muxer.protocol.MacNotification
 import com.gantoine.muxer.protocol.NotificationMessage
 import com.gantoine.muxer.protocol.NotificationsResponse
+import com.gantoine.muxer.protocol.RecentSession
+import com.gantoine.muxer.protocol.RecentSessionsResponse
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.RequestError
+import com.gantoine.muxer.protocol.ResumedSession
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.ScreenFrame
 import com.gantoine.muxer.protocol.TopSummary
@@ -461,6 +464,19 @@ class RelayConnection(
             surfaceId?.let { put("surface_id", it) }
             if (all) put("all", true)
         }).map { }
+
+    suspend fun recentSessions(query: String = ""): Result<List<RecentSession>> =
+        request("recent_sessions", buildJsonObject { if (query.isNotBlank()) put("query", query.trim()) }).mapCatching { data ->
+            data?.let { RelayJson.decodeFromJsonElement(RecentSessionsResponse.serializer(), it).sessions }.orEmpty()
+        }
+
+    suspend fun resumeSession(session: RecentSession): Result<ResumedSession> =
+        request("resume_session", buildJsonObject {
+            put("agent", session.agent)
+            put("session_id", session.sessionId)
+        }).mapCatching { data ->
+            RelayJson.decodeFromJsonElement(ResumedSession.serializer(), data ?: error("The computer did not say where the session opened."))
+        }
 
     private fun forget(approvalId: String) {
         _approvals.value = _approvals.value?.filterNot { it.id == approvalId }
