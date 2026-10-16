@@ -140,7 +140,6 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
             val text = entry.arguments?.getString("text").orEmpty()
             ShareScreen(
                 app = app,
-                text = text,
                 onBack = { navController.popBackStack() },
                 onPick = { target -> navController.openShared(target, text) },
             )

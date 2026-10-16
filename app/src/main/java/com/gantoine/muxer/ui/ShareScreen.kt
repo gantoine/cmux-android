@@ -42,7 +42,7 @@ import com.gantoine.muxer.share.ShareTarget
 import kotlinx.coroutines.flow.combine
 
 @Composable
-fun ShareScreen(app: MuxerApplication, text: String, onBack: () -> Unit, onPick: (ShareTarget) -> Unit) {
+fun ShareScreen(app: MuxerApplication, onBack: () -> Unit, onPick: (ShareTarget) -> Unit) {
     val computersFlow = remember(app) {
         combine(app.snapshots.snapshots, app.store.macs) { snapshots, macs ->
             ShareRouting.computers(snapshots.values, macs.map { it.id })
@@ -66,7 +66,6 @@ fun ShareScreen(app: MuxerApplication, text: String, onBack: () -> Unit, onPick:
             contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            item(key = "preview") { SharedTextPreview(text) }
             when {
                 list == null -> Unit
                 list.isEmpty() -> item(key = "empty") { NoAgents(onBack) }
@@ -85,31 +84,6 @@ private fun LazyListScope.computerSection(computer: ShareComputer, onPick: (Shar
     }
 }
 
-@Composable
-private fun SharedTextPreview(text: String) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-    ) {
-        Text(
-            "You're sharing",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            maxLines = PREVIEW_LINES,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
 
 @Composable
 private fun ShareTargetRow(target: ShareTarget, shape: Shape, onClick: () -> Unit) {
@@ -151,4 +125,3 @@ private fun NoAgents(onBack: () -> Unit) {
     }
 }
 
-private const val PREVIEW_LINES = 6
