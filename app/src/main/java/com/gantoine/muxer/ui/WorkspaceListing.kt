@@ -137,7 +137,7 @@ object WorkspaceListing {
     }
 
     fun subtitle(workspace: WorkspaceInfo): String =
-        workspace.preview?.trim()?.takeIf(String::isNotEmpty)
+        workspace.preview?.trim()?.takeIf { it.isNotEmpty() && (isAgent(workspace) || !needsAttention(it)) }
             ?: workspace.currentDirectory?.let(::shortPath)
             ?: when (val count = workspace.terminals.size) {
                 0, 1 -> "Terminal"

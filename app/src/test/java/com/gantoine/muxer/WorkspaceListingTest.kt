@@ -93,6 +93,10 @@ class WorkspaceFilteringTest {
         assertEquals("~/fun/cmux", WorkspaceListing.subtitle(waiting))
         assertEquals("2 terminals", WorkspaceListing.subtitle(plain))
         assertEquals("Terminal", WorkspaceListing.subtitle(plain.copy(terminals = emptyList())))
+        val stale = plain.copy(preview = "Claude is waiting for your input", currentDirectory = "/Users/me/fun/cmux")
+        assertEquals("~/fun/cmux", WorkspaceListing.subtitle(stale))
+        val live = stale.copy(terminals = listOf(TerminalInfo(id = "t", agentSource = "claude", agentState = "Waiting")))
+        assertEquals("Claude is waiting for your input", WorkspaceListing.subtitle(live))
     }
 
     @Test
