@@ -17,7 +17,7 @@ class GitSummaryTest {
         assertNull(WorkspaceListing.gitSummary(terminal()))
         assertNull(WorkspaceListing.gitSummary(terminal(branch = " ")))
         assertEquals("main", WorkspaceListing.gitSummary(terminal(branch = "main", dirty = false)))
-        assertEquals("feat/x · uncommitted changes", WorkspaceListing.gitSummary(terminal(branch = "feat/x", dirty = true)))
+        assertEquals("feat/x*", WorkspaceListing.gitSummary(terminal(branch = "feat/x", dirty = true)))
     }
 
     @Test
@@ -34,7 +34,7 @@ class GitSummaryTest {
             """{"workspaces":[{"id":"w1","terminals":[{"id":"t1","git_branch":"main","git_dirty":true,"listening_ports":[8000]},{"id":"t2","git_branch":"feat/y"}]}]}""",
         )
         val (first, second) = listing.workspaces.single().terminals
-        assertEquals("main · uncommitted changes", WorkspaceListing.gitSummary(first))
+        assertEquals("main*", WorkspaceListing.gitSummary(first))
         assertEquals(listOf(8000), first.listeningPorts)
         assertEquals("feat/y", WorkspaceListing.gitSummary(second))
     }

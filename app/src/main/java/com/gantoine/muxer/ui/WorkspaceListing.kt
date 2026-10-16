@@ -52,7 +52,7 @@ object WorkspaceListing {
 
     fun gitSummary(terminal: TerminalInfo): String? {
         val branch = terminal.gitBranch?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        return if (terminal.gitDirty == true) "$branch · uncommitted changes" else branch
+        return if (terminal.gitDirty == true) "$branch*" else branch
     }
 
     fun portsSummary(terminal: TerminalInfo): String? = when (terminal.listeningPorts.size) {
