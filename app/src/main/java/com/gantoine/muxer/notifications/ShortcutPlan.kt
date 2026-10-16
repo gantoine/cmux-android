@@ -45,8 +45,8 @@ object ShortcutPlan {
                 shortcut(snapshot.macId, snapshot.macName, workspace)?.let { it to workspace.lastActivityAt }
             }
         }
-        val (agents, others) = candidates.partition { (shortcut, _) -> shortcut.agentName != null }
-        return (byRecency(agents) + byRecency(others)).take(limit)
+        val agents = candidates.filter { (shortcut, _) -> shortcut.agentName != null }
+        return byRecency(agents).take(limit)
     }
 
     fun gone(existingIds: Collection<String>, snapshots: Collection<MacSnapshot>): List<String> {

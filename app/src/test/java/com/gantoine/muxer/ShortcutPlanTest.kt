@@ -25,7 +25,7 @@ class ShortcutPlanTest {
     }
 
     @Test
-    fun agentWorkspacesComeFirstAcrossComputersThenRecentOnes() {
+    fun onlyAgentWorkspacesGetShortcutsNewestFirstAcrossComputers() {
         val plan = ShortcutPlan.plan(
             listOf(
                 snapshot("a", workspace("quiet", 50.0, shell("s1")), workspace("agent-old", 10.0, claude("c1"))),
@@ -33,19 +33,18 @@ class ShortcutPlanTest {
             ),
             limit = 10,
         )
-        assertEquals(listOf("agent-new", "agent-old", "recent", "quiet"), plan.map { it.workspaceId })
+        assertEquals(listOf("agent-new", "agent-old"), plan.map { it.workspaceId })
         assertEquals("b", plan.first().macId)
-        assertEquals("Claude", plan.first().agentName)
-        assertNull(plan.last().agentName)
+        assertEquals(listOf("Claude", "Claude"), plan.map { it.agentName })
     }
 
     @Test
     fun capsAtTheLimit() {
         val plan = ShortcutPlan.plan(
-            listOf(snapshot("a", workspace("w1", 1.0, claude("c1")), workspace("w2", 2.0, shell("s")), workspace("w3", 3.0, shell("t")))),
+            listOf(snapshot("a", workspace("w1", 1.0, claude("c1")), workspace("w2", 2.0, claude("c2")), workspace("w3", 3.0, claude("c3")))),
             limit = 2,
         )
-        assertEquals(listOf("w1", "w3"), plan.map { it.workspaceId })
+        assertEquals(listOf("w3", "w2"), plan.map { it.workspaceId })
         assertEquals(emptyList<Any>(), ShortcutPlan.plan(listOf(snapshot("a", workspace("w1", 1.0, claude("c1")))), limit = 0))
     }
 

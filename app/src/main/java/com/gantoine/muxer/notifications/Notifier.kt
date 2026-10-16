@@ -62,7 +62,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
         if (!canNotify()) return
         val workspaceId = notification.workspaceId
         val surfaceId = notification.surfaceId
-        if (!NotificationFilter.isConversation(notification) || workspaceId == null || surfaceId == null) {
+        if (!NotificationFilter.isConversation(notification) || workspaceId == null || surfaceId == null || !shortcuts.isAgentWorkspace(mac.id, workspaceId)) {
             showPlain(mac, notification)
             return
         }
