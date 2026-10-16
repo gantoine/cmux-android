@@ -105,6 +105,53 @@ class RelayConnectionTest {
         connection.stop()
     }
 
+    private fun relayWithApproval() = object : WebSocketListener() {
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            val message = Json.parseToJsonElement(text).jsonObject
+            if (message["type"]?.jsonPrimitive?.content != "hello") return
+            val id = message["id"]?.jsonPrimitive?.content
+            webSocket.send(
+                """{"type":"result","id":"$id","ok":true,"data":{"mac_name":"Studio","relay_version":"1","protocol_version":1,"cmux_version":"0.65.1","device_id":"d1","notification_seq":5}}""",
+            )
+            webSocket.send("""{"type":"approvals","approvals":[{"id":"r1","kind":"permission","workspace_id":"w1","surface_id":"t1","tool":"Bash"}]}""")
+            webSocket.close(1001, "going away")
+        }
+    }
+
+    private fun connectionDroppingAfterApproval(approvalsOutliveDropsForMs: Long) = RelayConnection(
+        macId = "mac",
+        baseUrl = server.url("/").toString().trimEnd('/'),
+        token = "secret-token",
+        client = client,
+        scope = scope,
+        notificationsAfter = { 0L },
+        onNotification = { _, _ -> },
+        approvalsOutliveDropsForMs = approvalsOutliveDropsForMs,
+    )
+
+    @Test
+    fun approvalsSurviveABriefDrop() = runBlocking {
+        server.enqueue(MockResponse.Builder().webSocketUpgrade(relayWithApproval()).build())
+        val connection = connectionDroppingAfterApproval(approvalsOutliveDropsForMs = 60_000L)
+        connection.start()
+        withTimeout(5_000) { connection.approvals.first { it.isNotEmpty() } }
+        withTimeout(5_000) { connection.state.first { it is ConnectionState.Disconnected } }
+        assertEquals("r1", connection.approvals.value.single().id)
+        connection.stop()
+        assertTrue(connection.approvals.value.isEmpty())
+    }
+
+    @Test
+    fun approvalsAreDroppedOnceTheComputerStaysUnreachable() = runBlocking {
+        server.enqueue(MockResponse.Builder().webSocketUpgrade(relayWithApproval()).build())
+        val connection = connectionDroppingAfterApproval(approvalsOutliveDropsForMs = 0L)
+        connection.start()
+        withTimeout(5_000) { connection.approvals.first { it.isNotEmpty() } }
+        withTimeout(5_000) { connection.state.first { it is ConnectionState.Disconnected } }
+        assertTrue(connection.approvals.value.isEmpty())
+        connection.stop()
+    }
+
     @Test
     fun revokedPhoneStopsRetrying() = runBlocking {
         server.enqueue(MockResponse.Builder().code(401).body("""{"error":{"code":"unauthorized"}}""").build())

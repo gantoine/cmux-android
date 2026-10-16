@@ -77,6 +77,7 @@ class RelayConnection(
     private val notificationsAfter: suspend () -> Long,
     private val onNotification: suspend (String, RelayNotification) -> Unit,
     private val onWelcome: suspend (String, Welcome) -> Unit = { _, _ -> },
+    private val approvalsOutliveDropsForMs: Long = APPROVALS_OUTLIVE_DROPS_FOR_MS,
 ) {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Stopped)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -146,6 +147,7 @@ class RelayConnection(
 
     private suspend fun runLoop() {
         var backoffMs = 1_000L
+        var lastConnectedAt = System.currentTimeMillis()
         while (true) {
             _state.value = ConnectionState.Connecting
             val closed = CompletableDeferred<CloseReason>()
@@ -169,7 +171,8 @@ class RelayConnection(
                 return
             }
             if (reason.wasConnected) backoffMs = 1_000L
-            _approvals.value = emptyList()
+            if (_state.value is ConnectionState.Connected) lastConnectedAt = System.currentTimeMillis()
+            if (System.currentTimeMillis() - lastConnectedAt >= approvalsOutliveDropsForMs) _approvals.value = emptyList()
             _retries.value = emptyList()
             _busySurfaces.value = emptySet()
             _keepAwake.value = null
@@ -415,6 +418,7 @@ class RelayConnection(
 
     private companion object {
         const val REQUEST_TIMEOUT_MS = 20_000L
+        const val APPROVALS_OUTLIVE_DROPS_FOR_MS = 60_000L
         const val HISTORY_LINES = 2_000
     }
 }
