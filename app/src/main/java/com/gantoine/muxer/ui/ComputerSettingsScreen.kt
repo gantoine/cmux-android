@@ -214,7 +214,6 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
                     index = 0,
                     count = 1,
                     headline = "Remove this computer",
-                    supporting = "This phone forgets the computer and stops connecting to it.",
                     tint = MaterialTheme.colorScheme.error,
                     leading = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                     onClick = { removing = true },
@@ -250,7 +249,7 @@ private fun SettingsRow(
     index: Int,
     count: Int,
     headline: String,
-    supporting: String,
+    supporting: String? = null,
     tint: Color = MaterialTheme.colorScheme.onSurface,
     supportingIcon: (@Composable () -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
@@ -263,13 +262,15 @@ private fun SettingsRow(
         .background(MaterialTheme.colorScheme.surfaceContainer)
     ListItem(
         headlineContent = { Text(headline, color = tint) },
-        supportingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (supportingIcon != null) {
-                    supportingIcon()
-                    Spacer(Modifier.width(8.dp))
+        supportingContent = supporting?.let {
+            {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (supportingIcon != null) {
+                        supportingIcon()
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(supporting, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         leadingContent = leading,
