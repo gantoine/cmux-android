@@ -166,7 +166,11 @@ func runInstall(args []string) error {
 	if err := os.MkdirAll(filepath.Dir(p.log), 0o755); err != nil {
 		return err
 	}
-	plist := launchdPlist([]string{executable, "serve", "--listen", listen, "--name", macName}, p.log)
+	command := []string{executable, "serve", "--listen", listen}
+	if macName != "" {
+		command = append(command, "--name", macName)
+	}
+	plist := launchdPlist(command, p.log)
 	if err := os.WriteFile(p.plist, []byte(plist), 0o644); err != nil {
 		return err
 	}

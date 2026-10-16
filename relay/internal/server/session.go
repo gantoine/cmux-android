@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,6 +56,10 @@ const (
 	maxHistoryLines       = 5000
 	maxQueuedMessages     = 64
 	callTimeout           = 15 * time.Second
+	hostNameTimeout       = 2 * time.Second
+	maxImages             = 4
+	maxImageBytes         = 5 << 20
+	maxMessageBytes       = 32 << 20
 	terminalGoneErrorCode = "not_found"
 )
 
@@ -426,6 +431,37 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		}
 		s.server.keepAwake.refresh()
 		return map[string]bool{"enabled": enabled}, nil
+	case "send_images":
+		var request struct {
+			Text   string           `json:"text"`
+			Images []cmux.ChatImage `json:"images"`
+		}
+		if err := json.Unmarshal(raw, &request); err != nil {
+			return nil, &requestError{Code: "invalid_params", Message: "send_images needs images and optional text."}
+		}
+		if err := validImages(request.Images); err != nil {
+			return nil, err
+		}
+		if len(request.Text) > maxInputBytes {
+			return nil, &requestError{Code: "invalid_params", Message: "The message can be up to 65536 bytes."}
+		}
+		if !s.server.methods.supports(cmux.MethodChatSend) {
+			return nil, errImagesUnsupported
+		}
+		return nil, s.withTerminal(func(current *attachment) error {
+			sessionID, _, err := s.claudeSession(ctx, current)
+			if err != nil {
+				return err
+			}
+			if sessionID == "" {
+				return &requestError{Code: "no_agent", Message: "Images can only go to Claude, and Claude isn't running in this terminal."}
+			}
+			err = s.server.cmux.SendChat(ctx, sessionID, request.Text, request.Images)
+			if s.server.methods.observe(cmux.MethodChatSend, err) {
+				return errImagesUnsupported
+			}
+			return err
+		})
 	case "send_agent_message":
 		var request struct {
 			Text string `json:"text"`
@@ -452,6 +488,27 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 	}
 }
 
+var imageFormats = map[string]bool{"png": true, "jpeg": true, "jpg": true, "webp": true, "gif": true}
+
+func validImages(images []cmux.ChatImage) error {
+	if len(images) == 0 || len(images) > maxImages {
+		return &requestError{Code: "invalid_params", Message: fmt.Sprintf("Send 1 to %d images at a time.", maxImages)}
+	}
+	for _, image := range images {
+		if !imageFormats[image.Format] {
+			return &requestError{Code: "invalid_params", Message: "Images must be PNG, JPEG, WebP or GIF."}
+		}
+		decoded, err := base64.StdEncoding.DecodeString(image.Data)
+		if err != nil || len(decoded) == 0 {
+			return &requestError{Code: "invalid_params", Message: "An image wasn't valid base64 data."}
+		}
+		if len(decoded) > maxImageBytes {
+			return &requestError{Code: "invalid_params", Message: "Each image can be up to 5 MB."}
+		}
+	}
+	return nil
+}
+
 func validText(kind, text string) error {
 	if text == "" || len(text) > maxInputBytes {
 		return &requestError{Code: "invalid_params", Message: kind + " needs 1 to 65536 bytes of text."}
@@ -470,7 +527,7 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 	s.started = true
 	s.mu.Unlock()
 	welcome := map[string]any{
-		"mac_name":         s.server.options.MacName,
+		"mac_name":         s.server.macName(ctx),
 		"relay_version":    s.server.options.RelayVersion,
 		"protocol_version": ProtocolVersion,
 		"cmux_version":     identity.Version,
@@ -654,6 +711,8 @@ func (s *Server) pollKeepAwake(ctx context.Context) ([]byte, bool) {
 	encoded, err := json.Marshal(map[string]any{"type": "keep_awake", "enabled": enabled})
 	return encoded, err == nil
 }
+
+var errImagesUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't receive images. Update cmux."}
 
 var errKeepAwakeUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't keep the computer awake. Update cmux."}
 

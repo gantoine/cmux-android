@@ -43,6 +43,8 @@ type Cmux interface {
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
 	SetKeepAwake(ctx context.Context, enabled bool) (bool, error)
 	Methods(ctx context.Context) ([]string, error)
+	HostName(ctx context.Context) (string, error)
+	SendChat(ctx context.Context, sessionID, text string, images []cmux.ChatImage) error
 }
 
 type Approvals interface {
@@ -62,6 +64,7 @@ type Agents interface {
 
 type Options struct {
 	MacName         string
+	FallbackMacName string
 	RelayVersion    string
 	PollInterval    Intervals
 	ClaudeConfigDir string
@@ -163,7 +166,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"app":              "muxer",
-		"mac_name":         s.options.MacName,
+		"mac_name":         s.macName(r.Context()),
 		"relay_version":    s.options.RelayVersion,
 		"protocol_version": ProtocolVersion,
 	})
@@ -193,7 +196,7 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":            token,
 		"device_id":        device.ID,
-		"mac_name":         s.options.MacName,
+		"mac_name":         s.macName(r.Context()),
 		"protocol_version": ProtocolVersion,
 	})
 }
@@ -217,9 +220,25 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	conn.SetReadLimit(1 << 20)
+	conn.SetReadLimit(maxMessageBytes)
 	session := newSession(s, conn, device)
 	session.run()
+}
+
+func (s *Server) macName(ctx context.Context) string {
+	if s.options.MacName != "" {
+		return s.options.MacName
+	}
+	if s.methods.supports(cmux.MethodHostStatus) {
+		callCtx, cancel := context.WithTimeout(ctx, hostNameTimeout)
+		name, err := s.cmux.HostName(callCtx)
+		cancel()
+		s.methods.observe(cmux.MethodHostStatus, err)
+		if err == nil && name != "" {
+			return name
+		}
+	}
+	return s.options.FallbackMacName
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
