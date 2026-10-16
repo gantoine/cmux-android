@@ -25,4 +25,12 @@ object NotificationFilter {
         Kind.Completed -> mac.completionNotifications
         Kind.Other -> true
     }
+
+    fun channel(notification: RelayNotification): String = when (kind(notification)) {
+        Kind.Completed -> Notifier.COMPLETIONS_CHANNEL
+        else -> Notifier.ALERTS_CHANNEL
+    }
+
+    fun isConversation(notification: RelayNotification): Boolean =
+        !notification.workspaceId.isNullOrBlank() && !notification.surfaceId.isNullOrBlank()
 }

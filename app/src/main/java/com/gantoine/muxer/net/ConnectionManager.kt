@@ -4,6 +4,7 @@ import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.data.MacSnapshot
 import com.gantoine.muxer.data.MacStore
 import com.gantoine.muxer.data.SnapshotStore
+import com.gantoine.muxer.notifications.ConversationTarget
 import com.gantoine.muxer.notifications.NotificationFilter
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
@@ -30,6 +31,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 
 data class VisibleTerminal(val macId: String, val surfaceId: String)
@@ -98,6 +101,55 @@ class ConnectionManager(
         val connection = connectionsFlow.map { it[macId] }.filterNotNull().first()
         connection.state.first { it is ConnectionState.Connected }
         connection
+    }
+
+    suspend fun sendAgentMessage(target: ConversationTarget, text: String): Result<Unit> {
+        val shared = connection(target.macId) ?: return Result.failure(IllegalStateException("This computer is not paired anymore."))
+        val route = AgentReplyRoute.choose(
+            sharedConnected = shared.state.value is ConnectionState.Connected,
+            sharedAttachedToTarget = shared.isAttachedTo(target.surfaceId),
+        )
+        return when (route) {
+            AgentReplyRoute.Shared -> deliverAgentMessage(shared, text)
+            AgentReplyRoute.Separate -> withSeparateConnection(target.macId) { separate ->
+                val attachment = separate.attach(target.workspaceId, target.surfaceId)
+                deliverAgentMessage(separate, text).also { separate.detach(attachment) }
+            }
+        }
+    }
+
+    private suspend fun deliverAgentMessage(connection: RelayConnection, text: String): Result<Unit> {
+        val messaged = connection.sendAgentMessage(text)
+        val error = messaged.exceptionOrNull() ?: return Result.success(Unit)
+        if (!AgentReplyRoute.shouldPasteInstead(error)) return Result.failure(error)
+        return connection.request("paste", buildJsonObject {
+            put("text", text)
+            put("submit", true)
+        }).map { }
+    }
+
+    private suspend fun <T> withSeparateConnection(macId: String, action: suspend (RelayConnection) -> Result<T>): Result<T> {
+        val mac = store.current().firstOrNull { it.id == macId }
+            ?: return Result.failure(IllegalStateException("This computer is not paired anymore."))
+        val token = store.token(mac) ?: return Result.failure(IllegalStateException("Pair ${mac.name} again."))
+        val separate = RelayConnection(
+            macId = mac.id,
+            baseUrl = mac.url,
+            token = token,
+            client = client,
+            scope = scope,
+            notificationsAfter = { mac.lastNotificationSeq },
+            onNotification = { _, _ -> },
+        )
+        return try {
+            separate.start()
+            val state = withTimeoutOrNull(SEPARATE_CONNECT_TIMEOUT_MS) {
+                separate.state.first { it is ConnectionState.Connected || it is ConnectionState.Unauthorized }
+            }
+            if (state is ConnectionState.Connected) action(separate) else Result.failure(IllegalStateException("Couldn't reach ${mac.name}."))
+        } finally {
+            separate.stop()
+        }
     }
 
     private fun reconcile(macs: List<Mac>, connectAll: Boolean) {
@@ -271,5 +323,6 @@ class ConnectionManager(
         const val MAX_TRACKED_PER_TERMINAL = 10
         const val SNAPSHOT_INTERVAL_MS = 500L
         const val SNAPSHOT_HEARTBEAT_MS = 60_000L
+        const val SEPARATE_CONNECT_TIMEOUT_MS = 6_000L
     }
 }

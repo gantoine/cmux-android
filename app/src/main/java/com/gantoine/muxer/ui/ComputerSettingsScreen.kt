@@ -115,16 +115,16 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
                 SettingsRow(
                     index = 0,
                     count = 3,
-                    headline = "Notify me in the background",
-                    supporting = "Keeps a connection to this computer open so agent and terminal alerts arrive while the app is closed. Uses some battery.",
+                    headline = "Stay connected in the background",
+                    supporting = "Keep watching this computer while the app is closed, so agent prompts and alerts still reach you. A quiet notification stays in the shade and uses some battery.",
                     onClick = { setBackground(!mac.backgroundNotifications) },
                     trailing = { Switch(checked = mac.backgroundNotifications, onCheckedChange = ::setBackground) },
                 )
                 SettingsRow(
                     index = 1,
                     count = 3,
-                    headline = "Tell me when an agent finishes",
-                    supporting = "Sends a notification with the agent's last message when it completes a task.",
+                    headline = "Alert me when an agent finishes",
+                    supporting = "Get a notification with the agent's last message when it completes a task.",
                     onClick = { scope.launch { app.store.setCompletionNotifications(macId, !mac.completionNotifications) } },
                     trailing = {
                         Switch(
@@ -136,8 +136,8 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
                 SettingsRow(
                     index = 2,
                     count = 3,
-                    headline = "Show agents in the background notification",
-                    supporting = "The notification that keeps the connection open lists this computer's agents: working, waiting for you, or retrying.",
+                    headline = "Show what agents are doing",
+                    supporting = "While connected in the background, the quiet notification lists this computer's agents: working, waiting for you, or retrying.",
                     onClick = { scope.launch { app.store.setShowActivity(macId, !mac.showActivity) } },
                     trailing = {
                         Switch(

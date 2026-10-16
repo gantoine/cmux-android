@@ -13,6 +13,7 @@ import com.gantoine.muxer.MuxerApplication
 sealed interface LaunchTarget {
     data class Pair(val url: String, val code: String) : LaunchTarget
     data class Terminal(val macId: String, val workspaceId: String, val surfaceId: String) : LaunchTarget
+    data object PairComputer : LaunchTarget
 }
 
 private object Routes {
@@ -37,6 +38,10 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
         when (launchTarget) {
             null -> return@LaunchedEffect
             is LaunchTarget.Pair -> navController.navigate(Routes.pair(launchTarget.url, launchTarget.code))
+            LaunchTarget.PairComputer -> {
+                navController.popBackStack(Routes.MACS, inclusive = false)
+                navController.navigate(Routes.pair())
+            }
             is LaunchTarget.Terminal -> {
                 navController.popBackStack(Routes.MACS, inclusive = false)
                 navController.navigate(Routes.workspaces(launchTarget.macId))

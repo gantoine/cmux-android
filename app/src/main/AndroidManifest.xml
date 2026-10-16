@@ -32,6 +32,9 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="muxer" android:host="pair" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <receiver
@@ -85,6 +88,16 @@
                 android:resource="@xml/widget_board_info" />
         </receiver>
 
+        <receiver
+            android:name=".notifications.AgentReplyReceiver"
+            android:exported="false" />
 
+        <activity
+            android:name=".BubbleActivity"
+            android:allowEmbedded="true"
+            android:documentLaunchMode="always"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>

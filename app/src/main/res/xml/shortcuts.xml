@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="pair"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_pair_short"
+        android:shortcutLongLabel="@string/shortcut_pair_long">
+        <intent
+            android:action="com.gantoine.muxer.PAIR"
+            android:targetClass="com.gantoine.muxer.MainActivity"
+            android:targetPackage="com.gantoine.muxer" />
+    </shortcut>
+</shortcuts>
