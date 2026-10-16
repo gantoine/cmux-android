@@ -314,35 +314,38 @@ h3 { font-size: 18px; margin: 0 0 6px; color: var(--bright); letter-spacing: -0.
 @keyframes flow { to { background-position: 18px 0, 0 0; } }
 .how p { color: var(--muted); text-wrap: pretty; margin-bottom: 0; }
 
-.steps {
+.markers {
   list-style: none;
-  counter-reset: step;
   padding: 0;
   margin: 0;
 }
-.steps li {
-  counter-increment: step;
+.markers > li {
   position: relative;
-  padding: 4px 0 36px 46px;
+  padding-left: 46px;
 }
-.steps h3 { line-height: 34px; margin: 0 0 4px; }
-.steps li:last-child { padding-bottom: 0; }
-.steps li::before {
-  content: counter(step);
+.markers > li::before {
   position: absolute;
   left: 0;
-  top: 6px;
+  top: var(--marker-top, 0);
   width: 30px;
   height: 30px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: var(--surface);
+  background: rgb(61 220 132 / 0.12);
   color: var(--green);
-  font-weight: 700;
-  font-size: 15px;
-  font-family: var(--mono);
+  font: 700 15px/1 var(--mono);
 }
+
+.steps { counter-reset: step; --marker-top: 6px; }
+.steps li {
+  counter-increment: step;
+  padding-top: 4px;
+  padding-bottom: 36px;
+}
+.steps h3 { line-height: 34px; margin: 0 0 4px; }
+.steps li:last-child { padding-bottom: 0; }
+.steps li::before { content: counter(step); }
 .steps p { margin: 0 0 8px; color: var(--muted); }
 .steps p:last-child { margin: 0; }
 pre {
@@ -393,38 +396,14 @@ pre code { font-size: 14px; }
 .copy.copied .done { opacity: 1; transform: scale(1); }
 
 .checks {
-  list-style: none;
-  padding: 0;
-  margin: 0;
   display: grid;
   gap: 14px;
+  --marker-top: calc(0.8em - 15px);
 }
-.checks li {
-  position: relative;
-  padding-left: 40px;
-  color: var(--muted);
-}
+.checks li { color: var(--muted); }
 .checks li::before {
   content: "";
-  position: absolute;
-  left: 0;
-  top: 0.1em;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: rgb(61 220 132 / 0.12);
-}
-.checks li::after {
-  content: "";
-  position: absolute;
-  left: 7px;
-  top: 0.1em;
-  width: 9px;
-  height: 5px;
-  margin-top: 7px;
-  border-left: 2px solid var(--green);
-  border-bottom: 2px solid var(--green);
-  transform: rotate(-45deg);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233ddc84' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 15px no-repeat rgb(61 220 132 / 0.12);
 }
 
 footer {
@@ -483,6 +462,7 @@ footer p { margin: 4px 0; }
     animation-name: flow-v;
   }
   @keyframes flow-v { to { background-position: 0 14px, 0 0; } }
-  .steps li { padding: 2px 0 28px 42px; }
+  .markers > li { padding-left: 42px; }
+  .steps li { padding-top: 2px; padding-bottom: 28px; }
   footer { margin-top: 80px; }
 }
