@@ -51,8 +51,6 @@ const (
 	maxInputBytes           = 64 * 1024
 	defaultHistoryLines     = 2000
 	maxHistoryLines         = 5000
-	defaultPeekLines        = 40
-	maxPeekLines            = 200
 	maxQueuedMessages       = 64
 	callTimeout             = 15 * time.Second
 	terminalGoneErrorCode   = "not_found"
@@ -327,27 +325,6 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			return nil, err
 		}
 		return history, nil
-	case "peek":
-		var request struct {
-			WorkspaceID string `json:"workspace_id"`
-			SurfaceID   string `json:"surface_id"`
-			Lines       int    `json:"lines"`
-		}
-		if err := json.Unmarshal(raw, &request); err != nil || request.WorkspaceID == "" || request.SurfaceID == "" {
-			return nil, &requestError{Code: "invalid_params", Message: "peek needs workspace_id and surface_id."}
-		}
-		if request.Lines <= 0 {
-			request.Lines = defaultPeekLines
-		}
-		request.Lines = min(request.Lines, maxPeekLines)
-		replay, err := s.server.cmux.History(ctx, request.WorkspaceID, request.SurfaceID, request.Lines)
-		if err != nil {
-			return nil, err
-		}
-		if replay.RenderGrid == nil {
-			return nil, &requestError{Code: "no_render_grid", Message: "cmux returned nothing for this terminal."}
-		}
-		return map[string]any{"lines": screen.Tail(screen.TextLines(replay.RenderGrid), request.Lines)}, nil
 	case "fit":
 		var request struct {
 			Columns int `json:"columns"`

@@ -37,7 +37,6 @@ object Widgets {
     private val receivers = listOf(
         ApprovalsWidgetReceiver::class.java,
         AgentBoardWidgetReceiver::class.java,
-        PeekWidgetReceiver::class.java,
     )
 
     fun inputs(app: MuxerApplication): Flow<WidgetInputs> =
@@ -52,9 +51,6 @@ object Widgets {
     suspend fun updateAll(context: Context) {
         ApprovalsWidget().updateAll(context)
         AgentBoardWidget().updateAll(context)
-        PeekWidget().updateAll(context)
-        PeekWidget.refreshAll(context)
-        PeekWidget().updateAll(context)
     }
 
     fun refreshNow(context: Context) {

@@ -176,28 +176,4 @@ object WidgetData {
         val seconds = AgentMessaging.secondsUntil(retry, now)
         return if (seconds == null || seconds == 0L) "$agent retries now" else "$agent retries in %d:%02d".format(seconds / 60, seconds % 60)
     }
-
-    fun previewLines(preview: String?, maxLines: Int, maxColumns: Int = Int.MAX_VALUE): List<String> {
-        if (maxLines <= 0 || maxColumns <= 0) return emptyList()
-        return preview.orEmpty()
-            .lines()
-            .map { it.trimEnd().take(maxColumns) }
-            .dropLastWhile { it.isEmpty() }
-            .takeLast(maxLines)
-            .dropWhile { it.isEmpty() }
-    }
-
-    fun peekPlaceholder(text: String?, error: String?, connected: Boolean): String = when {
-        error == "unsupported" -> "Update the relay on your computer to see terminal output here"
-        text != null -> "The terminal is empty"
-        !connected -> "Connect to the computer to see its terminal"
-        error != null -> "Couldn't read the terminal: $error"
-        else -> "Reading the terminal…"
-    }
-
-    fun previewLineCount(heightDp: Float, chromeDp: Float, lineDp: Float): Int =
-        ((heightDp - chromeDp) / lineDp).toInt().coerceAtLeast(1)
-
-    fun previewColumnCount(widthDp: Float, paddingDp: Float, charDp: Float): Int =
-        ((widthDp - paddingDp) / charDp).toInt().coerceAtLeast(1)
 }

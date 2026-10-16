@@ -157,25 +157,7 @@ class WidgetDataTest {
         assertEquals("The agent retries now", WidgetData.retryLabel(retry.copy(agent = null, dueAt = "soon"), Instant.ofEpochMilli(now)))
     }
 
-    @Test
-    fun previewShowsTheLastNonBlankLines() {
-        val preview = "one\ntwo  \n\nthree\nfour\n\n  \n"
-        assertEquals(listOf("three", "four"), WidgetData.previewLines(preview, 2))
-        assertEquals(listOf("two", "", "three", "four"), WidgetData.previewLines(preview, 4))
-        assertEquals(listOf("one", "two", "", "three", "four"), WidgetData.previewLines(preview, 10))
-        assertEquals(listOf("three", "four"), WidgetData.previewLines("\n\nthree\nfour", 3))
-        assertEquals(emptyList<String>(), WidgetData.previewLines(null, 3))
-        assertEquals(emptyList<String>(), WidgetData.previewLines(preview, 0))
-        assertEquals(listOf("thr", "fou"), WidgetData.previewLines(preview, 2, maxColumns = 3))
-    }
 
-    @Test
-    fun previewLineCountFitsTheWidgetHeight() {
-        assertEquals(5, WidgetData.previewLineCount(heightDp = 122f, chromeDp = 52f, lineDp = 14f))
-        assertEquals(1, WidgetData.previewLineCount(heightDp = 40f, chromeDp = 52f, lineDp = 14f))
-        assertEquals(30, WidgetData.previewColumnCount(widthDp = 238f, paddingDp = 28f, charDp = 7f))
-        assertEquals(1, WidgetData.previewColumnCount(widthDp = 20f, paddingDp = 28f, charDp = 7f))
-    }
 
     @Test
     fun idleAgentsWaitingForInputNeedYou() {
@@ -209,12 +191,4 @@ class WidgetDataTest {
         assertEquals("1 need you · 1 working", WidgetData.countsLabel(BoardCounts(0, 0, 1, 0, needsYou = 1)))
     }
 
-    @Test
-    fun peekPlaceholdersExplainWhyThereIsNoOutput() {
-        assertEquals("Reading the terminal…", WidgetData.peekPlaceholder(null, null, connected = true))
-        assertEquals("Connect to the computer to see its terminal", WidgetData.peekPlaceholder(null, null, connected = false))
-        assertEquals("The terminal is empty", WidgetData.peekPlaceholder("", null, connected = true))
-        assertTrue(WidgetData.peekPlaceholder(null, "unsupported", connected = true).contains("Update the relay"))
-        assertEquals("Couldn't read the terminal: boom", WidgetData.peekPlaceholder(null, "boom", connected = true))
-    }
 }
