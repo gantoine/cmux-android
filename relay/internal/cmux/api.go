@@ -14,6 +14,9 @@ type Terminal struct {
 	IsFocused        bool    `json:"is_focused"`
 	AgentSource      *string `json:"agent_source"`
 	AgentState       *string `json:"agent_state"`
+	GitBranch        *string `json:"git_branch,omitempty"`
+	GitDirty         *bool   `json:"git_dirty,omitempty"`
+	ListeningPorts   []int   `json:"listening_ports,omitempty"`
 }
 
 type Workspace struct {
@@ -32,6 +35,13 @@ type Workspace struct {
 	HasUnread        bool       `json:"has_unread"`
 	UnreadCount      int        `json:"unread_count"`
 	Terminals        []Terminal `json:"terminals"`
+}
+
+type TerminalGit struct {
+	SurfaceID      string  `json:"surface_id"`
+	GitBranch      *string `json:"git_branch"`
+	GitDirty       *bool   `json:"git_dirty"`
+	ListeningPorts []int   `json:"listening_ports"`
 }
 
 type WorkspaceGroup struct {
@@ -170,6 +180,14 @@ func (c *Client) Workspaces(ctx context.Context) (WorkspaceList, error) {
 		list.Groups = []WorkspaceGroup{}
 	}
 	return list, err
+}
+
+func (c *Client) TerminalGit(ctx context.Context) ([]TerminalGit, error) {
+	var dump struct {
+		Terminals []TerminalGit `json:"terminals"`
+	}
+	err := c.Call(ctx, "debug.terminals", nil, &dump)
+	return dump.Terminals, err
 }
 
 func (c *Client) Replay(ctx context.Context, workspaceID, surfaceID string) (Replay, error) {

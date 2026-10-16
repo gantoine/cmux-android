@@ -54,6 +54,7 @@ var readOnlyMethods = map[string]bool{
 	"feed.list":              true,
 	"agent.message.list":     true,
 	"caffeine.status":        true,
+	"debug.terminals":        true,
 }
 
 func isConnectionError(err error) bool {

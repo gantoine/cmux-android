@@ -30,6 +30,7 @@ type Intervals struct {
 	Workspaces time.Duration
 	Chat       time.Duration
 	KeepAwake  time.Duration
+	Git        time.Duration
 }
 
 var DefaultIntervals = Intervals{
@@ -41,6 +42,7 @@ var DefaultIntervals = Intervals{
 	Workspaces: 2 * time.Second,
 	Chat:       500 * time.Millisecond,
 	KeepAwake:  30 * time.Second,
+	Git:        10 * time.Second,
 }
 
 const (
@@ -471,9 +473,14 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 
 func (s *session) watchWorkspaces() {
 	var lastHash [32]byte
+	git := gitInfo{}
 	for {
 		ctx, cancel := context.WithTimeout(s.ctx, callTimeout)
 		list, err := s.server.cmux.Workspaces(ctx)
+		if err == nil {
+			git.refresh(ctx, s)
+			git.apply(list.Workspaces)
+		}
 		cancel()
 		if err == nil {
 			encoded, _ := json.Marshal(list)
@@ -489,6 +496,48 @@ func (s *session) watchWorkspaces() {
 			return
 		case <-s.workspacesWake:
 		case <-time.After(s.server.options.PollInterval.Workspaces):
+		}
+	}
+}
+
+type gitInfo struct {
+	bySurface   map[string]cmux.TerminalGit
+	fetchedAt   time.Time
+	unsupported bool
+}
+
+func (g *gitInfo) refresh(ctx context.Context, s *session) {
+	if g.unsupported || time.Since(g.fetchedAt) < s.server.options.PollInterval.Git {
+		return
+	}
+	terminals, err := s.server.cmux.TerminalGit(ctx)
+	if cmux.ErrorCode(err) == methodNotFoundErrorCode {
+		g.unsupported = true
+		return
+	}
+	if err != nil {
+		s.server.logger.Warn("could not read terminal git state", "error", err)
+		return
+	}
+	fetched := make(map[string]cmux.TerminalGit, len(terminals))
+	for _, terminal := range terminals {
+		fetched[terminal.SurfaceID] = terminal
+	}
+	g.bySurface = fetched
+	g.fetchedAt = time.Now()
+}
+
+func (g *gitInfo) apply(workspaces []cmux.Workspace) {
+	for _, workspace := range workspaces {
+		for index := range workspace.Terminals {
+			terminal := &workspace.Terminals[index]
+			git, ok := g.bySurface[terminal.ID]
+			if !ok {
+				continue
+			}
+			terminal.GitBranch = git.GitBranch
+			terminal.GitDirty = git.GitDirty
+			terminal.ListeningPorts = git.ListeningPorts
 		}
 	}
 }

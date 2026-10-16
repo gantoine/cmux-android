@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
@@ -763,6 +764,25 @@ private fun WorkspaceHeader(workspace: WorkspaceInfo, group: WorkspaceGroupInfo?
 }
 
 @Composable
+private fun TerminalGitLine(terminal: TerminalInfo) {
+    val branch = WorkspaceListing.gitSummary(terminal)
+    val ports = WorkspaceListing.portsSummary(terminal)
+    if (branch == null && ports == null) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (branch != null) {
+            Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = "Git branch", modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            listOfNotNull(branch, ports).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun SearchDock(query: String, onQueryChange: (String) -> Unit, onCreate: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier
@@ -828,9 +848,12 @@ internal fun TerminalChoice(terminal: TerminalInfo, onClick: () -> Unit) {
         supportingContent = {
             val title = terminal.title.ifBlank { "Terminal" }
             val path = terminal.currentDirectory?.let(WorkspaceListing::shortPath)?.takeIf { it != title }
-            listOfNotNull(terminal.agentState, path)
-                .takeIf { it.isNotEmpty() }
-                ?.let { Text(it.joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                listOfNotNull(terminal.agentState, path)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { Text(it.joinToString(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                TerminalGitLine(terminal)
+            }
         },
         leadingContent = {
             Icon(

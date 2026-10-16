@@ -50,6 +50,17 @@ object WorkspaceListing {
     fun needsTerminalAnswer(status: AgentStatus?): Boolean =
         status is AgentStatus.NeedsYou && terminalPromptWords.any { status.label.contains(it, ignoreCase = true) }
 
+    fun gitSummary(terminal: TerminalInfo): String? {
+        val branch = terminal.gitBranch?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return if (terminal.gitDirty == true) "$branch · uncommitted changes" else branch
+    }
+
+    fun portsSummary(terminal: TerminalInfo): String? = when (terminal.listeningPorts.size) {
+        0 -> null
+        1 -> "port ${terminal.listeningPorts.first()}"
+        else -> "ports " + terminal.listeningPorts.joinToString(", ")
+    }
+
     fun matches(workspace: WorkspaceInfo, query: String): Boolean {
         val needle = query.trim()
         if (needle.isEmpty()) return true

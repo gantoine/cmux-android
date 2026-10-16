@@ -40,6 +40,7 @@ type Cmux interface {
 	CreateTerminal(ctx context.Context, workspaceID string) (string, error)
 	AgentSession(ctx context.Context, workspaceID, surfaceID string) (cmux.AgentSession, error)
 	KeepAwake(ctx context.Context) (bool, error)
+	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
 	SetKeepAwake(ctx context.Context, enabled bool) (bool, error)
 }
 
@@ -91,6 +92,9 @@ func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, l
 	}
 	if options.PollInterval.Chat == 0 {
 		options.PollInterval.Chat = DefaultIntervals.Chat
+	}
+	if options.PollInterval.Git == 0 {
+		options.PollInterval.Git = DefaultIntervals.Git
 	}
 	if options.PollInterval.KeepAwake == 0 {
 		options.PollInterval.KeepAwake = DefaultIntervals.KeepAwake

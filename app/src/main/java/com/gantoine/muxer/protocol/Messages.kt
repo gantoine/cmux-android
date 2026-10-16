@@ -30,6 +30,9 @@ data class TerminalInfo(
     val isFocused: Boolean = false,
     val agentSource: String? = null,
     val agentState: String? = null,
+    val gitBranch: String? = null,
+    val gitDirty: Boolean? = null,
+    val listeningPorts: List<Int> = emptyList(),
 )
 
 @Serializable

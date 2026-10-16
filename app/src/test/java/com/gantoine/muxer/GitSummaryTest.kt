@@ -1,0 +1,41 @@
+package com.gantoine.muxer
+
+import com.gantoine.muxer.protocol.RelayJson
+import com.gantoine.muxer.protocol.TerminalInfo
+import com.gantoine.muxer.protocol.WorkspacesMessage
+import com.gantoine.muxer.ui.WorkspaceListing
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class GitSummaryTest {
+    private fun terminal(branch: String? = null, dirty: Boolean? = null, ports: List<Int> = emptyList()) =
+        TerminalInfo(id = "t1", gitBranch = branch, gitDirty = dirty, listeningPorts = ports)
+
+    @Test
+    fun summarisesEachTerminalsBranch() {
+        assertNull(WorkspaceListing.gitSummary(terminal()))
+        assertNull(WorkspaceListing.gitSummary(terminal(branch = " ")))
+        assertEquals("main", WorkspaceListing.gitSummary(terminal(branch = "main", dirty = false)))
+        assertEquals("feat/x · uncommitted changes", WorkspaceListing.gitSummary(terminal(branch = "feat/x", dirty = true)))
+    }
+
+    @Test
+    fun summarisesListeningPorts() {
+        assertNull(WorkspaceListing.portsSummary(terminal()))
+        assertEquals("port 3000", WorkspaceListing.portsSummary(terminal(ports = listOf(3000))))
+        assertEquals("ports 3000, 5173", WorkspaceListing.portsSummary(terminal(ports = listOf(3000, 5173))))
+    }
+
+    @Test
+    fun decodesPerTerminalGitStateFromTheRelay() {
+        val listing = RelayJson.decodeFromString(
+            WorkspacesMessage.serializer(),
+            """{"workspaces":[{"id":"w1","terminals":[{"id":"t1","git_branch":"main","git_dirty":true,"listening_ports":[8000]},{"id":"t2","git_branch":"feat/y"}]}]}""",
+        )
+        val (first, second) = listing.workspaces.single().terminals
+        assertEquals("main · uncommitted changes", WorkspaceListing.gitSummary(first))
+        assertEquals(listOf(8000), first.listeningPorts)
+        assertEquals("feat/y", WorkspaceListing.gitSummary(second))
+    }
+}
