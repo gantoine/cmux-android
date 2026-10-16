@@ -13,6 +13,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -21,17 +22,20 @@ class WatchSync(private val app: MuxerApplication) {
     fun start() {
         if (!hasPlayServices()) return
         app.scope.launch {
-            try {
-                combine(app.store.macs, app.snapshots.snapshots) { macs, snapshots ->
-                    WatchSummaries.build(macs, snapshots, System.currentTimeMillis())
+            while (true) {
+                try {
+                    combine(app.store.macs, app.snapshots.snapshots) { macs, snapshots ->
+                        WatchSummaries.build(macs, snapshots, System.currentTimeMillis())
+                    }
+                        .debounce(DEBOUNCE_MS)
+                        .distinctUntilChanged()
+                        .collect(::publish)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Log.i("cmux", "Can't share agent status with a watch right now, trying again later", failure)
+                    delay(RETRY_MS)
                 }
-                    .debounce(DEBOUNCE_MS)
-                    .distinctUntilChanged()
-                    .collect(::publish)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                Log.i("cmux", "Stopped sharing agent status with a watch", failure)
             }
         }
     }
@@ -50,5 +54,6 @@ class WatchSync(private val app: MuxerApplication) {
 
     private companion object {
         const val DEBOUNCE_MS = 1_000L
+        const val RETRY_MS = 5 * 60_000L
     }
 }
