@@ -115,6 +115,9 @@ object WorkspaceListing {
 
     fun isAgent(workspace: WorkspaceInfo): Boolean = workspace.terminals.any { it.agentSource != null || it.agentState != null }
 
+    fun needsAttention(text: String?): Boolean =
+        text?.let { candidate -> attentionWords.any { candidate.contains(it, ignoreCase = true) } } ?: false
+
     fun needsYou(workspace: WorkspaceInfo): Boolean =
         workspace.unreadCount > 0 || workspace.hasUnread || agentStatus(workspace) is AgentStatus.NeedsYou
 
@@ -134,7 +137,7 @@ object WorkspaceListing {
     }
 
     fun subtitle(workspace: WorkspaceInfo): String =
-        workspace.preview?.trim()?.takeIf(String::isNotEmpty)
+        workspace.preview?.trim()?.takeIf { it.isNotEmpty() && (isAgent(workspace) || !needsAttention(it)) }
             ?: workspace.currentDirectory?.let(::shortPath)
             ?: when (val count = workspace.terminals.size) {
                 0, 1 -> "Terminal"

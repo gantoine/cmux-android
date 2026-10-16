@@ -1,11 +1,15 @@
 package com.gantoine.muxer.net
 
 import com.gantoine.muxer.data.Mac
+import com.gantoine.muxer.data.MacSnapshot
 import com.gantoine.muxer.data.MacStore
+import com.gantoine.muxer.data.SnapshotStore
 import com.gantoine.muxer.notifications.NotificationFilter
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
+import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.Welcome
+import com.gantoine.muxer.protocol.WorkspaceInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -18,14 +22,21 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 
 data class VisibleTerminal(val macId: String, val surfaceId: String)
 
 class ConnectionManager(
     private val store: MacStore,
+    private val snapshots: SnapshotStore,
     private val client: OkHttpClient,
     private val scope: CoroutineScope,
     private val notify: (Mac, RelayNotification) -> Unit,
@@ -54,10 +65,14 @@ class ConnectionManager(
         }
     }.distinctUntilChanged()
 
+    private val awake = MutableStateFlow(false)
+    private var awakeUntil = 0L
+    private var sleepJob: Job? = null
+
     fun start() {
         scope.launch {
-            combine(store.macs, appVisible) { macs, visible -> macs to visible }
-                .collect { (macs, visible) -> reconcile(macs, visible) }
+            combine(store.macs, appVisible, awake) { macs, visible, awake -> macs to (visible || awake) }
+                .collect { (macs, wanted) -> reconcile(macs, wanted) }
         }
     }
 
@@ -65,14 +80,33 @@ class ConnectionManager(
         appVisible.value = visible
     }
 
+    fun wake(durationMs: Long) {
+        synchronized(awake) {
+            awakeUntil = maxOf(awakeUntil, System.currentTimeMillis() + durationMs)
+            awake.value = true
+            sleepJob?.cancel()
+            sleepJob = scope.launch {
+                delay(awakeUntil - System.currentTimeMillis())
+                awake.value = false
+            }
+        }
+    }
+
     fun connection(macId: String): RelayConnection? = synchronized(connections) { connections[macId] }
 
-    private fun reconcile(macs: List<Mac>, appVisible: Boolean) {
+    suspend fun awaitConnected(macId: String, timeoutMs: Long): RelayConnection? = withTimeoutOrNull(timeoutMs) {
+        val connection = connectionsFlow.map { it[macId] }.filterNotNull().first()
+        connection.state.first { it is ConnectionState.Connected }
+        connection
+    }
+
+    private fun reconcile(macs: List<Mac>, connectAll: Boolean) {
         synchronized(connections) {
             val ids = macs.map { it.id }.toSet()
-            connections.keys.filterNot { it in ids }.forEach {
-                connections.remove(it)?.stop()
-                watchers.remove(it)?.cancel()
+            connections.keys.filterNot { it in ids }.forEach { macId ->
+                connections.remove(macId)?.stop()
+                watchers.remove(macId)?.cancel()
+                scope.launch { snapshots.remove(macId) }
             }
             for (mac in macs) {
                 val existing = connections[mac.id]
@@ -91,13 +125,14 @@ class ConnectionManager(
                         watchers[mac.id] = scope.launch {
                             launch { watchApprovals(mac.id, connection) }
                             launch { watchRetries(mac.id, connection) }
+                            launch { writeSnapshots(mac.id, connection) }
                         }
                     }
                 }
             }
             for (mac in macs) {
                 val connection = connections[mac.id] ?: continue
-                if (appVisible || mac.backgroundNotifications) connection.start() else connection.stop()
+                if (connectAll || mac.backgroundNotifications) connection.start() else connection.stop()
             }
             _connectionsFlow.value = connections.toMap()
         }
@@ -126,6 +161,56 @@ class ConnectionManager(
             shown.forEach(dismissApproval)
         }
     }
+
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
+    private suspend fun writeSnapshots(macId: String, connection: RelayConnection) {
+        combine(
+            connection.state,
+            connection.workspaces,
+            connection.approvals,
+            connection.retries,
+            connection.busySurfaces,
+        ) { state, workspaces, approvals, retries, busy ->
+            SnapshotInputs(state is ConnectionState.Connected, workspaces, approvals, retries, busy)
+        }
+            .flatMapLatest { inputs -> repeatedWhileConnected(inputs) }
+            .sample(SNAPSHOT_INTERVAL_MS)
+            .collect { inputs ->
+                val mac = store.current().firstOrNull { it.id == macId } ?: return@collect
+                if (!inputs.connected) {
+                    snapshots.markDisconnected(macId)
+                    return@collect
+                }
+                snapshots.write(
+                    MacSnapshot(
+                        macId = macId,
+                        macName = mac.name,
+                        connected = true,
+                        updatedAt = System.currentTimeMillis(),
+                        workspaces = inputs.workspaces.orEmpty(),
+                        approvals = inputs.approvals,
+                        retries = inputs.retries,
+                        busySurfaces = inputs.busy,
+                    ),
+                )
+            }
+    }
+
+    private fun repeatedWhileConnected(inputs: SnapshotInputs) = flow {
+        emit(inputs)
+        while (inputs.connected) {
+            delay(SNAPSHOT_HEARTBEAT_MS)
+            emit(inputs)
+        }
+    }
+
+    private data class SnapshotInputs(
+        val connected: Boolean,
+        val workspaces: List<WorkspaceInfo>?,
+        val approvals: List<Approval>,
+        val retries: List<Retry>,
+        val busy: Set<String>,
+    )
 
     private suspend fun watchRetries(macId: String, connection: RelayConnection) {
         connection.retries.collect { retries ->
@@ -184,5 +269,7 @@ class ConnectionManager(
 
     private companion object {
         const val MAX_TRACKED_PER_TERMINAL = 10
+        const val SNAPSHOT_INTERVAL_MS = 500L
+        const val SNAPSHOT_HEARTBEAT_MS = 60_000L
     }
 }

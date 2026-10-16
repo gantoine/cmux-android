@@ -6,12 +6,14 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.gantoine.muxer.data.MacStore
+import com.gantoine.muxer.data.SnapshotStore
 import com.gantoine.muxer.net.ConnectionManager
 import com.gantoine.muxer.net.PairingClient
 import com.gantoine.muxer.notifications.ConnectionService
 import com.gantoine.muxer.notifications.Notifier
 import com.gantoine.muxer.tile.NotificationsTile
 import com.gantoine.muxer.tile.NotificationsTileService
+import com.gantoine.muxer.widget.Widgets
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,12 +35,14 @@ class MuxerApplication : Application() {
     }
 
     val store: MacStore by lazy { MacStore(this) }
+    val snapshots: SnapshotStore by lazy { SnapshotStore(this) }
     val notifier: Notifier by lazy { Notifier(this) }
     val pairing: PairingClient by lazy { PairingClient(httpClient) }
 
     val connections: ConnectionManager by lazy {
         ConnectionManager(
             store = store,
+            snapshots = snapshots,
             client = httpClient,
             scope = scope,
             notify = notifier::show,
@@ -58,6 +62,7 @@ class MuxerApplication : Application() {
             store.migrateGlobalBackgroundSetting()
             connections.start()
             launch { keepQuickSettingsTileInSync() }
+            launch { Widgets.keepFresh(this@MuxerApplication) }
             keepBackgroundServiceInSync()
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {

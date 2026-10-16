@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 
 val BrandGreen = Color(0xFF3DDC84)
 
-private val brandDark = darkColorScheme(
+internal val BrandDarkColors = darkColorScheme(
     primary = Color(0xFF6FE3A2),
     onPrimary = Color(0xFF00391D),
     primaryContainer = Color(0xFF00522D),
@@ -50,7 +50,7 @@ private val brandDark = darkColorScheme(
     inversePrimary = Color(0xFF006D3C),
 )
 
-private val brandLight = lightColorScheme(
+internal val BrandLightColors = lightColorScheme(
     primary = Color(0xFF006D3C),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFF8CFFBD),
@@ -93,8 +93,8 @@ fun CmuxTheme(content: @Composable () -> Unit) {
     val colors = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
-        dark -> brandDark
-        else -> brandLight
+        dark -> BrandDarkColors
+        else -> BrandLightColors
     }
     MaterialExpressiveTheme(colorScheme = colors, motionScheme = MotionScheme.expressive(), content = content)
 }

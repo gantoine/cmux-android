@@ -125,21 +125,13 @@ class Notifier(private val context: Context) {
     private fun openTerminalIntent(macId: String, notification: RelayNotification): PendingIntent =
         openTerminalIntent(macId, notification.workspaceId, notification.surfaceId, notification.id.hashCode())
 
-    fun openTerminalIntent(macId: String, workspaceId: String?, surfaceId: String?, requestCode: Int): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            action = ACTION_OPEN_TERMINAL
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_MAC_ID, macId)
-            putExtra(EXTRA_WORKSPACE_ID, workspaceId)
-            putExtra(EXTRA_SURFACE_ID, surfaceId)
-        }
-        return PendingIntent.getActivity(
+    fun openTerminalIntent(macId: String, workspaceId: String?, surfaceId: String?, requestCode: Int): PendingIntent =
+        PendingIntent.getActivity(
             context,
             requestCode,
-            intent,
+            openTerminal(context, macId, workspaceId, surfaceId),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-    }
 
     private fun approvalNotificationId(approvalId: String): Int = "approval:$approvalId".hashCode()
 
@@ -152,5 +144,14 @@ class Notifier(private val context: Context) {
         const val EXTRA_WORKSPACE_ID = "workspace_id"
         const val EXTRA_SURFACE_ID = "surface_id"
         private const val MAX_NOTIFICATION_ACTIONS = 3
+
+        fun openTerminal(context: Context, macId: String, workspaceId: String?, surfaceId: String?): Intent =
+            Intent(context, MainActivity::class.java).apply {
+                action = ACTION_OPEN_TERMINAL
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_MAC_ID, macId)
+                putExtra(EXTRA_WORKSPACE_ID, workspaceId)
+                putExtra(EXTRA_SURFACE_ID, surfaceId)
+            }
     }
 }
