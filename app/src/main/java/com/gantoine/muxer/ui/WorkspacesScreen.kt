@@ -38,7 +38,16 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MarkEmailRead
+import androidx.compose.material.icons.filled.MarkEmailUnread
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
@@ -109,7 +118,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 private sealed interface WorkspaceLine {
     val key: String
@@ -155,6 +166,16 @@ private sealed interface WorkspaceDialog {
     data class Rename(val workspace: WorkspaceInfo) : WorkspaceDialog
     data class Close(val workspace: WorkspaceInfo, val force: Boolean) : WorkspaceDialog
     data class PickTerminal(val workspace: WorkspaceInfo) : WorkspaceDialog
+    data class Lane(val workspace: WorkspaceInfo) : WorkspaceDialog
+    data class Color(val workspace: WorkspaceInfo) : WorkspaceDialog
+    data class Describe(val workspace: WorkspaceInfo) : WorkspaceDialog
+    data class PickGroup(val workspace: WorkspaceInfo) : WorkspaceDialog
+    data class NewGroup(val workspace: WorkspaceInfo) : WorkspaceDialog
+    data class GroupActions(val group: WorkspaceGroupInfo) : WorkspaceDialog
+    data class RenameGroup(val group: WorkspaceGroupInfo) : WorkspaceDialog
+    data class GroupColor(val group: WorkspaceGroupInfo) : WorkspaceDialog
+    data class NewInGroup(val group: WorkspaceGroupInfo) : WorkspaceDialog
+    data class Ungroup(val group: WorkspaceGroupInfo) : WorkspaceDialog
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -165,6 +186,7 @@ fun WorkspacesScreen(
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onOpenChecklist: (workspaceId: String) -> Unit,
     onOpenTerminal: (workspaceId: String, surfaceId: String) -> Unit,
 ) {
     val connections by app.connections.connectionsFlow.collectAsState()
@@ -208,6 +230,17 @@ fun WorkspacesScreen(
             1 -> onOpenTerminal(workspace.id, workspace.terminals.first().id)
             else -> dialog = WorkspaceDialog.PickTerminal(workspace)
         }
+    }
+
+    fun workspaceAction(workspace: WorkspaceInfo, action: String, color: String? = null, description: String? = null) {
+        run({
+            request("workspace_action", buildJsonObject {
+                put("workspace_id", workspace.id)
+                put("action", action)
+                color?.let { put("color", it) }
+                description?.let { put("description", it) }
+            })
+        })
     }
 
     val state by (connection?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
@@ -313,6 +346,7 @@ fun WorkspacesScreen(
                                         canCollapse = !narrowed,
                                         shape = shape,
                                         onToggle = { toggle(line.entry.group) },
+                                        onLongPress = { dialog = WorkspaceDialog.GroupActions(line.entry.group) },
                                         modifier = modifier,
                                     )
                                     is WorkspaceLine.Anchor -> GroupTerminalsRow(
@@ -375,6 +409,29 @@ fun WorkspacesScreen(
                     }
                 }
             }
+            OrganizeActions(
+                workspace = current.workspace,
+                groups = groups,
+                onChecklist = {
+                    dialog = null
+                    onOpenChecklist(current.workspace.id)
+                },
+                onDialog = { dialog = it },
+                onAction = { action -> dialog = null; workspaceAction(current.workspace, action) },
+                onRemoveFromGroup = { group ->
+                    dialog = null
+                    run({
+                        request("remove_from_group", buildJsonObject {
+                            put("group_id", group.id)
+                            put("workspace_id", current.workspace.id)
+                        })
+                    })
+                },
+                onReconnect = {
+                    dialog = null
+                    run({ request("reconnect_workspace", buildJsonObject { put("workspace_id", current.workspace.id) }) })
+                },
+            )
             if (current.group == null) {
                 SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename") { dialog = WorkspaceDialog.Rename(current.workspace) }
                 SheetAction(Icons.Filled.Close, "Close workspace", destructive = true) {
@@ -382,6 +439,126 @@ fun WorkspacesScreen(
                 }
             }
         }
+        is WorkspaceDialog.Lane -> LanePickerSheet(current.workspace.status, onDismiss = { dialog = null }) { lane ->
+            dialog = null
+            run({
+                request("set_workspace_status", buildJsonObject {
+                    put("workspace_id", current.workspace.id)
+                    put("status", lane)
+                })
+            })
+        }
+        is WorkspaceDialog.Color -> ColorPickerSheet("Workspace color", current.workspace.customColor, onDismiss = { dialog = null }) { hex ->
+            dialog = null
+            workspaceAction(current.workspace, if (hex == null) "clear_color" else "set_color", color = hex)
+        }
+        is WorkspaceDialog.Describe -> TextInputDialog(
+            title = "Description",
+            fields = listOf("Description" to current.workspace.description.orEmpty()),
+            confirm = "Save",
+            onDismiss = { dialog = null },
+        ) { (description) ->
+            dialog = null
+            workspaceAction(current.workspace, "set_description", description = description)
+        }
+        is WorkspaceDialog.PickGroup -> GroupPickerSheet(
+            groups = groups,
+            onDismiss = { dialog = null },
+            onPick = { group ->
+                dialog = null
+                run({
+                    request("add_to_group", buildJsonObject {
+                        put("group_id", group.id)
+                        put("workspace_id", current.workspace.id)
+                    })
+                })
+            },
+            onNew = { dialog = WorkspaceDialog.NewGroup(current.workspace) },
+        )
+        is WorkspaceDialog.NewGroup -> TextInputDialog(
+            title = "New group",
+            fields = listOf("Name" to ""),
+            confirm = "Create",
+            onDismiss = { dialog = null },
+        ) { (name) ->
+            dialog = null
+            run({
+                request("create_group", buildJsonObject {
+                    put("name", name)
+                    putJsonArray("workspace_ids") { add(current.workspace.id) }
+                })
+            })
+        }
+        is WorkspaceDialog.GroupActions -> ActionSheet(
+            onDismiss = { dialog = null },
+            header = { Text(current.group.name.ifBlank { "Group" }, style = MaterialTheme.typography.titleMedium) },
+        ) {
+            SheetAction(Icons.Filled.Add, "New workspace in group") { dialog = WorkspaceDialog.NewInGroup(current.group) }
+            SheetAction(Icons.Filled.PushPin, if (current.group.isPinned) "Unpin group" else "Pin group") {
+                dialog = null
+                run({
+                    request("pin_group", buildJsonObject {
+                        put("group_id", current.group.id)
+                        put("pinned", !current.group.isPinned)
+                    })
+                })
+            }
+            SheetAction(Icons.Filled.Palette, "Color") { dialog = WorkspaceDialog.GroupColor(current.group) }
+            SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename group") { dialog = WorkspaceDialog.RenameGroup(current.group) }
+            SheetAction(Icons.Filled.FolderOff, "Ungroup", destructive = true) { dialog = WorkspaceDialog.Ungroup(current.group) }
+        }
+        is WorkspaceDialog.RenameGroup -> TextInputDialog(
+            title = "Rename group",
+            fields = listOf("Name" to current.group.name),
+            confirm = "Rename",
+            onDismiss = { dialog = null },
+        ) { (name) ->
+            dialog = null
+            run({
+                request("rename_group", buildJsonObject {
+                    put("group_id", current.group.id)
+                    put("name", name)
+                })
+            })
+        }
+        is WorkspaceDialog.GroupColor -> ColorPickerSheet("Group color", current.group.customColor, onDismiss = { dialog = null }) { hex ->
+            dialog = null
+            run({
+                request("set_group_color", buildJsonObject {
+                    put("group_id", current.group.id)
+                    put("color", hex)
+                })
+            })
+        }
+        is WorkspaceDialog.NewInGroup -> TextInputDialog(
+            title = "New workspace in ${current.group.name.ifBlank { "group" }}",
+            fields = listOf("Name (optional)" to ""),
+            confirm = "Create",
+            onDismiss = { dialog = null },
+        ) { (title) ->
+            dialog = null
+            run({
+                request("create_workspace_in_group", buildJsonObject {
+                    put("group_id", current.group.id)
+                    put("title", title)
+                }).onSuccess { data ->
+                    val created = data?.let { RelayJson.decodeFromJsonElement(CreatedWorkspace.serializer(), it) }
+                    if (created != null && created.surfaceId.isNotEmpty()) onOpenTerminal(created.workspaceId, created.surfaceId)
+                }
+            })
+        }
+        is WorkspaceDialog.Ungroup -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Ungroup ${current.group.name.ifBlank { "this group" }}?") },
+            text = { Text("The workspaces stay open on your computer. Only the group goes away.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    dialog = null
+                    run({ request("ungroup", buildJsonObject { put("group_id", current.group.id) }) })
+                }) { Text("Ungroup") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
+        )
         is WorkspaceDialog.Rename -> TextInputDialog(
             title = "Rename workspace",
             fields = listOf("Name" to current.workspace.title),
@@ -428,6 +605,44 @@ fun WorkspacesScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OrganizeActions(
+    workspace: WorkspaceInfo,
+    groups: List<WorkspaceGroupInfo>,
+    onChecklist: () -> Unit,
+    onDialog: (WorkspaceDialog) -> Unit,
+    onAction: (String) -> Unit,
+    onRemoveFromGroup: (WorkspaceGroupInfo) -> Unit,
+    onReconnect: () -> Unit,
+) {
+    val lane = workspace.status?.let(Organizing::laneSummary)
+    SheetAction(Icons.Filled.Flag, lane?.let { "Status: $it" } ?: "Status") { onDialog(WorkspaceDialog.Lane(workspace)) }
+    val progress = Organizing.checklistSummary(workspace.checklist)
+    SheetAction(Icons.Filled.Checklist, progress?.let { "Checklist ($it)" } ?: "Checklist", onClick = onChecklist)
+    SheetAction(Icons.Filled.PushPin, if (workspace.isPinned) "Unpin" else "Pin") { onAction(if (workspace.isPinned) "unpin" else "pin") }
+    if (WorkspaceListing.isUnread(workspace)) {
+        SheetAction(Icons.Filled.MarkEmailRead, "Mark as read") { onAction("mark_read") }
+    } else {
+        SheetAction(Icons.Filled.MarkEmailUnread, "Mark as unread") { onAction("mark_unread") }
+    }
+    SheetAction(Icons.Filled.Palette, Organizing.colorName(workspace.customColor)?.let { "Color: $it" } ?: "Color") {
+        onDialog(WorkspaceDialog.Color(workspace))
+    }
+    SheetAction(Icons.AutoMirrored.Filled.Notes, if (workspace.description.isNullOrBlank()) "Add description" else "Edit description") {
+        onDialog(WorkspaceDialog.Describe(workspace))
+    }
+    val group = Organizing.groupOf(workspace, groups)
+    when {
+        group == null -> SheetAction(Icons.Filled.CreateNewFolder, "Add to group") { onDialog(WorkspaceDialog.PickGroup(workspace)) }
+        !Organizing.isAnchor(workspace, group) -> SheetAction(Icons.Filled.FolderOff, "Remove from ${group.name.ifBlank { "group" }}") {
+            onRemoveFromGroup(group)
+        }
+    }
+    if (Organizing.canReconnect(workspace.remote)) {
+        SheetAction(Icons.Filled.Sync, "Reconnect") { onReconnect() }
     }
 }
 
@@ -524,6 +739,7 @@ private fun WorkspaceRow(
                 highlightTime = unread,
                 maxLines = 2,
             )
+            WorkspaceMetaLine(workspace)
         }
     }
 }
@@ -552,7 +768,7 @@ private fun SubtitleLine(subtitle: String, time: String?, highlightTime: Boolean
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun GroupHeaderRow(
     entry: WorkspaceEntry.Group,
@@ -560,8 +776,10 @@ private fun GroupHeaderRow(
     canCollapse: Boolean,
     shape: androidx.compose.ui.graphics.Shape,
     onToggle: () -> Unit,
+    onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
     val count = entry.members.size
     val background = MaterialTheme.colorScheme.surfaceContainerHigh
     Row(
@@ -570,11 +788,13 @@ private fun GroupHeaderRow(
             .padding(horizontal = 16.dp)
             .clip(shape)
             .background(background)
-            .then(
-                if (canCollapse) {
-                    Modifier.clickable(onClickLabel = if (collapsed) "Show workspaces" else "Hide workspaces", onClick = onToggle)
-                } else {
-                    Modifier
+            .combinedClickable(
+                onClickLabel = if (canCollapse) (if (collapsed) "Show workspaces" else "Hide workspaces") else null,
+                onClick = { if (canCollapse) onToggle() },
+                onLongClickLabel = "Group actions",
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
                 },
             )
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -584,7 +804,12 @@ private fun GroupHeaderRow(
             Modifier.width(48.dp).semantics { contentDescription = if (count == 1) "1 workspace" else "$count workspaces" },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Filled.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+            Icon(
+                Icons.Filled.Folder,
+                contentDescription = null,
+                tint = entry.group.customColor?.let(::parseHexColor) ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
             Text(
                 "$count",
                 color = background,
@@ -660,12 +885,13 @@ private fun GroupTerminalsRow(
             )
         }
         Spacer(Modifier.width(16.dp))
-        Box(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f)) {
             SubtitleLine(
                 WorkspaceListing.subtitle(workspace),
                 WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt),
                 highlightTime = unread,
             )
+            WorkspaceMetaLine(workspace)
         }
     }
 }

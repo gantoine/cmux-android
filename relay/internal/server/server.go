@@ -46,6 +46,11 @@ type Cmux interface {
 	RunCommand(ctx context.Context, workspaceID, surfaceID, command string) (bool, error)
 	VaultSessions(ctx context.Context, agent string, limit int) ([]cmux.VaultSession, error)
 	VaultSearch(ctx context.Context, query string, limit int) ([]cmux.VaultSession, error)
+	Perform(ctx context.Context, method string, params map[string]any, result any) error
+	LaneStatus(ctx context.Context, workspaceID string) (cmux.LaneStatus, error)
+	Checklist(ctx context.Context, workspaceID string) (cmux.Checklist, error)
+	GroupDetails(ctx context.Context) ([]cmux.GroupDetails, error)
+	RemoteState(ctx context.Context, workspaceID string) (*cmux.RemoteState, error)
 	AgentSession(ctx context.Context, workspaceID, surfaceID string) (cmux.AgentSession, error)
 	KeepAwake(ctx context.Context) (bool, error)
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
@@ -109,6 +114,7 @@ type Server struct {
 	methods    methodSupport
 	workspaces *feed
 	keepAwake  *feed
+	organizing *workspaceExtras
 }
 
 func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, logger *slog.Logger) *Server {
@@ -123,6 +129,9 @@ func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, l
 	}
 	if options.PollInterval.InputState == 0 {
 		options.PollInterval.InputState = DefaultIntervals.InputState
+	}
+	if options.PollInterval.Organizing == 0 {
+		options.PollInterval.Organizing = DefaultIntervals.Organizing
 	}
 	if options.PollInterval.KeepAwake == 0 {
 		options.PollInterval.KeepAwake = DefaultIntervals.KeepAwake
@@ -140,6 +149,7 @@ func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, l
 	ctx, cancel := context.WithCancel(context.Background())
 	server := &Server{cmux: cmuxAPI, devices: store, hub: hub, options: options, logger: logger, ctx: ctx, cancel: cancel}
 	server.viewportGeneration.Store(time.Now().UnixMilli())
+	server.organizing = &workspaceExtras{}
 	server.workspaces = newFeed(options.PollInterval.Workspaces, server.pollWorkspaces(&gitInfo{}))
 	server.keepAwake = newFeed(options.PollInterval.KeepAwake, server.pollKeepAwake)
 	return server

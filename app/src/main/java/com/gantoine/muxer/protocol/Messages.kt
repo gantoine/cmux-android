@@ -49,7 +49,25 @@ data class WorkspaceInfo(
     val hasUnread: Boolean = false,
     val unreadCount: Int = 0,
     val terminals: List<TerminalInfo> = emptyList(),
+    val status: LaneStatus? = null,
+    val checklist: ChecklistProgress? = null,
+    val remote: RemoteState? = null,
 )
+
+@Serializable
+data class LaneStatus(val effective: String, val inferred: String = "", val override: Boolean = false)
+
+@Serializable
+data class ChecklistProgress(val completed: Int = 0, val total: Int = 0, val next: String? = null)
+
+@Serializable
+data class RemoteState(val state: String, val destination: String? = null, val detail: String? = null)
+
+@Serializable
+data class ChecklistItem(val id: String, val text: String, val state: String = "pending", val origin: String = "user")
+
+@Serializable
+data class Checklist(val items: List<ChecklistItem> = emptyList(), val progress: ChecklistProgress = ChecklistProgress())
 
 @Serializable
 data class WorkspaceGroupInfo(
@@ -59,6 +77,7 @@ data class WorkspaceGroupInfo(
     val memberWorkspaceIds: List<String> = emptyList(),
     val isCollapsed: Boolean = false,
     val isPinned: Boolean = false,
+    val customColor: String? = null,
 )
 
 @Serializable

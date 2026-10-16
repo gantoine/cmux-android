@@ -11,7 +11,15 @@ import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
-enum class WorkspaceFilter(val label: String) { All("All"), NeedsYou("Needs you"), Agents("Agents"), Pinned("Pinned") }
+enum class WorkspaceFilter(val label: String, val lane: String? = null) {
+    All("All"),
+    NeedsYou("Needs you"),
+    Agents("Agents"),
+    Pinned("Pinned"),
+    ToDo("To do", "todo"),
+    Review("Review", "review"),
+    Done("Done", "done"),
+}
 
 sealed interface AgentStatus {
     val label: String
@@ -92,6 +100,7 @@ object WorkspaceListing {
         WorkspaceFilter.NeedsYou -> needsYou(workspace)
         WorkspaceFilter.Agents -> isAgent(workspace)
         WorkspaceFilter.Pinned -> workspace.isPinned
+        WorkspaceFilter.ToDo, WorkspaceFilter.Review, WorkspaceFilter.Done -> workspace.status?.effective == filter.lane
     }
 
     fun entries(

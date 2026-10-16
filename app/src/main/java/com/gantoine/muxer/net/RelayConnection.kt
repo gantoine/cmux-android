@@ -10,6 +10,7 @@ import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.ApprovalsMessage
 import com.gantoine.muxer.protocol.ChatMessage
 import com.gantoine.muxer.protocol.ChatSessionMessage
+import com.gantoine.muxer.protocol.Checklist
 import com.gantoine.muxer.protocol.CloudVm
 import com.gantoine.muxer.protocol.CloudVmsResponse
 import com.gantoine.muxer.protocol.DetachedMessage
@@ -51,6 +52,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -485,6 +487,40 @@ class RelayConnection(
             surfaceId?.let { put("surface_id", it) }
             if (all) put("all", true)
         }).map { }
+
+    suspend fun checklist(workspaceId: String): Result<Checklist> = checklistRequest("checklist", workspaceId)
+
+    suspend fun addChecklistItem(workspaceId: String, text: String): Result<Checklist> =
+        checklistRequest("add_checklist_item", workspaceId) { put("text", text) }
+
+    suspend fun editChecklistItem(workspaceId: String, itemId: String, text: String): Result<Checklist> =
+        checklistRequest("edit_checklist_item", workspaceId) {
+            put("item_id", itemId)
+            put("text", text)
+        }
+
+    suspend fun setChecklistItemState(workspaceId: String, itemId: String, state: String): Result<Checklist> =
+        checklistRequest("set_checklist_item_state", workspaceId) {
+            put("item_id", itemId)
+            put("state", state)
+        }
+
+    suspend fun removeChecklistItem(workspaceId: String, itemId: String): Result<Checklist> =
+        checklistRequest("remove_checklist_item", workspaceId) { put("item_id", itemId) }
+
+    suspend fun clearChecklist(workspaceId: String): Result<Checklist> = checklistRequest("clear_checklist", workspaceId)
+
+    private suspend fun checklistRequest(
+        type: String,
+        workspaceId: String,
+        fields: JsonObjectBuilder.() -> Unit = {},
+    ): Result<Checklist> =
+        request(type, buildJsonObject {
+            put("workspace_id", workspaceId)
+            fields()
+        }).mapCatching { data ->
+            data?.let { RelayJson.decodeFromJsonElement(Checklist.serializer(), it) } ?: Checklist()
+        }
 
     suspend fun recentSessions(query: String = ""): Result<List<RecentSession>> =
         request("recent_sessions", buildJsonObject { if (query.isNotBlank()) put("query", query.trim()) }).mapCatching { data ->

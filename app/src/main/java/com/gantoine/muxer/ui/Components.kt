@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.net.ConnectionState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 fun groupedShape(index: Int, count: Int): Shape {
     val large = 24.dp
@@ -172,7 +174,7 @@ fun ActionSheet(
     actions: @Composable () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).navigationBarsPadding()) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 12.dp).navigationBarsPadding()) {
             if (header != null) {
                 Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { header() }
                 Spacer(Modifier.height(8.dp))

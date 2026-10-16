@@ -63,6 +63,13 @@ type fakeCmux struct {
 	vaultCalls      []string
 	commands        []string
 	submitted       bool
+	performed       []string
+	performErr      error
+	performResults  map[string]string
+	lanes           map[string]cmux.LaneStatus
+	checklists      map[string]cmux.Checklist
+	groupDetails    []cmux.GroupDetails
+	remotes         map[string]cmux.RemoteState
 }
 
 type sentChat struct {
@@ -355,6 +362,55 @@ func (f *fakeCmux) wakeTerminal(workspaceID, surfaceID string) {
 			}
 		}
 	}
+}
+
+func (f *fakeCmux) Perform(_ context.Context, method string, params map[string]any, result any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	encoded, _ := json.Marshal(params)
+	f.performed = append(f.performed, method+" "+string(encoded))
+	if canned, ok := f.performResults[method]; ok && result != nil {
+		_ = json.Unmarshal([]byte(canned), result)
+	}
+	return f.performErr
+}
+
+func (f *fakeCmux) LaneStatus(_ context.Context, workspaceID string) (cmux.LaneStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lanes[workspaceID], nil
+}
+
+func (f *fakeCmux) Checklist(_ context.Context, workspaceID string) (cmux.Checklist, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	checklist, ok := f.checklists[workspaceID]
+	if !ok {
+		return cmux.Checklist{Items: []cmux.ChecklistItem{}}, nil
+	}
+	return checklist, nil
+}
+
+func (f *fakeCmux) GroupDetails(context.Context) ([]cmux.GroupDetails, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.groupDetails, nil
+}
+
+func (f *fakeCmux) RemoteState(_ context.Context, workspaceID string) (*cmux.RemoteState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	remote, ok := f.remotes[workspaceID]
+	if !ok {
+		return nil, nil
+	}
+	return &remote, nil
+}
+
+func (f *fakeCmux) performedCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.performed...)
 }
 
 func (f *fakeCmux) RunCommand(_ context.Context, workspaceID, surfaceID, command string) (bool, error) {

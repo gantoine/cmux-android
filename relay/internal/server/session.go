@@ -33,6 +33,7 @@ type Intervals struct {
 	KeepAwake  time.Duration
 	Git        time.Duration
 	InputState time.Duration
+	Organizing time.Duration
 }
 
 var DefaultIntervals = Intervals{
@@ -46,6 +47,7 @@ var DefaultIntervals = Intervals{
 	KeepAwake:  30 * time.Second,
 	Git:        10 * time.Second,
 	InputState: time.Second,
+	Organizing: 5 * time.Second,
 }
 
 const (
@@ -546,6 +548,9 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		}
 		return sent, nil
 	default:
+		if result, handled, err := s.organizingRequest(ctx, kind, raw); handled {
+			return result, err
+		}
 		return nil, &requestError{Code: "unknown_type", Message: fmt.Sprintf("Unknown message type %q.", kind)}
 	}
 }
@@ -617,6 +622,8 @@ func (s *Server) pollWorkspaces(git *gitInfo) func(ctx context.Context) ([]byte,
 		}
 		git.refresh(ctx, s)
 		git.apply(list.Workspaces)
+		s.organizing.refresh(ctx, s, list)
+		s.organizing.apply(&list)
 		encoded, err := json.Marshal(map[string]any{"type": "workspaces", "workspaces": list.Workspaces, "groups": list.Groups})
 		return encoded, err == nil
 	}

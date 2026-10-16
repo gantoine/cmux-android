@@ -21,21 +21,24 @@ type Terminal struct {
 }
 
 type Workspace struct {
-	ID               string     `json:"id"`
-	WindowID         *string    `json:"window_id"`
-	Title            string     `json:"title"`
-	Description      *string    `json:"description"`
-	CustomColor      *string    `json:"custom_color"`
-	CurrentDirectory *string    `json:"current_directory"`
-	IsSelected       bool       `json:"is_selected"`
-	IsPinned         bool       `json:"is_pinned"`
-	GroupID          *string    `json:"group_id"`
-	Preview          *string    `json:"preview"`
-	PreviewAt        *float64   `json:"preview_at"`
-	LastActivityAt   *float64   `json:"last_activity_at"`
-	HasUnread        bool       `json:"has_unread"`
-	UnreadCount      int        `json:"unread_count"`
-	Terminals        []Terminal `json:"terminals"`
+	ID               string             `json:"id"`
+	WindowID         *string            `json:"window_id"`
+	Title            string             `json:"title"`
+	Description      *string            `json:"description"`
+	CustomColor      *string            `json:"custom_color"`
+	CurrentDirectory *string            `json:"current_directory"`
+	IsSelected       bool               `json:"is_selected"`
+	IsPinned         bool               `json:"is_pinned"`
+	GroupID          *string            `json:"group_id"`
+	Preview          *string            `json:"preview"`
+	PreviewAt        *float64           `json:"preview_at"`
+	LastActivityAt   *float64           `json:"last_activity_at"`
+	HasUnread        bool               `json:"has_unread"`
+	UnreadCount      int                `json:"unread_count"`
+	Terminals        []Terminal         `json:"terminals"`
+	Status           *LaneStatus        `json:"status,omitempty"`
+	Checklist        *ChecklistProgress `json:"checklist,omitempty"`
+	Remote           *RemoteState       `json:"remote,omitempty"`
 }
 
 type TerminalGit struct {
@@ -52,6 +55,7 @@ type WorkspaceGroup struct {
 	MemberWorkspaceIDs []string `json:"member_workspace_ids"`
 	IsCollapsed        bool     `json:"is_collapsed"`
 	IsPinned           bool     `json:"is_pinned"`
+	CustomColor        *string  `json:"custom_color,omitempty"`
 }
 
 type WorkspaceList struct {
@@ -158,6 +162,27 @@ const (
 	MethodTop             = "system.top"
 	MethodVaultSessions   = "vault.sessions"
 	MethodVaultSearch     = "vault.search"
+	MethodWorkspaceAction = "workspace.action"
+	MethodLaneStatus      = "workspace.status.get"
+	MethodSetLaneStatus   = "workspace.status.set"
+	MethodChecklist       = "workspace.todo.list"
+	MethodChecklistAdd    = "workspace.todo.add"
+	MethodChecklistState  = "workspace.todo.set_state"
+	MethodChecklistEdit   = "workspace.todo.edit"
+	MethodChecklistRemove = "workspace.todo.remove"
+	MethodChecklistClear  = "workspace.todo.clear"
+	MethodGroupList       = "workspace.group.list"
+	MethodGroupCreate     = "workspace.group.create"
+	MethodGroupRename     = "workspace.group.rename"
+	MethodGroupPin        = "workspace.group.pin"
+	MethodGroupUnpin      = "workspace.group.unpin"
+	MethodGroupSetColor   = "workspace.group.set_color"
+	MethodGroupAdd        = "workspace.group.add"
+	MethodGroupRemove     = "workspace.group.remove"
+	MethodGroupUngroup    = "workspace.group.ungroup"
+	MethodGroupNewSpace   = "workspace.group.new_workspace"
+	MethodRemoteStatus    = "workspace.remote.status"
+	MethodRemoteReconnect = "workspace.remote.reconnect"
 )
 
 type ChatImage struct {
@@ -381,6 +406,106 @@ func (c *Client) VaultSearch(ctx context.Context, query string, limit int) ([]Va
 	}
 	err := c.Call(ctx, MethodVaultSearch, map[string]any{"query": query, "limit": limit}, &list)
 	return list.Sessions, err
+}
+
+func (c *Client) Perform(ctx context.Context, method string, params map[string]any, result any) error {
+	return c.Call(ctx, method, params, result)
+}
+
+type LaneStatus struct {
+	Effective string `json:"effective"`
+	Inferred  string `json:"inferred"`
+	Override  bool   `json:"override"`
+}
+
+func (c *Client) LaneStatus(ctx context.Context, workspaceID string) (LaneStatus, error) {
+	var result struct {
+		Effective string          `json:"effective"`
+		Inferred  string          `json:"inferred"`
+		Override  json.RawMessage `json:"override"`
+	}
+	err := c.Call(ctx, MethodLaneStatus, map[string]any{"workspace_id": workspaceID}, &result)
+	overridden := len(result.Override) > 0 && string(result.Override) != "null"
+	return LaneStatus{Effective: result.Effective, Inferred: result.Inferred, Override: overridden}, err
+}
+
+type ChecklistItem struct {
+	ID     string `json:"id"`
+	Text   string `json:"text"`
+	State  string `json:"state"`
+	Origin string `json:"origin"`
+}
+
+type ChecklistProgress struct {
+	Completed int    `json:"completed"`
+	Total     int    `json:"total"`
+	Next      string `json:"next,omitempty"`
+}
+
+type Checklist struct {
+	Items    []ChecklistItem   `json:"items"`
+	Progress ChecklistProgress `json:"progress"`
+}
+
+func (c *Client) Checklist(ctx context.Context, workspaceID string) (Checklist, error) {
+	var result struct {
+		Items    []ChecklistItem `json:"items"`
+		Progress struct {
+			Completed int     `json:"completed"`
+			Total     int     `json:"total"`
+			Next      *string `json:"first_unchecked_text"`
+		} `json:"progress"`
+	}
+	err := c.Call(ctx, MethodChecklist, map[string]any{"workspace_id": workspaceID}, &result)
+	checklist := Checklist{Items: result.Items, Progress: ChecklistProgress{Completed: result.Progress.Completed, Total: result.Progress.Total}}
+	if result.Progress.Next != nil {
+		checklist.Progress.Next = *result.Progress.Next
+	}
+	if checklist.Items == nil {
+		checklist.Items = []ChecklistItem{}
+	}
+	return checklist, err
+}
+
+type GroupDetails struct {
+	ID          string  `json:"id"`
+	CustomColor *string `json:"custom_color"`
+}
+
+func (c *Client) GroupDetails(ctx context.Context) ([]GroupDetails, error) {
+	var result struct {
+		Groups []GroupDetails `json:"groups"`
+	}
+	err := c.Call(ctx, MethodGroupList, map[string]any{}, &result)
+	return result.Groups, err
+}
+
+type RemoteState struct {
+	State       string `json:"state"`
+	Destination string `json:"destination,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+}
+
+func (c *Client) RemoteState(ctx context.Context, workspaceID string) (*RemoteState, error) {
+	var result struct {
+		Remote struct {
+			Enabled     bool    `json:"enabled"`
+			State       string  `json:"state"`
+			Destination *string `json:"destination"`
+			Detail      *string `json:"detail"`
+		} `json:"remote"`
+	}
+	if err := c.Call(ctx, MethodRemoteStatus, map[string]any{"workspace_id": workspaceID}, &result); err != nil || !result.Remote.Enabled {
+		return nil, err
+	}
+	state := &RemoteState{State: result.Remote.State}
+	if result.Remote.Destination != nil {
+		state.Destination = *result.Remote.Destination
+	}
+	if result.Remote.Detail != nil {
+		state.Detail = *result.Remote.Detail
+	}
+	return state, nil
 }
 
 func (c *Client) CloseTerminal(ctx context.Context, workspaceID, surfaceID string, force bool) error {

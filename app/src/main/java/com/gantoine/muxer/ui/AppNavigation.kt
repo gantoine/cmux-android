@@ -29,6 +29,7 @@ private object Routes {
     const val SETTINGS = "mac/{macId}/settings"
     const val NOTIFICATIONS = "mac/{macId}/notifications"
     const val SESSIONS = "mac/{macId}/sessions"
+    const val CHECKLIST = "mac/{macId}/workspace/{workspaceId}/checklist"
     const val METRICS = "mac/{macId}/metrics"
     const val TERMINAL = "terminal/{macId}/{workspaceId}/{surfaceId}?message={message}&images={images}"
     const val SHARE = "share?text={text}&images={images}"
@@ -38,6 +39,7 @@ private object Routes {
     fun settings(macId: String) = "mac/${Uri.encode(macId)}/settings"
     fun notifications(macId: String) = "mac/${Uri.encode(macId)}/notifications"
     fun sessions(macId: String) = "mac/${Uri.encode(macId)}/sessions"
+    fun checklist(macId: String, workspaceId: String) = "mac/${Uri.encode(macId)}/workspace/${Uri.encode(workspaceId)}/checklist"
     fun metrics(macId: String) = "mac/${Uri.encode(macId)}/metrics"
     fun terminal(macId: String, workspaceId: String, surfaceId: String, message: String = "", images: List<Uri> = emptyList()) =
         "terminal/${Uri.encode(macId)}/${Uri.encode(workspaceId)}/${Uri.encode(surfaceId)}?message=${Uri.encode(message)}&images=${encodeImages(images)}"
@@ -117,6 +119,7 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 onBack = { navController.popBackStack() },
                 onOpenSettings = { navController.navigate(Routes.settings(macId)) },
                 onOpenNotifications = { navController.navigate(Routes.notifications(macId)) },
+                onOpenChecklist = { navController.navigate(Routes.checklist(macId, it)) },
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
             )
         }
@@ -127,6 +130,20 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 macId = macId,
                 onBack = { navController.popBackStack() },
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
+            )
+        }
+        composable(
+            Routes.CHECKLIST,
+            arguments = listOf(
+                navArgument("macId") { type = NavType.StringType },
+                navArgument("workspaceId") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            ChecklistScreen(
+                app = app,
+                macId = entry.arguments?.getString("macId").orEmpty(),
+                workspaceId = entry.arguments?.getString("workspaceId").orEmpty(),
+                onBack = { navController.popBackStack() },
             )
         }
         composable(Routes.SESSIONS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
