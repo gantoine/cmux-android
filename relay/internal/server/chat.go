@@ -11,7 +11,6 @@ import (
 const (
 	agentKindClaude   = "claude"
 	maxInitialEntries = 300
-	unsupportedMethod = "method_not_found"
 )
 
 type chatWatch struct {
@@ -37,7 +36,7 @@ func (s *session) watchChat(ctx context.Context, current *attachment) {
 			if ctx.Err() != nil {
 				return
 			}
-			if cmux.ErrorCode(err) == unsupportedMethod {
+			if cmux.ErrorCode(err) == methodNotFoundErrorCode {
 				cmuxTracksAgents, agent, err = false, cmux.AgentSession{}, nil
 			}
 		}

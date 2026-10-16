@@ -273,7 +273,8 @@ func (t *Tracker) sweep(ctx context.Context) {
 }
 
 func (t *Tracker) reconcile(ctx context.Context) {
-	if len(t.Pending()) == 0 {
+	checked := t.Pending()
+	if len(checked) == 0 {
 		return
 	}
 	items, err := t.feedItems(ctx)
@@ -287,10 +288,19 @@ func (t *Tracker) reconcile(ctx context.Context) {
 			stillPending[item.RequestID] = true
 		}
 	}
+	settled := map[string]bool{}
+	for _, approval := range checked {
+		if !stillPending[approval.ID] {
+			settled[approval.ID] = true
+		}
+	}
+	if len(settled) == 0 {
+		return
+	}
 	t.mu.Lock()
-	kept := slices.DeleteFunc(slices.Clone(t.pending), func(approval Approval) bool { return !stillPending[approval.ID] })
-	changed := len(kept) != len(t.pending)
-	t.pending = kept
+	before := len(t.pending)
+	t.pending = slices.DeleteFunc(t.pending, func(approval Approval) bool { return settled[approval.ID] })
+	changed := len(t.pending) != before
 	t.mu.Unlock()
 	if changed {
 		t.notify()

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestPairingCodeWorksOnceAndTokenSurvivesReopen(t *testing.T) {
@@ -61,6 +62,46 @@ func TestPairingCodeWorksOnceAndTokenSurvivesReopen(t *testing.T) {
 	}
 	if _, ok := reopened.Authenticate(token); ok {
 		t.Fatal("a revoked device must not authenticate")
+	}
+}
+
+func pairedStore(t *testing.T, path, name string) (*Store, Device) {
+	t.Helper()
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := store.NewPairingCode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, _, err := store.Pair(code, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, device
+}
+
+func TestRevokeThatCannotBeSavedKeepsTheDevice(t *testing.T) {
+	dir := t.TempDir()
+	store, device := pairedStore(t, filepath.Join(dir, "devices.json"), "Pixel")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if err := store.Revoke(device.ID); err == nil {
+		t.Fatal("revoking must report that the device file could not be written")
+	}
+	if store.IsRevoked(device.ID) {
+		t.Fatal("a revoke that was not saved must keep the device, or the phone comes back after a restart")
+	}
+}
+
+func TestLongDeviceNamesAreCutOnACharacterBoundary(t *testing.T) {
+	_, device := pairedStore(t, filepath.Join(t.TempDir(), "devices.json"), strings.Repeat("a", maxDeviceNameBytes-1)+"é")
+	if !utf8.ValidString(device.Name) || device.Name != strings.Repeat("a", maxDeviceNameBytes-1) {
+		t.Fatalf("name = %q", device.Name)
 	}
 }
 

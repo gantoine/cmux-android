@@ -198,12 +198,15 @@ const (
 
 func keyOf(style cmux.Style) styleKey {
 	var flags uint8
-	for flag, on := range map[uint8]bool{
-		flagBold: style.Bold, flagFaint: style.Faint, flagItalic: style.Italic, flagUnderline: style.Underline,
-		flagStrikethrough: style.Strikethrough, flagInverse: style.Inverse, flagInvisible: style.Invisible,
+	for _, attribute := range [...]struct {
+		on   bool
+		flag uint8
+	}{
+		{style.Bold, flagBold}, {style.Faint, flagFaint}, {style.Italic, flagItalic}, {style.Underline, flagUnderline},
+		{style.Strikethrough, flagStrikethrough}, {style.Inverse, flagInverse}, {style.Invisible, flagInvisible},
 	} {
-		if on {
-			flags |= flag
+		if attribute.on {
+			flags |= attribute.flag
 		}
 	}
 	return styleKey{foreground: style.Foreground, background: style.Background, flags: flags}

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ const (
 	pairingCodeLength    = 8
 	PairingCodeLifetime  = 10 * time.Minute
 	maxFailedPairingRuns = 10
+	maxDeviceNameBytes   = 80
 )
 
 var (
@@ -107,8 +109,8 @@ func (s *Store) Pair(code, deviceName string) (Device, string, error) {
 	if name == "" {
 		name = "Android device"
 	}
-	if len(name) > 80 {
-		name = name[:80]
+	if len(name) > maxDeviceNameBytes {
+		name = strings.ToValidUTF8(name[:maxDeviceNameBytes], "")
 	}
 	now := s.now()
 	device := Device{ID: id, Name: name, TokenHash: hashToken(token), PairedAt: now, LastSeen: now}
@@ -145,13 +147,17 @@ func (s *Store) List() []Device {
 func (s *Store) Revoke(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for index, device := range s.devices {
-		if device.ID == id {
-			s.devices = append(s.devices[:index], s.devices[index+1:]...)
-			return s.saveLocked()
-		}
+	index := slices.IndexFunc(s.devices, func(device Device) bool { return device.ID == id })
+	if index < 0 {
+		return ErrUnknownDevice
 	}
-	return ErrUnknownDevice
+	previous := s.devices
+	s.devices = slices.Delete(slices.Clone(s.devices), index, index+1)
+	if err := s.saveLocked(); err != nil {
+		s.devices = previous
+		return err
+	}
+	return nil
 }
 
 func (s *Store) IsRevoked(id string) bool {

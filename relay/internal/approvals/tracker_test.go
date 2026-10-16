@@ -212,6 +212,34 @@ func TestPlanCanBeApprovedOrSentBackWithFeedback(t *testing.T) {
 	}
 }
 
+type sourceThatChangesDuringRead struct {
+	*fakeSource
+	duringRead func()
+}
+
+func (s *sourceThatChangesDuringRead) FeedItems(ctx context.Context) ([]cmux.FeedItem, error) {
+	items, err := s.fakeSource.FeedItems(ctx)
+	if during := s.duringRead; during != nil {
+		s.duringRead = nil
+		during()
+	}
+	return items, err
+}
+
+func TestReconcileKeepsARequestThatArrivedWhileTheFeedWasRead(t *testing.T) {
+	source := &sourceThatChangesDuringRead{fakeSource: newFakeSource()}
+	tracker := NewTracker(source, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tracker.add(Approval{ID: "answered", Kind: KindPermission})
+	source.duringRead = func() { tracker.add(Approval{ID: "new", Kind: KindPermission}) }
+
+	tracker.reconcile(context.Background())
+
+	pending := tracker.Pending()
+	if len(pending) != 1 || pending[0].ID != "new" {
+		t.Fatalf("only the request the feed was checked for may be dropped, got %+v", pending)
+	}
+}
+
 func TestToolInputWithoutACommandIsShownAsJSON(t *testing.T) {
 	detail, description := describeToolInput(`{"old_string":"a","new_string":"b","description":"tweak"}`)
 	if description != "tweak" || detail != "{\n  \"new_string\": \"b\",\n  \"old_string\": \"a\"\n}" {
