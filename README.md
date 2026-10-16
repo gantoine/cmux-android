@@ -22,7 +22,12 @@ It works with any cmux plan, and you don't need to sign in to cmux. Everything r
 
 ## How it works
 
-<img src="assets/how-it-works.png" width="800" alt="The Android app talks over HTTPS and WebSocket on your private network to muxer on your computer, which talks to cmux over a Unix socket">
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/how-it-works-dark.png">
+    <img src="assets/how-it-works-light.png" width="800" alt="The Android app talks over HTTPS and WebSocket on your private network to muxer on your computer, which talks to cmux over a Unix socket">
+  </picture>
+</div>
 
 `muxer` is a small program that runs on your computer. It talks to cmux through cmux's local control socket and gives the phone:
 
