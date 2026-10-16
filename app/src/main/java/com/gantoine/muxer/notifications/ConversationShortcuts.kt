@@ -5,10 +5,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Typeface
 import android.util.Log
 import androidx.core.app.Person
+import androidx.core.content.ContextCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.createBitmap
@@ -111,20 +110,18 @@ class ConversationShortcuts(private val context: Context) {
         }
 
     private fun iconFor(shortcut: WorkspaceShortcut): IconCompat {
-        val letter = shortcut.title.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar() ?: return appIcon()
         val background = runCatching { shortcut.color.toColorInt() }.getOrNull() ?: return appIcon()
+        val glyph = ContextCompat.getDrawable(context, if (shortcut.agentName != null) R.drawable.ic_workspace_agent else R.drawable.ic_workspace_terminal)
+            ?: return appIcon()
         val size = (ADAPTIVE_ICON_DP * context.resources.displayMetrics.density).toInt()
         val bitmap = createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(background)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (isLight(background)) Color.BLACK else Color.WHITE
-            textAlign = Paint.Align.CENTER
-            textSize = size * LETTER_SCALE
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
-        val baseline = size / 2f - (paint.descent() + paint.ascent()) / 2f
-        canvas.drawText(letter.toString(), size / 2f, baseline, paint)
+        val glyphSize = (size * GLYPH_SCALE).toInt()
+        val offset = (size - glyphSize) / 2
+        glyph.setTint(if (isLight(background)) Color.BLACK else Color.WHITE)
+        glyph.setBounds(offset, offset, offset + glyphSize, offset + glyphSize)
+        glyph.draw(canvas)
         return IconCompat.createWithAdaptiveBitmap(bitmap)
     }
 
@@ -137,7 +134,7 @@ class ConversationShortcuts(private val context: Context) {
         private const val STATIC_SHORTCUTS = 1
         private const val SYNC_DEBOUNCE_MS = 1_000L
         private const val ADAPTIVE_ICON_DP = 108
-        private const val LETTER_SCALE = 0.3f
+        private const val GLYPH_SCALE = 0.42f
         private const val LIGHT_THRESHOLD = 160
 
         fun id(macId: String, workspaceId: String): String = ShortcutPlan.id(macId, workspaceId)
