@@ -3,6 +3,7 @@ package com.gantoine.muxer
 import com.gantoine.muxer.net.AgentReplyRoute
 import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.notifications.ConversationHistory
+import com.gantoine.muxer.notifications.ConversationText
 import com.gantoine.muxer.notifications.ConversationMessage
 import com.gantoine.muxer.notifications.NotificationActions
 import com.gantoine.muxer.notifications.NotificationFilter
@@ -107,5 +108,17 @@ class ConversationNotificationsTest {
         assertTrue(AgentReplyRoute.shouldPasteInstead(RelayException("unknown_type", "no")))
         assertFalse(AgentReplyRoute.shouldPasteInstead(RelayException("not_attached", "no")))
         assertFalse(AgentReplyRoute.shouldPasteInstead(IllegalStateException("no")))
+    }
+
+    @Test
+    fun messagesDropTheAgentNameAndReadCompletionsAsFinished() {
+        fun note(title: String?, subtitle: String?, body: String?) =
+            RelayNotification(seq = 1, kind = "created", id = "n", title = title, subtitle = subtitle, body = body, workspaceId = "w", surfaceId = "s", tabTitle = "Shell")
+        assertEquals("Finished in 2m 13s · Added the widget and tests", ConversationText.message(note("Claude Code", "Completed in 2m 13s", "Added the widget and tests"), "Claude"))
+        assertEquals("Finished · Bubble check", ConversationText.message(note("Claude finished", "Completed", "Bubble check"), "Claude"))
+        assertEquals("Finished", ConversationText.message(note("Claude Code", "Completed", ""), "Claude"))
+        assertEquals("Agent resumed\nClaude was resumed after a temporary error", ConversationText.message(note("Agent resumed", null, "Claude was resumed after a temporary error"), "Claude"))
+        assertEquals("Build failed\n3 tests failed", ConversationText.message(note("Build failed", null, "3 tests failed"), "Claude"))
+        assertEquals("Shell", ConversationText.message(note("Shell", "", ""), "Claude"))
     }
 }

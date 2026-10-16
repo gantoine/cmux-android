@@ -74,11 +74,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
         val conversation = Conversation(target, mac.name, agentName, NotificationFilter.channel(notification))
         conversations[target.key] = conversation
         if (activeNotification(conversation.notificationId) == null) history.clear(target.key) else restoreHistory(conversation)
-        val text = listOfNotNull(
-            notification.title?.takeIf { it.isNotBlank() && it != agentName },
-            notification.subtitle?.takeIf { it.isNotBlank() },
-            notification.body?.takeIf { it.isNotBlank() },
-        ).joinToString("\n")
+        val text = ConversationText.message(notification, agentName)
         history.add(target.key, ConversationMessage(notification.id, text, Sender.Agent, time(notification.createdAt)))
         postConversation(conversation, silent = false)
     }
