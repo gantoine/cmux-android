@@ -4,6 +4,7 @@ import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.PairingClient
 import com.gantoine.muxer.net.RelayConnection
 import com.gantoine.muxer.protocol.RelayNotification
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -106,7 +107,7 @@ class RelayConnectionTest {
         connection.stop()
     }
 
-    private fun relayWithApproval() = object : WebSocketListener() {
+    private fun relayWithApproval(relaySocket: CompletableDeferred<WebSocket>) = object : WebSocketListener() {
         override fun onMessage(webSocket: WebSocket, text: String) {
             val message = Json.parseToJsonElement(text).jsonObject
             if (message["type"]?.jsonPrimitive?.content != "hello") return
@@ -115,7 +116,7 @@ class RelayConnectionTest {
                 """{"type":"result","id":"$id","ok":true,"data":{"mac_name":"Studio","relay_version":"1","protocol_version":1,"cmux_version":"0.65.1","device_id":"d1","notification_seq":5}}""",
             )
             webSocket.send("""{"type":"approvals","approvals":[{"id":"r1","kind":"permission","workspace_id":"w1","surface_id":"t1","tool":"Bash"}]}""")
-            webSocket.close(1001, "going away")
+            relaySocket.complete(webSocket)
         }
     }
 
@@ -131,10 +132,12 @@ class RelayConnectionTest {
 
     @Test
     fun approvalsClearWhenTheConnectionDrops() = runBlocking {
-        server.enqueue(MockResponse.Builder().webSocketUpgrade(relayWithApproval()).build())
+        val relaySocket = CompletableDeferred<WebSocket>()
+        server.enqueue(MockResponse.Builder().webSocketUpgrade(relayWithApproval(relaySocket)).build())
         val connection = connection()
         connection.start()
         withTimeout(5_000) { connection.approvals.first { !it.isNullOrEmpty() } }
+        relaySocket.await().close(1001, "going away")
         withTimeout(5_000) { connection.state.first { it is ConnectionState.Disconnected } }
         assertNull(connection.approvals.value)
         connection.stop()
