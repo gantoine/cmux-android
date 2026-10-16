@@ -80,7 +80,7 @@ func main() {
 func serveFlags(name string, args []string) (listen, macName string, err error) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.StringVar(&listen, "listen", defaultListenAddress, "address to listen on; keep it on loopback behind an HTTPS proxy such as tailscale serve")
-	flags.StringVar(&macName, "name", defaultMacName(), "name the phone shows for this computer")
+	flags.StringVar(&macName, "name", "", "name the phone shows for this computer (default: the name cmux uses for it)")
 	err = flags.Parse(args)
 	return listen, macName, err
 }
@@ -127,7 +127,7 @@ func runServe(args []string) error {
 		}
 	}()
 
-	relay := server.New(client, store, hub, server.Options{MacName: macName, RelayVersion: version, Approvals: approvalTracker, Agents: agentTracker}, logger)
+	relay := server.New(client, store, hub, server.Options{MacName: macName, FallbackMacName: defaultMacName(), RelayVersion: version, Approvals: approvalTracker, Agents: agentTracker}, logger)
 	httpServer := &http.Server{
 		Addr:              listen,
 		Handler:           relay.Handler(),

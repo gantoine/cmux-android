@@ -19,7 +19,7 @@ sealed interface LaunchTarget {
     data class Pair(val url: String, val code: String) : LaunchTarget
     data class Terminal(val macId: String, val workspaceId: String, val surfaceId: String) : LaunchTarget
     data object PairComputer : LaunchTarget
-    data class Share(val text: String, val shortcutId: String?) : LaunchTarget
+    data class Share(val text: String, val shortcutId: String?, val images: List<Uri> = emptyList()) : LaunchTarget
 }
 
 private object Routes {
@@ -28,16 +28,19 @@ private object Routes {
     const val WORKSPACES = "mac/{macId}"
     const val SETTINGS = "mac/{macId}/settings"
     const val NOTIFICATIONS = "mac/{macId}/notifications"
-    const val TERMINAL = "terminal/{macId}/{workspaceId}/{surfaceId}?message={message}"
-    const val SHARE = "share?text={text}"
+    const val TERMINAL = "terminal/{macId}/{workspaceId}/{surfaceId}?message={message}&images={images}"
+    const val SHARE = "share?text={text}&images={images}"
 
     fun pair(url: String = "", code: String = "") = "pair?url=${Uri.encode(url)}&code=${Uri.encode(code)}"
     fun workspaces(macId: String) = "mac/${Uri.encode(macId)}"
     fun settings(macId: String) = "mac/${Uri.encode(macId)}/settings"
     fun notifications(macId: String) = "mac/${Uri.encode(macId)}/notifications"
-    fun terminal(macId: String, workspaceId: String, surfaceId: String, message: String = "") =
-        "terminal/${Uri.encode(macId)}/${Uri.encode(workspaceId)}/${Uri.encode(surfaceId)}?message=${Uri.encode(message)}"
-    fun share(text: String) = "share?text=${Uri.encode(text)}"
+    fun terminal(macId: String, workspaceId: String, surfaceId: String, message: String = "", images: List<Uri> = emptyList()) =
+        "terminal/${Uri.encode(macId)}/${Uri.encode(workspaceId)}/${Uri.encode(surfaceId)}?message=${Uri.encode(message)}&images=${encodeImages(images)}"
+    fun share(text: String, images: List<Uri>) = "share?text=${Uri.encode(text)}&images=${encodeImages(images)}"
+
+    private fun encodeImages(images: List<Uri>) = Uri.encode(images.joinToString("\n"))
+    fun decodeImages(argument: String?): List<Uri> = argument.orEmpty().lines().filter { it.isNotEmpty() }.map(Uri::parse)
 }
 
 @Composable
@@ -64,10 +67,10 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                     pairedMacIds = app.store.macs.first().map { it.id },
                 )
                 when (route) {
-                    is ShareRoute.Open -> navController.openShared(route.target, launchTarget.text)
+                    is ShareRoute.Open -> navController.openShared(route.target, launchTarget.text, launchTarget.images)
                     ShareRoute.Pick -> {
                         navController.popBackStack(Routes.MACS, inclusive = false)
-                        navController.navigate(Routes.share(launchTarget.text))
+                        navController.navigate(Routes.share(launchTarget.text, launchTarget.images))
                     }
                 }
             }
@@ -137,6 +140,7 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 navArgument("workspaceId") { type = NavType.StringType },
                 navArgument("surfaceId") { type = NavType.StringType },
                 navArgument("message") { type = NavType.StringType; defaultValue = "" },
+                navArgument("images") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { entry ->
             TerminalScreen(
@@ -145,22 +149,30 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 workspaceId = entry.arguments?.getString("workspaceId").orEmpty(),
                 surfaceId = entry.arguments?.getString("surfaceId").orEmpty(),
                 initialMessage = entry.arguments?.getString("message").orEmpty(),
+                initialImages = Routes.decodeImages(entry.arguments?.getString("images")),
                 onBack = { navController.popBackStack() },
             )
         }
-        composable(Routes.SHARE, arguments = listOf(navArgument("text") { type = NavType.StringType; defaultValue = "" })) { entry ->
+        composable(
+            Routes.SHARE,
+            arguments = listOf(
+                navArgument("text") { type = NavType.StringType; defaultValue = "" },
+                navArgument("images") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
             val text = entry.arguments?.getString("text").orEmpty()
+            val images = Routes.decodeImages(entry.arguments?.getString("images"))
             ShareScreen(
                 app = app,
                 onBack = { navController.popBackStack() },
-                onPick = { target -> navController.openShared(target, text) },
+                onPick = { target -> navController.openShared(target, text, images) },
             )
         }
     }
 }
 
-private fun NavHostController.openShared(target: ShareTarget, text: String) {
+private fun NavHostController.openShared(target: ShareTarget, text: String, images: List<Uri>) {
     popBackStack(Routes.MACS, inclusive = false)
     navigate(Routes.workspaces(target.macId))
-    navigate(Routes.terminal(target.macId, target.workspace.id, target.surfaceId, text))
+    navigate(Routes.terminal(target.macId, target.workspace.id, target.surfaceId, text, images))
 }

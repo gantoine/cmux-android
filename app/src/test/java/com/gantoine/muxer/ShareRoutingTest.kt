@@ -7,7 +7,9 @@ import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.share.ShareRoute
 import com.gantoine.muxer.share.ShareRouting
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShareRoutingTest {
@@ -33,6 +35,17 @@ class ShareRoutingTest {
         assertNull(ShareRouting.sharedText("android.intent.action.SEND", "image/png", "caption"))
         assertNull(ShareRouting.sharedText("android.intent.action.SEND", null, "caption"))
         assertNull(ShareRouting.sharedText("android.intent.action.VIEW", "text/plain", "hello"))
+    }
+
+    @Test
+    fun recognisesImageShares() {
+        assertTrue(ShareRouting.isImageShare("android.intent.action.SEND", "image/png"))
+        assertTrue(ShareRouting.isImageShare("android.intent.action.SEND_MULTIPLE", "image/*"))
+        assertFalse(ShareRouting.isImageShare("android.intent.action.SEND", "text/plain"))
+        assertFalse(ShareRouting.isImageShare("android.intent.action.SEND", null))
+        assertFalse(ShareRouting.isImageShare("android.intent.action.VIEW", "image/jpeg"))
+        assertEquals("look at this", ShareRouting.caption("  look at this \n"))
+        assertEquals("", ShareRouting.caption(null))
     }
 
     @Test

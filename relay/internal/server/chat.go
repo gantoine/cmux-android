@@ -26,26 +26,13 @@ func (s *session) watchChat(ctx context.Context, current *attachment) {
 	var watch chatWatch
 	announced := false
 	for {
-		var agent cmux.AgentSession
-		var err error
-		if s.server.methods.supports(cmux.MethodAgentSession) {
-			callCtx, cancel := context.WithTimeout(ctx, callTimeout)
-			agent, err = s.server.cmux.AgentSession(callCtx, current.workspaceID, current.surfaceID)
-			cancel()
-			if ctx.Err() != nil {
-				return
-			}
-			if s.server.methods.observe(cmux.MethodAgentSession, err) {
-				agent, err = cmux.AgentSession{}, nil
-			}
+		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
+		sessionID, cwd, err := s.claudeSession(callCtx, current)
+		cancel()
+		if ctx.Err() != nil {
+			return
 		}
 		if err == nil {
-			sessionID, cwd := "", ""
-			if agent.Kind == agentKindClaude && agent.SessionID != "" {
-				sessionID, cwd = agent.SessionID, agent.Cwd
-			} else if running, ok := s.server.options.ClaudeSession(current.surfaceID); ok {
-				sessionID, cwd = running.SessionID, running.Cwd
-			}
 			if !announced || sessionID != watch.sessionID {
 				announced = true
 				watch = chatWatch{sessionID: sessionID, cwd: cwd}
@@ -61,6 +48,26 @@ func (s *session) watchChat(ctx context.Context, current *attachment) {
 		case <-time.After(s.server.options.PollInterval.Chat):
 		}
 	}
+}
+
+func (s *session) claudeSession(ctx context.Context, current *attachment) (sessionID, cwd string, err error) {
+	var agent cmux.AgentSession
+	if s.server.methods.supports(cmux.MethodAgentSession) {
+		agent, err = s.server.cmux.AgentSession(ctx, current.workspaceID, current.surfaceID)
+		if s.server.methods.observe(cmux.MethodAgentSession, err) {
+			agent, err = cmux.AgentSession{}, nil
+		}
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if agent.Kind == agentKindClaude && agent.SessionID != "" {
+		return agent.SessionID, agent.Cwd, nil
+	}
+	if running, ok := s.server.options.ClaudeSession(current.surfaceID); ok {
+		return running.SessionID, running.Cwd, nil
+	}
+	return "", "", nil
 }
 
 func (s *session) followTranscript(current *attachment, watch *chatWatch) {

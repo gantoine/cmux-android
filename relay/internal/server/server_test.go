@@ -43,6 +43,32 @@ type fakeCmux struct {
 	workspaceReads  int
 	notifications   []cmux.Notification
 	markedRead      []string
+	hostName        string
+	hostNameErr     error
+	chats           []sentChat
+	chatErr         error
+}
+
+type sentChat struct {
+	sessionID string
+	text      string
+	images    []cmux.ChatImage
+}
+
+func (f *fakeCmux) HostName(context.Context) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hostName, f.hostNameErr
+}
+
+func (f *fakeCmux) SendChat(_ context.Context, sessionID, text string, images []cmux.ChatImage) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.chatErr != nil {
+		return f.chatErr
+	}
+	f.chats = append(f.chats, sentChat{sessionID, text, images})
+	return nil
 }
 
 func (f *fakeCmux) Notifications(context.Context) ([]cmux.Notification, error) {

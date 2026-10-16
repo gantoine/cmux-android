@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 )
 
 type Terminal struct {
@@ -148,7 +149,14 @@ const (
 	MethodTerminalGit  = "debug.terminals"
 	MethodKeepAwake    = "caffeine.status"
 	MethodSetKeepAwake = "caffeine.set"
+	MethodHostStatus   = "mobile.host.status"
+	MethodChatSend     = "mobile.chat.send"
 )
+
+type ChatImage struct {
+	Data   string `json:"data_b64"`
+	Format string `json:"format"`
+}
 
 func (c *Client) Methods(ctx context.Context) ([]string, error) {
 	var capabilities struct {
@@ -162,6 +170,22 @@ func (c *Client) Identify(ctx context.Context) (Identity, error) {
 	var identity Identity
 	err := c.Call(ctx, "system.identify", nil, &identity)
 	return identity, err
+}
+
+func (c *Client) HostName(ctx context.Context) (string, error) {
+	var status struct {
+		MacDisplayName string `json:"mac_display_name"`
+	}
+	err := c.Call(ctx, MethodHostStatus, nil, &status)
+	return strings.TrimSpace(status.MacDisplayName), err
+}
+
+func (c *Client) SendChat(ctx context.Context, sessionID, text string, images []ChatImage) error {
+	return c.Call(ctx, MethodChatSend, map[string]any{
+		"session_id":  sessionID,
+		"text":        text,
+		"attachments": images,
+	}, nil)
 }
 
 func (c *Client) AgentSession(ctx context.Context, workspaceID, surfaceID string) (AgentSession, error) {
