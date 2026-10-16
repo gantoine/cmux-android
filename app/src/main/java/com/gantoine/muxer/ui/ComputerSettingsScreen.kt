@@ -123,7 +123,7 @@ fun ComputerSettingsScreen(
                     index = 0,
                     count = 3,
                     headline = "Stay connected in the background",
-                    supporting = "Keep watching this computer while the app is closed, so agent prompts and alerts still reach you. A quiet notification stays in the shade and uses some battery.",
+                    supporting = "Get alerts while the app is closed.",
                     onClick = { setBackground(!mac.backgroundNotifications) },
                     trailing = { Switch(checked = mac.backgroundNotifications, onCheckedChange = ::setBackground) },
                 )
@@ -131,7 +131,7 @@ fun ComputerSettingsScreen(
                     index = 1,
                     count = 3,
                     headline = "Alert me when an agent finishes",
-                    supporting = "Get a notification with the agent's last message when it completes a task.",
+                    supporting = "Notify me with its last message.",
                     onClick = { scope.launch { app.store.setCompletionNotifications(macId, !mac.completionNotifications) } },
                     trailing = {
                         Switch(
@@ -144,7 +144,7 @@ fun ComputerSettingsScreen(
                     index = 2,
                     count = 3,
                     headline = "Show what agents are doing",
-                    supporting = "While connected in the background, the quiet notification lists this computer's agents: working, waiting for you, or retrying.",
+                    supporting = "List agents in the background notification.",
                     onClick = { scope.launch { app.store.setShowActivity(macId, !mac.showActivity) } },
                     trailing = {
                         Switch(
@@ -166,7 +166,7 @@ fun ComputerSettingsScreen(
                     supporting = when {
                         !connected -> "Connect to this computer to change this."
                         awake == null -> "Needs a newer relay and cmux on this computer."
-                        else -> "Stops idle sleep while cmux is open, so your phone can still reach it. Closing the lid still puts it to sleep."
+                        else -> "Stop idle sleep while cmux is open."
                     },
                     onClick = if (connected && awake != null && !changingKeepAwake) ({ setKeepAwake(!awake) }) else null,
                     trailing = {
