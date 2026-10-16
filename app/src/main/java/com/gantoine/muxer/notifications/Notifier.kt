@@ -257,7 +257,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
     }
 
     private fun agentPerson(target: ConversationTarget, name: String): Person =
-        Person.Builder().setName(name).setKey("agent:${target.macId}:${target.workspaceId}").setBot(true).build()
+        Person.Builder().setName(name).setKey("agent:${target.macId}:${target.workspaceId}").build()
 
     private fun personFor(sender: Sender, agent: Person): Person? = when (sender) {
         Sender.Agent -> agent
