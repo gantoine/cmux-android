@@ -2,25 +2,25 @@ package com.gantoine.muxer
 
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.TopSummary
-import com.gantoine.muxer.ui.Activity
+import com.gantoine.muxer.ui.Metrics
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class ActivityTest {
+class MetricsTest {
     @Test
     fun formatsMemory() {
-        assertEquals("512 KB", Activity.bytes(512 * 1024L, Locale.US))
-        assertEquals("9.5 MB", Activity.bytes((9.5 * 1024 * 1024).toLong(), Locale.US))
-        assertEquals("674 MB", Activity.bytes(674L * 1024 * 1024, Locale.US))
-        assertEquals("7.3 GB", Activity.bytes((7.3 * 1024 * 1024 * 1024).toLong(), Locale.US))
+        assertEquals("512 KB", Metrics.bytes(512 * 1024L, Locale.US))
+        assertEquals("9.5 MB", Metrics.bytes((9.5 * 1024 * 1024).toLong(), Locale.US))
+        assertEquals("674 MB", Metrics.bytes(674L * 1024 * 1024, Locale.US))
+        assertEquals("7.3 GB", Metrics.bytes((7.3 * 1024 * 1024 * 1024).toLong(), Locale.US))
     }
 
     @Test
     fun formatsCpu() {
-        assertEquals("0%", Activity.cpu(0.0, Locale.US))
-        assertEquals("<1%", Activity.cpu(0.0004, Locale.US))
-        assertEquals("24%", Activity.cpu(24.16, Locale.US))
+        assertEquals("0%", Metrics.cpu(0.0, Locale.US))
+        assertEquals("<1%", Metrics.cpu(0.0004, Locale.US))
+        assertEquals("24%", Metrics.cpu(24.16, Locale.US))
     }
 
     @Test

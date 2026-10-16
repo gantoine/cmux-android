@@ -447,7 +447,7 @@ class RelayConnection(
 
     suspend fun top(): Result<TopSummary> =
         request("top").mapCatching { data ->
-            RelayJson.decodeFromJsonElement(TopSummary.serializer(), data ?: error("The computer sent no activity."))
+            RelayJson.decodeFromJsonElement(TopSummary.serializer(), data ?: error("The computer sent no metrics."))
         }
 
     suspend fun notifications(): Result<List<MacNotification>> =

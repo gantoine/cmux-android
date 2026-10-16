@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material3.AlertDialog
@@ -56,7 +57,13 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit, onRemoved: () -> Unit) {
+fun ComputerSettingsScreen(
+    app: MuxerApplication,
+    macId: String,
+    onBack: () -> Unit,
+    onOpenMetrics: (macId: String) -> Unit,
+    onRemoved: () -> Unit,
+) {
     val macs by app.store.macs.collectAsState(initial = null)
     val mac = macs?.firstOrNull { it.id == macId }
     val connections by app.connections.connectionsFlow.collectAsState()
@@ -174,7 +181,7 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
 
             SectionLabel("This computer")
             val welcome = (state as? ConnectionState.Connected)?.welcome
-            val rows = 3 + if (welcome != null) 1 else 0
+            val rows = 4 + if (welcome != null) 1 else 0
             SettingsGroup {
                 SettingsRow(
                     index = 0,
@@ -198,9 +205,23 @@ fun ComputerSettingsScreen(app: MuxerApplication, macId: String, onBack: () -> U
                     supporting = if (state is ConnectionState.Connected) "Connected" else describe(state),
                     supportingIcon = { StatusDot(state) },
                 )
+                SettingsRow(
+                    index = 3,
+                    count = rows,
+                    headline = "Metrics",
+                    supporting = "CPU and memory used by cmux, its agents and each workspace.",
+                    onClick = { onOpenMetrics(macId) },
+                    trailing = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
                 if (welcome != null) {
                     SettingsRow(
-                        index = 3,
+                        index = 4,
                         count = rows,
                         headline = "Versions",
                         supporting = "cmux ${welcome.cmuxVersion} · relay ${welcome.relayVersion}",

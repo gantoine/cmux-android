@@ -47,7 +47,7 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 
-object Activity {
+object Metrics {
     const val REFRESH_MS = 3_000L
 
     fun bytes(count: Long, locale: Locale = Locale.getDefault()): String {
@@ -72,7 +72,7 @@ object Activity {
 }
 
 @Composable
-fun ActivityScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
+fun MetricsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
     val connections by app.connections.connectionsFlow.collectAsState()
     val connection = connections[macId]
     val state by (connection?.state ?: remember { MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
@@ -96,7 +96,7 @@ fun ActivityScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
                     }
                     .onFailure { failure = it }
                 if ((failure as? RelayException)?.code in setOf("unknown_type", "unsupported")) break
-                delay(Activity.REFRESH_MS)
+                delay(Metrics.REFRESH_MS)
             }
         }
     }
@@ -104,7 +104,7 @@ fun ActivityScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             CmuxTopBar(
-                title = "Activity",
+                title = "Metrics",
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
@@ -129,7 +129,7 @@ fun ActivityScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
                     ConnectionBanner(state)
                     EmptyState(
                         icon = Icons.Outlined.Speed,
-                        title = "Couldn't load activity",
+                        title = "Couldn't load metrics",
                         body = error.message ?: "$macName didn't answer.",
                     ) {
                         Button(onClick = {
@@ -142,14 +142,14 @@ fun ActivityScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
                     ConnectionBanner(state)
                     LoadingState(if (connected) "Measuring…" else "Waiting for $macName…")
                 }
-                else -> ActivityList(current, state)
+                else -> MetricsList(current, state)
             }
         }
     }
 }
 
 @Composable
-private fun ActivityList(summary: TopSummary, state: ConnectionState) {
+private fun MetricsList(summary: TopSummary, state: ConnectionState) {
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
@@ -167,11 +167,11 @@ private fun ActivityList(summary: TopSummary, state: ConnectionState) {
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text(Activity.usage(summary.cpuPercent, summary.memoryBytes), style = MaterialTheme.typography.titleMedium)
+                Text(Metrics.usage(summary.cpuPercent, summary.memoryBytes), style = MaterialTheme.typography.titleMedium)
                 Text(
                     buildList {
                         add("${summary.processCount} processes in cmux terminals")
-                        if (summary.appMemoryBytes > 0) add("cmux itself ${Activity.bytes(summary.appMemoryBytes)}")
+                        if (summary.appMemoryBytes > 0) add("cmux itself ${Metrics.bytes(summary.appMemoryBytes)}")
                     }.joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -183,7 +183,7 @@ private fun ActivityList(summary: TopSummary, state: ConnectionState) {
             itemsIndexed(summary.agents, key = { _, agent -> "agent-${agent.name}" }) { index, agent ->
                 UsageRow(
                     title = agent.name,
-                    usage = Activity.usage(agent.cpuPercent, agent.memoryBytes),
+                    usage = Metrics.usage(agent.cpuPercent, agent.memoryBytes),
                     detail = if (agent.processCount == 1) "1 process" else "${agent.processCount} processes",
                     index = index,
                     count = summary.agents.size,
@@ -203,7 +203,7 @@ private fun ActivityList(summary: TopSummary, state: ConnectionState) {
 private fun WorkspaceUsageRow(workspace: TopWorkspace, index: Int, count: Int) {
     UsageRow(
         title = workspace.title.ifBlank { "Workspace" },
-        usage = Activity.usage(workspace.cpuPercent, workspace.memoryBytes),
+        usage = Metrics.usage(workspace.cpuPercent, workspace.memoryBytes),
         detail = null,
         index = index,
         count = count,
@@ -220,7 +220,7 @@ private fun WorkspaceUsageRow(workspace: TopWorkspace, index: Int, count: Int) {
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    Activity.usage(process.cpuPercent, process.memoryBytes),
+                    Metrics.usage(process.cpuPercent, process.memoryBytes),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
