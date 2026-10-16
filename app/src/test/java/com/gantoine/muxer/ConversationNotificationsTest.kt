@@ -84,9 +84,14 @@ class ConversationNotificationsTest {
             ApprovalQuestion(prompt = "Which?", multiSelect = multiSelect, options = labels.map { ApprovalOption(it) })
 
         assertEquals(listOf("Yes", "No"), NotificationActions.oneTapAnswers(question("Yes", "No")))
-        assertEquals(emptyList<String>(), NotificationActions.oneTapAnswers(question("A", "B", "C")))
+        assertTrue(NotificationActions.offersTypedAnswer(question("Yes", "No")))
+        assertEquals(listOf("A", "B", "C"), NotificationActions.oneTapAnswers(question("A", "B", "C")))
+        assertFalse(NotificationActions.offersTypedAnswer(question("A", "B", "C")))
+        assertEquals(listOf("A", "B"), NotificationActions.oneTapAnswers(question("A", "B", "C", "D")))
+        assertTrue(NotificationActions.offersTypedAnswer(question("A", "B", "C", "D")))
         assertEquals(emptyList<String>(), NotificationActions.oneTapAnswers(question("A", "B", multiSelect = true)))
         assertEquals(emptyList<String>(), NotificationActions.oneTapAnswers(question()))
+        assertTrue(NotificationActions.offersTypedAnswer(question()))
     }
 
     @Test

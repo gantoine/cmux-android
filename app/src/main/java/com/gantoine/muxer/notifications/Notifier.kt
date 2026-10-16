@@ -230,7 +230,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
             .setShowsUserInterface(false)
             .setAllowGeneratedReplies(false)
             .build()
-        return options + typed
+        return if (NotificationActions.offersTypedAnswer(question)) options + typed else options
     }
 
     private fun messageAction(target: ConversationTarget, agentName: String): NotificationCompat.Action =

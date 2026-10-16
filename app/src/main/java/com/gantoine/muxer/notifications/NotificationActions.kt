@@ -4,11 +4,12 @@ import com.gantoine.muxer.protocol.ApprovalQuestion
 
 object NotificationActions {
     private const val MAX_ACTIONS = 3
-    private const val TYPED_ANSWER_ACTIONS = 1
 
     fun oneTapAnswers(question: ApprovalQuestion): List<String> {
+        if (question.multiSelect) return emptyList()
         val labels = question.options.map { it.label }
-        val fits = labels.size in 1..MAX_ACTIONS - TYPED_ANSWER_ACTIONS
-        return if (!question.multiSelect && fits) labels else emptyList()
+        return if (labels.size <= MAX_ACTIONS) labels else labels.take(MAX_ACTIONS - 1)
     }
+
+    fun offersTypedAnswer(question: ApprovalQuestion): Boolean = oneTapAnswers(question).size < MAX_ACTIONS
 }
