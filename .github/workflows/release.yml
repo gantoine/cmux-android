@@ -86,6 +86,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$VERSION" relay/dist/* --repo "$GITHUB_REPOSITORY" --clobber
 
+      - name: Add update instructions to the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          {
+            echo '<!-- update -->'
+            packaging/release-notes/update-instructions.sh "$VERSION" "${flags[@]}"
+            echo '<!-- /update -->'
+            echo
+            gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+              | awk '/^<!-- update -->$/ { skip = 1 } !skip { print } /^<!-- \/update -->$/ { skip = 0 }' \
+              | sed -e '/./,$!d'
+          } > "$RUNNER_TEMP/notes.md"
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+
       - name: Get a token for the Homebrew tap
         id: tap-token
         if: ${{ !github.event.release.prerelease }}
