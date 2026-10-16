@@ -197,10 +197,7 @@ h1 {
 .phone {
   margin: 0;
   overflow: hidden;
-  aspect-ratio: 9 / 20;
-  border-radius: clamp(20px, 3.4vw, 36px);
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: #000;
+  border-radius: 10.37% / 4.67%;
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.6),
     0 30px 60px -20px rgb(0 0 0 / 0.7),
@@ -217,9 +214,8 @@ h1 {
 .phone:nth-child(even):hover { transform: translateY(22px); }
 .phone img {
   display: block;
-  width: 400%;
+  width: 100%;
   height: auto;
-  transform: translateX(calc(var(--i) * -25%));
 }
 
 .section { padding: 96px 0 0; }

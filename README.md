@@ -9,7 +9,13 @@ Watch and drive your [cmux](https://github.com/manaflow-ai/cmux) terminals from 
 It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own computer, over a private network you control, with no cloud service in the middle. [Tailscale](https://tailscale.com) is the easiest way to set that up. Another VPN, a trusted local network, or a Cloudflare Tunnel behind Cloudflare Access also work.
 
 <p align="center">
-  <img src="assets/screenshots.png" alt="Muxer on Android: the Computers list, a computer's workspaces, a Claude Code session as a chat, and the same session as a terminal">
+  <img src="assets/screenshot-computers.png" width="22%" alt="The Computers list with one paired computer">
+  &nbsp;
+  <img src="assets/screenshot-workspaces.png" width="22%" alt="A computer's workspaces, with agent status and last activity">
+  &nbsp;
+  <img src="assets/screenshot-chat.png" width="22%" alt="A Claude Code session shown as a chat">
+  &nbsp;
+  <img src="assets/screenshot-terminal.png" width="22%" alt="The same Claude Code session shown as a terminal">
 </p>
 
 > This is an independent project. It is not made, endorsed, or supported by Manaflow or the cmux team.
