@@ -401,6 +401,12 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			return nil, &requestError{Code: "invalid_params", Message: err.Error()}
 		}
 		return nil, err
+	case "notifications":
+		return s.server.notifications(ctx)
+	case "mark_notifications_read":
+		var request markReadRequest
+		_ = json.Unmarshal(raw, &request)
+		return nil, s.server.markRead(ctx, request)
 	case "keep_awake":
 		if !s.server.methods.supports(cmux.MethodKeepAwake) {
 			return nil, errKeepAwakeUnsupported
@@ -698,6 +704,7 @@ func (s *session) attach(workspaceID, surfaceID string) {
 	go s.pollTerminal(ctx, current)
 	go s.watchChat(ctx, current)
 	go s.watchAgentMessages(ctx, current)
+	go s.markAttachedRead(ctx, surfaceID)
 }
 
 func (s *session) detach() {

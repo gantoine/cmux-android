@@ -27,12 +27,14 @@ private object Routes {
     const val PAIR = "pair?url={url}&code={code}"
     const val WORKSPACES = "mac/{macId}"
     const val SETTINGS = "mac/{macId}/settings"
+    const val NOTIFICATIONS = "mac/{macId}/notifications"
     const val TERMINAL = "terminal/{macId}/{workspaceId}/{surfaceId}?message={message}"
     const val SHARE = "share?text={text}"
 
     fun pair(url: String = "", code: String = "") = "pair?url=${Uri.encode(url)}&code=${Uri.encode(code)}"
     fun workspaces(macId: String) = "mac/${Uri.encode(macId)}"
     fun settings(macId: String) = "mac/${Uri.encode(macId)}/settings"
+    fun notifications(macId: String) = "mac/${Uri.encode(macId)}/notifications"
     fun terminal(macId: String, workspaceId: String, surfaceId: String, message: String = "") =
         "terminal/${Uri.encode(macId)}/${Uri.encode(workspaceId)}/${Uri.encode(surfaceId)}?message=${Uri.encode(message)}"
     fun share(text: String) = "share?text=${Uri.encode(text)}"
@@ -107,6 +109,16 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 macId = macId,
                 onBack = { navController.popBackStack() },
                 onOpenSettings = { navController.navigate(Routes.settings(macId)) },
+                onOpenNotifications = { navController.navigate(Routes.notifications(macId)) },
+                onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
+            )
+        }
+        composable(Routes.NOTIFICATIONS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
+            val macId = entry.arguments?.getString("macId").orEmpty()
+            NotificationsScreen(
+                app = app,
+                macId = macId,
+                onBack = { navController.popBackStack() },
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
             )
         }

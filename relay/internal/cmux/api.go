@@ -118,6 +118,7 @@ type Notification struct {
 	SurfaceID   string `json:"surface_id"`
 	TabTitle    string `json:"tab_title"`
 	CreatedAt   string `json:"created_at"`
+	IsRead      bool   `json:"is_read"`
 }
 
 type Identity struct {
@@ -312,6 +313,14 @@ func (c *Client) Notifications(ctx context.Context) ([]Notification, error) {
 	}
 	err := c.Call(ctx, "notification.list", nil, &list)
 	return list.Notifications, err
+}
+
+func (c *Client) MarkNotificationRead(ctx context.Context, id string) error {
+	return c.Call(ctx, "notification.mark_read", map[string]any{"id": id}, nil)
+}
+
+func (c *Client) MarkAllNotificationsRead(ctx context.Context) error {
+	return c.Call(ctx, "notification.mark_read", map[string]any{"all": true}, nil)
 }
 
 type FeedOption struct {

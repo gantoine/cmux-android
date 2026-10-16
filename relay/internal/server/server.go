@@ -43,6 +43,9 @@ type Cmux interface {
 	TerminalGit(ctx context.Context) ([]cmux.TerminalGit, error)
 	SetKeepAwake(ctx context.Context, enabled bool) (bool, error)
 	Methods(ctx context.Context) ([]string, error)
+	Notifications(ctx context.Context) ([]cmux.Notification, error)
+	MarkNotificationRead(ctx context.Context, id string) error
+	MarkAllNotificationsRead(ctx context.Context) error
 }
 
 type Approvals interface {

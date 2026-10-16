@@ -58,6 +58,10 @@ class RelayConnectionTest {
                     webSocket.send("""{"type":"workspaces","workspaces":[{"id":"w1","title":"api","has_unread":true,"unread_count":2,"terminals":[{"id":"t1","title":"zsh","agent_state":"Running"}]}]}""")
                     webSocket.send("""{"type":"notification","notification":{"seq":7,"kind":"created","id":"n1","title":"Claude Code","body":"Waiting for input"}}""")
                 }
+                "notifications" -> webSocket.send(
+                    """{"type":"result","id":"$id","ok":true,"data":{"notifications":[{"id":"n1","title":"Claude Code","workspace_id":"w1","surface_id":"t1","created_at":"2026-10-16T17:59:08Z","is_read":true,"surface_ref":"surface:1"}]}}""",
+                )
+                "mark_notifications_read" -> webSocket.send("""{"type":"result","id":"$id","ok":true}""")
                 "attach" -> webSocket.send(
                     """{"type":"screen","workspace_id":"w1","surface_id":"t1","full":true,"columns":80,"rows":2,"foreground":"#FFFFFF","background":"#000000","styles":[{"id":0,"fg":"#FFFFFF","bg":"#000000"}],"changed":[{"row":0,"spans":[{"column":0,"width":2,"style":0,"text":"$ "}]}]}""",
                 )
@@ -140,6 +144,28 @@ class RelayConnectionTest {
         relaySocket.await().close(1001, "going away")
         withTimeout(5_000) { connection.state.first { it is ConnectionState.Disconnected } }
         assertNull(connection.approvals.value)
+        connection.stop()
+    }
+
+    @Test
+    fun listsNotificationsAndMarksThemRead() = runBlocking {
+        server.enqueue(MockResponse.Builder().webSocketUpgrade(fakeRelay()).build())
+        val connection = connection()
+        connection.start()
+        withTimeout(5_000) { connection.state.first { it is ConnectionState.Connected } }
+
+        val listed = connection.notifications().getOrThrow().single()
+        assertEquals("t1", listed.surfaceId)
+        assertTrue(listed.isRead)
+
+        connection.markNotificationsRead(notificationId = "n1").getOrThrow()
+        connection.markNotificationsRead(surfaceId = "t1").getOrThrow()
+        connection.markNotificationsRead(all = true).getOrThrow()
+        val marks = received.map { Json.parseToJsonElement(it).jsonObject }.filter { it["type"]?.jsonPrimitive?.content == "mark_notifications_read" }
+        assertEquals("n1", marks[0]["notification_id"]?.jsonPrimitive?.content)
+        assertEquals("t1", marks[1]["surface_id"]?.jsonPrimitive?.content)
+        assertEquals("true", marks[2]["all"]?.jsonPrimitive?.content)
+        assertNull(marks[2]["notification_id"])
         connection.stop()
     }
 

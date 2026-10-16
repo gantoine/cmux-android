@@ -41,6 +41,43 @@ type fakeCmux struct {
 	keepAwakeReads  int
 	methods         []string
 	workspaceReads  int
+	notifications   []cmux.Notification
+	markedRead      []string
+}
+
+func (f *fakeCmux) Notifications(context.Context) ([]cmux.Notification, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]cmux.Notification(nil), f.notifications...), nil
+}
+
+func (f *fakeCmux) MarkNotificationRead(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.notifications {
+		if f.notifications[i].ID == id {
+			f.notifications[i].IsRead = true
+			f.markedRead = append(f.markedRead, id)
+			return nil
+		}
+	}
+	return &cmux.RPCError{Code: "not_found", Message: "Notification not found"}
+}
+
+func (f *fakeCmux) MarkAllNotificationsRead(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.notifications {
+		f.notifications[i].IsRead = true
+	}
+	f.markedRead = append(f.markedRead, "all")
+	return nil
+}
+
+func (f *fakeCmux) marked() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.markedRead...)
 }
 
 func (f *fakeCmux) Methods(context.Context) ([]string, error) {

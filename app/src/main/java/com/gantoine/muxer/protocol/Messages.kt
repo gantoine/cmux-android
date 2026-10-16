@@ -130,6 +130,22 @@ data class RelayNotification(
 data class NotificationMessage(val notification: RelayNotification)
 
 @Serializable
+data class MacNotification(
+    val id: String,
+    val title: String = "",
+    val subtitle: String = "",
+    val body: String = "",
+    val workspaceId: String? = null,
+    val surfaceId: String? = null,
+    val tabTitle: String = "",
+    val createdAt: String? = null,
+    val isRead: Boolean = false,
+)
+
+@Serializable
+data class NotificationsResponse(val notifications: List<MacNotification> = emptyList())
+
+@Serializable
 data class ApprovalOption(val label: String, val description: String? = null)
 
 @Serializable

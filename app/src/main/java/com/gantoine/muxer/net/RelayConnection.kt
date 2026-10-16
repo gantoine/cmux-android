@@ -12,7 +12,9 @@ import com.gantoine.muxer.protocol.ChatSessionMessage
 import com.gantoine.muxer.protocol.DetachedMessage
 import com.gantoine.muxer.protocol.HistoryResponse
 import com.gantoine.muxer.protocol.KeepAwakeMessage
+import com.gantoine.muxer.protocol.MacNotification
 import com.gantoine.muxer.protocol.NotificationMessage
+import com.gantoine.muxer.protocol.NotificationsResponse
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.RelayNotification
 import com.gantoine.muxer.protocol.RequestError
@@ -417,6 +419,18 @@ class RelayConnection(
             _keepAwake.value = confirmed
             confirmed
         }
+
+    suspend fun notifications(): Result<List<MacNotification>> =
+        request("notifications").mapCatching { data ->
+            data?.let { RelayJson.decodeFromJsonElement(NotificationsResponse.serializer(), it).notifications }.orEmpty()
+        }
+
+    suspend fun markNotificationsRead(notificationId: String? = null, surfaceId: String? = null, all: Boolean = false): Result<Unit> =
+        request("mark_notifications_read", buildJsonObject {
+            notificationId?.let { put("notification_id", it) }
+            surfaceId?.let { put("surface_id", it) }
+            if (all) put("all", true)
+        }).map { }
 
     private fun forget(approvalId: String) {
         _approvals.value = _approvals.value?.filterNot { it.id == approvalId }

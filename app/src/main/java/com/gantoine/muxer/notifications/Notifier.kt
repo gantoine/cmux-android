@@ -93,6 +93,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setGroup(mac.id)
             .setContentIntent(openTerminalIntent(mac.id, notification.workspaceId, notification.surfaceId, notification.id.hashCode()))
+            .setDeleteIntent(NotificationReadReceiver.notificationIntent(context, mac.id, notification.id))
             .build()
         post(notification.id.hashCode(), built)
     }
@@ -140,6 +141,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
             .setSilent(silent)
             .setGroup(target.macId)
             .setContentIntent(openTerminalIntent(target.macId, target.workspaceId, target.surfaceId, conversation.notificationId))
+            .setDeleteIntent(NotificationReadReceiver.terminalIntent(context, target.macId, target.surfaceId))
             .addAction(messageAction(target, conversation.agentName))
         bubble(target, conversation.notificationId)?.let(builder::setBubbleMetadata)
         post(conversation.notificationId, builder.build())

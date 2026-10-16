@@ -97,6 +97,10 @@
             android:name=".notifications.AgentReplyReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".notifications.NotificationReadReceiver"
+            android:exported="false" />
+
         <activity
             android:name=".BubbleActivity"
             android:allowEmbedded="true"

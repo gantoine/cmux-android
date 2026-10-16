@@ -37,7 +37,7 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 | From phone | Purpose |
 | --- | --- |
 | `hello {notifications_after}` | Start the session. The answer carries the computer name and cmux version. |
-| `attach {workspace_id, surface_id, fit?}` / `detach` / `resync` | Choose the terminal to stream. |
+| `attach {workspace_id, surface_id, fit?}` / `detach` / `resync` | Choose the terminal to stream. Attaching also marks that terminal's notifications read on the Mac. |
 | `input {text}` / `key {key}` / `paste {text, submit}` / `scroll {lines}` | Send input to the attached terminal. |
 | `history {lines?}` | Get up to 5,000 lines above the attached terminal's screen, oldest first, with their own style table. The default is 2,000. |
 | `fit {columns, rows}` / `unfit` | Ask cmux to size the terminal for the phone. |
@@ -46,5 +46,7 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 | `answer_approval {approval_id, mode?, answers?, feedback?}` | Answer an agent's permission request, question or plan. |
 | `send_agent_message {text}` | Send up to 32 KB to the agent in the attached terminal as a cmux agent message. |
 | `keep_awake` / `set_keep_awake {enabled}` | Read or change whether cmux keeps the computer awake. |
+| `notifications` | List the notifications in cmux's notification center, read ones included, with `is_read`. |
+| `mark_notifications_read {notification_id? \| surface_id? \| all?}` | Mark one notification, one terminal's notifications or all of them read on the Mac. |
 
 The relay sends `workspaces` (with the workspace `groups`, each naming its anchor workspace and members), `screen` (row diffs with a style table), `detached`, `notification` and `result {id, ok, data | error}`. It also sends `approvals` with the agent requests waiting for an answer, `agent_activity {retries, busy}`, `keep_awake {enabled}`, and `agent_messages {surface_id, messages}` for the attached terminal. For the attached terminal it also sends `chat_session {surface_id, session_id}`, with `session_id` null when no Claude Code session runs there, and `chat {surface_id, session_id, reset, entries}`, where each entry is a user message, an assistant reply, a tool call or a notice. `reset` replaces the conversation; otherwise entries with a known `id` replace the old ones and new ones are added at the end. Add an `id` to any message to get a `result` back.
