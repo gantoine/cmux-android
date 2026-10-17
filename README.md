@@ -9,13 +9,42 @@ Watch and drive your [cmux](https://github.com/manaflow-ai/cmux) terminals from 
 It works with any cmux plan, and you don't need to sign in to cmux. Everything runs between your phone and your own computer, over a private network you control, with no cloud service in the middle. [Tailscale](https://tailscale.com) is the easiest way to set that up. Another VPN, a trusted local network, or a Cloudflare Tunnel behind Cloudflare Access also work.
 
 <p align="center">
-  <img src="assets/screenshot-computers.png" width="22%" alt="The Computers list with one paired computer">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-computers-light.png">
+    <img src="assets/screenshot-computers.png" width="22%" alt="The Devices list with three paired computers, each with its CPU and RAM, and cmux Cloud VMs below">
+  </picture>
   &nbsp;
-  <img src="assets/screenshot-workspaces.png" width="22%" alt="A computer's workspaces, with agent status and last activity">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-workspaces-light.png">
+    <img src="assets/screenshot-workspaces.png" width="22%" alt="A computer's workspaces, with agent status, a pinned workspace and a group">
+  </picture>
   &nbsp;
-  <img src="assets/screenshot-chat.png" width="22%" alt="A Claude Code session shown as a chat">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-chat-light.png">
+    <img src="assets/screenshot-chat.png" width="22%" alt="A Claude Code session shown as a chat">
+  </picture>
   &nbsp;
-  <img src="assets/screenshot-terminal.png" width="22%" alt="The same Claude Code session shown as a terminal">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-terminal-light.png">
+    <img src="assets/screenshot-terminal.png" width="22%" alt="A live shell terminal with git, test and muxer doctor output">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-hold-light.png">
+    <img src="assets/screenshot-hold.png" width="22%" alt="The long-press menu for a workspace: open, new terminal, status, checklist, pin">
+  </picture>
+  &nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-metrics-light.png">
+    <img src="assets/screenshot-metrics.png" width="22%" alt="CPU and memory use per agent and per workspace">
+  </picture>
+  &nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-sessions-light.png">
+    <img src="assets/screenshot-sessions.png" width="22%" alt="Past Claude Code and Codex sessions to find and resume">
+  </picture>
 </p>
 
 > This is an independent project. It is not made, endorsed, or supported by Manaflow or the cmux team.
