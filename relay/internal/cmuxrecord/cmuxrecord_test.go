@@ -66,7 +66,7 @@ func (f *fakeCmux) serve(conn net.Conn) {
 		case "auth.login":
 			conn.Write(encodeLine(map[string]any{"id": req.ID, "ok": true, "result": map[string]any{"authenticated": true}}))
 		case "events.stream":
-			conn.Write(encodeLine(map[string]any{"id": req.ID, "ok": true, "protocol": "cmux-events"}))
+			conn.Write(encodeLine(map[string]any{"type": "ack", "protocol": "cmux-events"}))
 			f.mu.Lock()
 			f.streams = append(f.streams, conn)
 			f.mu.Unlock()
@@ -94,7 +94,9 @@ func collect(t *testing.T, client *cmux.Client) (<-chan cmux.Event, context.Canc
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		_ = client.Events(ctx, nil, cmux.EventFilter{Categories: []string{"workspace"}}, func(event cmux.Event) error {
-			events <- event
+			if event.Type == "event" {
+				events <- event
+			}
 			return nil
 		})
 	}()

@@ -85,7 +85,7 @@ func (r *Replayer) handle(conn net.Conn) {
 			var req request
 			if json.Unmarshal(line, &req) == nil {
 				if req.Method == "events.stream" {
-					r.stream(conn, req.ID)
+					r.stream(conn)
 					return
 				}
 				if _, werr := conn.Write(r.answer(req)); werr != nil {
@@ -130,16 +130,17 @@ func (r *Replayer) answer(req request) []byte {
 	return encodeLine(response)
 }
 
-func (r *Replayer) stream(conn net.Conn, id string) {
+func (r *Replayer) stream(conn net.Conn) {
 	s := &stream{conn: conn}
-	ack := map[string]any{}
-	if r.recording.StreamAck != nil {
-		_ = json.Unmarshal(r.recording.StreamAck, &ack)
-	} else {
-		ack["ok"] = true
+	ack := compact(r.recording.StreamAck)
+	if ack == nil {
+		ack = json.RawMessage(`{"type":"ack","protocol":"cmux-events"}`)
 	}
-	ack["id"] = id
-	if s.write(trimNewline(encodeLine(ack))) != nil {
+	heartbeat := compact(r.recording.Heartbeat)
+	if heartbeat == nil {
+		heartbeat = json.RawMessage(`{"type":"heartbeat"}`)
+	}
+	if s.write(ack) != nil {
 		return
 	}
 	r.mu.Lock()
@@ -162,7 +163,7 @@ func (r *Replayer) stream(conn net.Conn, id string) {
 		case <-closed:
 			return
 		case <-ticker.C:
-			if r.recording.Heartbeat != nil && s.write(r.recording.Heartbeat) != nil {
+			if s.write(heartbeat) != nil {
 				return
 			}
 		}

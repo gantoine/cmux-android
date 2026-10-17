@@ -149,17 +149,20 @@ func (r *Recorder) observe(line []byte, streaming bool, pendingMu *sync.Mutex, p
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if streaming {
-		switch {
-		case msg.Type == "event":
+		switch msg.Type {
+		case "event":
 			if r.armed {
 				r.events = append(r.events, trimmed)
 			}
-		case msg.Type != "":
+		case "ack":
+			if r.streamAck == nil {
+				r.streamAck = trimmed
+			}
+		case "":
+		default:
 			if r.heartbeat == nil {
 				r.heartbeat = trimmed
 			}
-		case msg.OK != nil && r.streamAck == nil:
-			r.streamAck = trimmed
 		}
 		return
 	}
