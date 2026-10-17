@@ -1,15 +1,16 @@
 package approvals
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/gantoine/muxer/relay/internal/claude"
 	"github.com/gantoine/muxer/relay/internal/cmux"
 	"github.com/gantoine/muxer/relay/internal/pubsub"
 )
@@ -27,7 +28,6 @@ const (
 	feedKindQuestion   = "question"
 	feedKindPlan       = "exitPlan"
 	feedStatusPending  = "pending"
-	hookEventPrefix    = "agent.hook."
 	phaseReceived      = "received"
 	phaseCompleted     = "completed"
 	maxDetailLength    = 8000
@@ -50,6 +50,10 @@ var planModes = map[string]bool{"manual": true, "autoAccept": true, "deny": true
 const maxFeedbackLength = 4000
 
 var ErrNotPending = errors.New("that request was already answered or timed out")
+
+type InvalidAnswer string
+
+func (e InvalidAnswer) Error() string { return string(e) }
 
 type Option struct {
 	Label       string `json:"label"`
@@ -105,32 +109,24 @@ func NewTracker(source Source, logger *slog.Logger) *Tracker {
 }
 
 type feedPayload struct {
-	HookEventName string `json:"hook_event_name"`
-	RequestID     string `json:"_opencode_request_id"`
-	Source        string `json:"_source"`
-	WorkspaceID   string `json:"workspace_id"`
-	SurfaceID     string `json:"surface_id"`
-	Phase         string `json:"phase"`
+	RequestID   string `json:"_opencode_request_id"`
+	Source      string `json:"_source"`
+	Phase       string `json:"phase"`
+	WorkspaceID string `json:"-"`
+	SurfaceID   string `json:"-"`
 }
 
 func (t *Tracker) HandleEvent(ctx context.Context, event cmux.Event) {
-	if !strings.HasPrefix(event.Name, hookEventPrefix) {
+	hook, ok := event.Hook()
+	if !ok {
 		return
 	}
 	var payload feedPayload
 	_ = json.Unmarshal(event.Payload, &payload)
-	if payload.WorkspaceID == "" && event.WorkspaceID != nil {
-		payload.WorkspaceID = *event.WorkspaceID
-	}
-	if payload.SurfaceID == "" && event.SurfaceID != nil {
-		payload.SurfaceID = *event.SurfaceID
-	}
-	if payload.HookEventName == "" {
-		payload.HookEventName = strings.TrimPrefix(event.Name, hookEventPrefix)
-	}
+	payload.WorkspaceID, payload.SurfaceID = event.Workspace(), event.Surface()
 	switch payload.Phase {
 	case phaseReceived:
-		if actionableHooks[payload.HookEventName] && payload.RequestID != "" {
+		if actionableHooks[hook] && payload.RequestID != "" {
 			t.track(ctx, payload)
 		} else if t.hasPendingOn(payload.SurfaceID) {
 			t.reconcile(ctx)
@@ -170,7 +166,7 @@ func (t *Tracker) track(ctx context.Context, payload feedPayload) {
 func approvalFrom(item cmux.FeedItem, payload feedPayload) (Approval, bool) {
 	approval := Approval{
 		ID:          item.RequestID,
-		Agent:       firstNonEmpty(item.Source, payload.Source),
+		Agent:       cmp.Or(item.Source, payload.Source),
 		WorkspaceID: payload.WorkspaceID,
 		SurfaceID:   payload.SurfaceID,
 		Cwd:         item.Cwd,
@@ -179,7 +175,7 @@ func approvalFrom(item cmux.FeedItem, payload feedPayload) (Approval, bool) {
 	switch item.Kind {
 	case feedKindPermission:
 		approval.Kind = KindPermission
-		approval.Tool = firstNonEmpty(item.ToolName, item.Title)
+		approval.Tool = cmp.Or(item.ToolName, item.Title)
 		approval.Detail, approval.Description = describeToolInput(item.ToolInput)
 	case feedKindQuestion:
 		approval.Kind = KindQuestion
@@ -215,36 +211,18 @@ func planText(raw string) string {
 func describeToolInput(raw string) (detail, description string) {
 	var input map[string]any
 	if err := json.Unmarshal([]byte(raw), &input); err != nil {
-		return truncate(raw), ""
+		return claude.Truncate(raw, maxDetailLength), ""
 	}
 	description, _ = input["description"].(string)
-	for _, key := range []string{"command", "file_path", "url", "pattern", "path", "query", "prompt"} {
-		if value, ok := input[key].(string); ok && value != "" {
-			return truncate(value), description
-		}
-	}
 	delete(input, "description")
+	if _, value := claude.ToolInputValue(input); value != "" {
+		return claude.Truncate(value, maxDetailLength), description
+	}
 	if len(input) == 0 {
 		return "", description
 	}
 	pretty, _ := json.MarshalIndent(input, "", "  ")
-	return truncate(string(pretty)), description
-}
-
-func truncate(text string) string {
-	if len(text) <= maxDetailLength {
-		return text
-	}
-	return strings.ToValidUTF8(text[:maxDetailLength], "") + "…"
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
+	return claude.Truncate(string(pretty), maxDetailLength), description
 }
 
 func (t *Tracker) Run(ctx context.Context) {
@@ -304,23 +282,23 @@ func (t *Tracker) Answer(ctx context.Context, id string, answer Answer) error {
 	switch approval.Kind {
 	case KindPermission:
 		if !permissionModes[answer.Mode] {
-			return errors.New("mode must be once, always or deny")
+			return InvalidAnswer("mode must be once, always or deny")
 		}
 		err = t.source.ReplyPermission(ctx, id, answer.Mode)
 	case KindQuestion:
 		if len(answer.Answers) != len(approval.Questions) {
-			return errors.New("send one answer per question")
+			return InvalidAnswer("send one answer per question")
 		}
 		err = t.source.ReplyQuestion(ctx, id, answer.Answers)
 	case KindPlan:
 		if !planModes[answer.Mode] {
-			return errors.New("mode must be manual, autoAccept or deny")
+			return InvalidAnswer("mode must be manual, autoAccept or deny")
 		}
 		if answer.Mode == "autoAccept" && answer.Feedback != "" {
-			return errors.New("feedback goes with manual or deny")
+			return InvalidAnswer("feedback goes with manual or deny")
 		}
 		if len(answer.Feedback) > maxFeedbackLength {
-			return errors.New("feedback must be at most 4000 bytes")
+			return InvalidAnswer("feedback must be at most 4000 bytes")
 		}
 		err = t.source.ReplyExitPlan(ctx, id, answer.Mode, answer.Feedback)
 	}

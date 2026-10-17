@@ -2,8 +2,10 @@ package cmux
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -149,40 +151,51 @@ type Viewport struct {
 }
 
 const (
-	MethodAgentSession    = "surface.resume.get"
-	MethodTerminalGit     = "debug.terminals"
-	MethodKeepAwake       = "caffeine.status"
-	MethodSetKeepAwake    = "caffeine.set"
-	MethodHostStatus      = "mobile.host.status"
-	MethodChatSend        = "mobile.chat.send"
-	MethodCloseTerminal   = "surface.close"
-	MethodRenameTerminal  = "surface.action"
-	MethodRestartTerminal = "surface.respawn"
-	MethodInputState      = "surface.input_state"
-	MethodTop             = "system.top"
-	MethodVaultSessions   = "vault.sessions"
-	MethodVaultSearch     = "vault.search"
-	MethodWorkspaceAction = "workspace.action"
-	MethodLaneStatus      = "workspace.status.get"
-	MethodSetLaneStatus   = "workspace.status.set"
-	MethodChecklist       = "workspace.todo.list"
-	MethodChecklistAdd    = "workspace.todo.add"
-	MethodChecklistState  = "workspace.todo.set_state"
-	MethodChecklistEdit   = "workspace.todo.edit"
-	MethodChecklistRemove = "workspace.todo.remove"
-	MethodChecklistClear  = "workspace.todo.clear"
-	MethodGroupList       = "workspace.group.list"
-	MethodGroupCreate     = "workspace.group.create"
-	MethodGroupRename     = "workspace.group.rename"
-	MethodGroupPin        = "workspace.group.pin"
-	MethodGroupUnpin      = "workspace.group.unpin"
-	MethodGroupSetColor   = "workspace.group.set_color"
-	MethodGroupAdd        = "workspace.group.add"
-	MethodGroupRemove     = "workspace.group.remove"
-	MethodGroupUngroup    = "workspace.group.ungroup"
-	MethodGroupNewSpace   = "workspace.group.new_workspace"
-	MethodRemoteStatus    = "workspace.remote.status"
-	MethodRemoteReconnect = "workspace.remote.reconnect"
+	MethodIdentify         = "system.identify"
+	MethodCapabilities     = "system.capabilities"
+	MethodWorkspaceList    = "mobile.workspace.list"
+	MethodReplay           = "mobile.terminal.replay"
+	MethodPaste            = "mobile.terminal.paste"
+	MethodViewport         = "mobile.terminal.viewport"
+	MethodNotificationList = "notification.list"
+	MethodMarkNotification = "notification.mark_read"
+	MethodFeedList         = "feed.list"
+	MethodAgentMessageList = "agent.message.list"
+	MethodAgentMessageSend = "agent.message.send"
+	MethodAgentSession     = "surface.resume.get"
+	MethodTerminalGit      = "debug.terminals"
+	MethodKeepAwake        = "caffeine.status"
+	MethodSetKeepAwake     = "caffeine.set"
+	MethodHostStatus       = "mobile.host.status"
+	MethodChatSend         = "mobile.chat.send"
+	MethodCloseTerminal    = "surface.close"
+	MethodRenameTerminal   = "surface.action"
+	MethodRestartTerminal  = "surface.respawn"
+	MethodInputState       = "surface.input_state"
+	MethodTop              = "system.top"
+	MethodVaultSessions    = "vault.sessions"
+	MethodVaultSearch      = "vault.search"
+	MethodWorkspaceAction  = "workspace.action"
+	MethodLaneStatus       = "workspace.status.get"
+	MethodSetLaneStatus    = "workspace.status.set"
+	MethodChecklist        = "workspace.todo.list"
+	MethodChecklistAdd     = "workspace.todo.add"
+	MethodChecklistState   = "workspace.todo.set_state"
+	MethodChecklistEdit    = "workspace.todo.edit"
+	MethodChecklistRemove  = "workspace.todo.remove"
+	MethodChecklistClear   = "workspace.todo.clear"
+	MethodGroupList        = "workspace.group.list"
+	MethodGroupCreate      = "workspace.group.create"
+	MethodGroupRename      = "workspace.group.rename"
+	MethodGroupPin         = "workspace.group.pin"
+	MethodGroupUnpin       = "workspace.group.unpin"
+	MethodGroupSetColor    = "workspace.group.set_color"
+	MethodGroupAdd         = "workspace.group.add"
+	MethodGroupRemove      = "workspace.group.remove"
+	MethodGroupUngroup     = "workspace.group.ungroup"
+	MethodGroupNewSpace    = "workspace.group.new_workspace"
+	MethodRemoteStatus     = "workspace.remote.status"
+	MethodRemoteReconnect  = "workspace.remote.reconnect"
 )
 
 type ChatImage struct {
@@ -190,17 +203,25 @@ type ChatImage struct {
 	Format string `json:"format"`
 }
 
+type Capabilities struct {
+	Methods    []string `json:"methods"`
+	AccessMode string   `json:"access_mode"`
+}
+
+func (c *Client) Capabilities(ctx context.Context) (Capabilities, error) {
+	var capabilities Capabilities
+	err := c.Call(ctx, MethodCapabilities, nil, &capabilities)
+	return capabilities, err
+}
+
 func (c *Client) Methods(ctx context.Context) ([]string, error) {
-	var capabilities struct {
-		Methods []string `json:"methods"`
-	}
-	err := c.Call(ctx, "system.capabilities", nil, &capabilities)
+	capabilities, err := c.Capabilities(ctx)
 	return capabilities.Methods, err
 }
 
 func (c *Client) Identify(ctx context.Context) (Identity, error) {
 	var identity Identity
-	err := c.Call(ctx, "system.identify", nil, &identity)
+	err := c.Call(ctx, MethodIdentify, nil, &identity)
 	return identity, err
 }
 
@@ -238,7 +259,7 @@ func (c *Client) AgentSession(ctx context.Context, workspaceID, surfaceID string
 
 func (c *Client) Workspaces(ctx context.Context) (WorkspaceList, error) {
 	var list WorkspaceList
-	err := c.Call(ctx, "mobile.workspace.list", nil, &list)
+	err := c.Call(ctx, MethodWorkspaceList, nil, &list)
 	if list.Workspaces == nil {
 		list.Workspaces = []Workspace{}
 	}
@@ -257,23 +278,28 @@ func (c *Client) TerminalGit(ctx context.Context) ([]TerminalGit, error) {
 }
 
 func (c *Client) Replay(ctx context.Context, workspaceID, surfaceID string) (Replay, error) {
-	var replay Replay
-	err := c.Call(ctx, "mobile.terminal.replay", map[string]any{
-		"workspace_id": workspaceID,
-		"surface_id":   surfaceID,
-	}, &replay)
-	return replay, err
+	return c.replay(ctx, workspaceID, surfaceID, map[string]any{}, "cmux returned no screen for this terminal.")
 }
 
 func (c *Client) History(ctx context.Context, workspaceID, surfaceID string, maxRows int) (Replay, error) {
-	var replay Replay
-	err := c.Call(ctx, "mobile.terminal.replay", map[string]any{
-		"workspace_id":        workspaceID,
-		"surface_id":          surfaceID,
+	return c.replay(ctx, workspaceID, surfaceID, map[string]any{
 		"anchor":              "screen",
 		"max_scrollback_rows": maxRows,
-	}, &replay)
-	return replay, err
+	}, "cmux returned no history for this terminal.")
+}
+
+func (c *Client) replay(ctx context.Context, workspaceID, surfaceID string, params map[string]any, missing string) (Replay, error) {
+	params["workspace_id"], params["surface_id"] = workspaceID, surfaceID
+	var replay Replay
+	if err := c.Call(ctx, MethodReplay, params, &replay); err != nil {
+		return Replay{}, err
+	}
+	if replay.RenderGrid == nil {
+		return Replay{}, &RPCError{Code: "no_render_grid", Message: missing}
+	}
+	replay.WorkspaceID = cmp.Or(replay.WorkspaceID, workspaceID)
+	replay.SurfaceID = cmp.Or(replay.SurfaceID, surfaceID)
+	return replay, nil
 }
 
 func (c *Client) Input(ctx context.Context, workspaceID, surfaceID, text string) error {
@@ -293,16 +319,25 @@ func (c *Client) SendKey(ctx context.Context, workspaceID, surfaceID, key string
 }
 
 func (c *Client) Paste(ctx context.Context, workspaceID, surfaceID, text string, submit bool) error {
+	_, err := c.paste(ctx, workspaceID, surfaceID, text, submit)
+	return err
+}
+
+func (c *Client) paste(ctx context.Context, workspaceID, surfaceID, text string, submit bool) (bool, error) {
 	submitKey := "none"
 	if submit {
 		submitKey = "return"
 	}
-	return c.Call(ctx, "mobile.terminal.paste", map[string]any{
+	var result struct {
+		Submitted bool `json:"submitted"`
+	}
+	err := c.Call(ctx, MethodPaste, map[string]any{
 		"workspace_id": workspaceID,
 		"surface_id":   surfaceID,
 		"text":         text,
 		"submit_key":   submitKey,
-	}, nil)
+	}, &result)
+	return result.Submitted, err
 }
 
 func (c *Client) Scroll(ctx context.Context, workspaceID, surfaceID string, deltaLines int) error {
@@ -314,7 +349,7 @@ func (c *Client) Scroll(ctx context.Context, workspaceID, surfaceID string, delt
 }
 
 func (c *Client) SetViewport(ctx context.Context, workspaceID, surfaceID string, viewport Viewport) error {
-	return c.Call(ctx, "mobile.terminal.viewport", map[string]any{
+	return c.Call(ctx, MethodViewport, map[string]any{
 		"workspace_id":        workspaceID,
 		"surface_id":          surfaceID,
 		"client_id":           viewport.ClientID,
@@ -325,7 +360,7 @@ func (c *Client) SetViewport(ctx context.Context, workspaceID, surfaceID string,
 }
 
 func (c *Client) ClearViewport(ctx context.Context, workspaceID, surfaceID, clientID string, generation int) error {
-	return c.Call(ctx, "mobile.terminal.viewport", map[string]any{
+	return c.Call(ctx, MethodViewport, map[string]any{
 		"workspace_id":        workspaceID,
 		"surface_id":          surfaceID,
 		"client_id":           clientID,
@@ -364,16 +399,7 @@ func (c *Client) CreateTerminal(ctx context.Context, workspaceID string) (string
 }
 
 func (c *Client) RunCommand(ctx context.Context, workspaceID, surfaceID, command string) (bool, error) {
-	var result struct {
-		Submitted bool `json:"submitted"`
-	}
-	err := c.Call(ctx, "mobile.terminal.paste", map[string]any{
-		"workspace_id": workspaceID,
-		"surface_id":   surfaceID,
-		"text":         command,
-		"submit_key":   "return",
-	}, &result)
-	return result.Submitted, err
+	return c.paste(ctx, workspaceID, surfaceID, command, true)
 }
 
 type VaultSession struct {
@@ -388,28 +414,24 @@ type VaultSession struct {
 	ResumeCommand string `json:"resume_command"`
 }
 
+type vaultList struct {
+	Sessions []VaultSession `json:"sessions"`
+}
+
 func (c *Client) VaultSessions(ctx context.Context, agent string, limit int) ([]VaultSession, error) {
 	params := map[string]any{"limit": limit}
 	if agent != "" {
 		params["agent"] = agent
 	}
-	var list struct {
-		Sessions []VaultSession `json:"sessions"`
-	}
+	var list vaultList
 	err := c.Call(ctx, MethodVaultSessions, params, &list)
 	return list.Sessions, err
 }
 
 func (c *Client) VaultSearch(ctx context.Context, query string, limit int) ([]VaultSession, error) {
-	var list struct {
-		Sessions []VaultSession `json:"sessions"`
-	}
+	var list vaultList
 	err := c.Call(ctx, MethodVaultSearch, map[string]any{"query": query, "limit": limit}, &list)
 	return list.Sessions, err
-}
-
-func (c *Client) Perform(ctx context.Context, method string, params map[string]any, result any) error {
-	return c.Call(ctx, method, params, result)
 }
 
 type LaneStatus struct {
@@ -543,16 +565,33 @@ func (c *Client) Notifications(ctx context.Context) ([]Notification, error) {
 	var list struct {
 		Notifications []Notification `json:"notifications"`
 	}
-	err := c.Call(ctx, "notification.list", nil, &list)
+	err := c.Call(ctx, MethodNotificationList, nil, &list)
 	return list.Notifications, err
 }
 
 func (c *Client) MarkNotificationRead(ctx context.Context, id string) error {
-	return c.Call(ctx, "notification.mark_read", map[string]any{"id": id}, nil)
+	return c.Call(ctx, MethodMarkNotification, map[string]any{"id": id}, nil)
 }
 
 func (c *Client) MarkAllNotificationsRead(ctx context.Context) error {
-	return c.Call(ctx, "notification.mark_read", map[string]any{"all": true}, nil)
+	return c.Call(ctx, MethodMarkNotification, map[string]any{"all": true}, nil)
+}
+
+func (c *Client) MarkSurfaceNotificationsRead(ctx context.Context, surfaceID string) error {
+	list, err := c.Notifications(ctx)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, notification := range list {
+		if notification.IsRead || notification.SurfaceID != surfaceID {
+			continue
+		}
+		if err := c.MarkNotificationRead(ctx, notification.ID); err != nil && !IsNotFound(err) {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 type FeedOption struct {
@@ -588,7 +627,7 @@ func (c *Client) FeedItems(ctx context.Context) ([]FeedItem, error) {
 	var list struct {
 		Items []FeedItem `json:"items"`
 	}
-	err := c.Call(ctx, "feed.list", nil, &list)
+	err := c.Call(ctx, MethodFeedList, nil, &list)
 	return list.Items, err
 }
 
@@ -615,6 +654,42 @@ type Event struct {
 	WorkspaceID *string         `json:"workspace_id"`
 	SurfaceID   *string         `json:"surface_id"`
 	Payload     json.RawMessage `json:"payload"`
+}
+
+const hookEventPrefix = "agent.hook."
+
+type eventTarget struct {
+	WorkspaceID   string `json:"workspace_id"`
+	SurfaceID     string `json:"surface_id"`
+	HookEventName string `json:"hook_event_name"`
+}
+
+func (e Event) target() eventTarget {
+	var target eventTarget
+	_ = json.Unmarshal(e.Payload, &target)
+	return target
+}
+
+func (e Event) Workspace() string {
+	if e.WorkspaceID != nil && *e.WorkspaceID != "" {
+		return *e.WorkspaceID
+	}
+	return e.target().WorkspaceID
+}
+
+func (e Event) Surface() string {
+	if e.SurfaceID != nil && *e.SurfaceID != "" {
+		return *e.SurfaceID
+	}
+	return e.target().SurfaceID
+}
+
+func (e Event) Hook() (string, bool) {
+	name, ok := strings.CutPrefix(e.Name, hookEventPrefix)
+	if !ok {
+		return "", false
+	}
+	return cmp.Or(e.target().HookEventName, name), true
 }
 
 func (c *Client) Events(ctx context.Context, afterSeq *int64, categories []string, handle func(Event) error) error {
@@ -654,7 +729,7 @@ type AgentMessage struct {
 
 func (c *Client) SendAgentMessage(ctx context.Context, target, from, body string) (AgentMessage, error) {
 	var message AgentMessage
-	err := c.Call(ctx, "agent.message.send", map[string]any{"target": target, "from": from, "body": body}, &message)
+	err := c.Call(ctx, MethodAgentMessageSend, map[string]any{"target": target, "from": from, "body": body}, &message)
 	return message, err
 }
 
@@ -662,22 +737,22 @@ func (c *Client) AgentMessages(ctx context.Context, surfaceID string, limit int)
 	var list struct {
 		Messages []AgentMessage `json:"messages"`
 	}
-	err := c.Call(ctx, "agent.message.list", map[string]any{"surface": surfaceID, "limit": limit}, &list)
+	err := c.Call(ctx, MethodAgentMessageList, map[string]any{"surface": surfaceID, "limit": limit}, &list)
 	return list.Messages, err
 }
 
+type keepAwakeStatus struct {
+	Enabled bool `json:"enabled"`
+}
+
 func (c *Client) KeepAwake(ctx context.Context) (bool, error) {
-	var status struct {
-		Enabled bool `json:"enabled"`
-	}
+	var status keepAwakeStatus
 	err := c.Call(ctx, MethodKeepAwake, nil, &status)
 	return status.Enabled, err
 }
 
 func (c *Client) SetKeepAwake(ctx context.Context, enabled bool) (bool, error) {
-	var status struct {
-		Enabled bool `json:"enabled"`
-	}
+	var status keepAwakeStatus
 	err := c.Call(ctx, MethodSetKeepAwake, map[string]any{"enabled": enabled}, &status)
 	return status.Enabled, err
 }

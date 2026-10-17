@@ -120,7 +120,7 @@ func (t *Transcript) Feed(raw []byte) []Entry {
 			if b.IsError {
 				tool.Status = ToolFailed
 			}
-			tool.Output = truncate(resultText(b.Content), maxOutputLength)
+			tool.Output = Truncate(resultText(b.Content), maxOutputLength)
 			updated.Tool = &tool
 			changed = append(changed, t.upsert(updated))
 		}
@@ -196,25 +196,28 @@ func resultText(raw json.RawMessage) string {
 	return strings.Join(parts, "\n")
 }
 
-var summaryFields = []string{"command", "file_path", "path", "pattern", "url", "query", "description", "prompt", "skill"}
+var toolInputFields = []string{"command", "file_path", "path", "pattern", "url", "query", "description", "prompt", "skill"}
+
+func ToolInputValue(input map[string]any) (field, value string) {
+	for _, field := range toolInputFields {
+		if value, ok := input[field].(string); ok && strings.TrimSpace(value) != "" {
+			return field, value
+		}
+	}
+	return "", ""
+}
 
 func summarize(name string, raw json.RawMessage) string {
 	var input map[string]any
 	if err := json.Unmarshal(raw, &input); err != nil {
 		return ""
 	}
-	for _, field := range summaryFields {
-		value, ok := input[field].(string)
-		if !ok || strings.TrimSpace(value) == "" {
-			continue
-		}
-		if field == "file_path" && name != "Bash" {
-			value = shortPath(value)
-		}
-		first, _, _ := strings.Cut(strings.TrimSpace(value), "\n")
-		return truncate(first, maxSummaryLength)
+	field, value := ToolInputValue(input)
+	if field == "file_path" && name != "Bash" {
+		value = shortPath(value)
 	}
-	return ""
+	first, _, _ := strings.Cut(strings.TrimSpace(value), "\n")
+	return Truncate(first, maxSummaryLength)
 }
 
 func shortPath(value string) string {
@@ -226,7 +229,7 @@ func shortPath(value string) string {
 	return parent + "/" + file
 }
 
-func truncate(text string, limit int) string {
+func Truncate(text string, limit int) string {
 	if len(text) <= limit {
 		return text
 	}

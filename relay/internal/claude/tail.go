@@ -44,12 +44,14 @@ func FindTranscript(configDir, cwd, sessionID string) (string, bool) {
 
 type Tail struct {
 	path    string
+	window  int64
+	started bool
 	offset  int64
 	partial []byte
 }
 
-func NewTail(path string) *Tail {
-	return &Tail{path: path}
+func NewTail(path string, window int64) *Tail {
+	return &Tail{path: path, window: window}
 }
 
 func (t *Tail) Lines() (lines [][]byte, restarted bool, err error) {
@@ -66,7 +68,14 @@ func (t *Tail) Lines() (lines [][]byte, restarted bool, err error) {
 		return nil, false, err
 	}
 	if info.Size() < t.offset {
-		t.offset, t.partial, restarted = 0, nil, true
+		t.offset, t.partial, t.started, restarted = 0, nil, false, true
+	}
+	midLine := false
+	if !t.started {
+		t.started = true
+		if t.window > 0 && info.Size() > t.window {
+			t.offset, midLine = info.Size()-t.window, true
+		}
 	}
 	if info.Size() == t.offset {
 		return nil, restarted, nil
@@ -79,6 +88,9 @@ func (t *Tail) Lines() (lines [][]byte, restarted bool, err error) {
 		return nil, restarted, err
 	}
 	t.offset += int64(len(data))
+	if midLine {
+		_, data, _ = bytes.Cut(data, []byte{'\n'})
+	}
 	data = append(t.partial, data...)
 	end := bytes.LastIndexByte(data, '\n')
 	if end < 0 {

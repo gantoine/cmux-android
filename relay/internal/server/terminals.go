@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -13,7 +15,6 @@ import (
 const (
 	maxTerminalTitleBytes = 256
 	defaultShell          = "/bin/zsh"
-	lastSurfaceErrorCode  = "invalid_state"
 )
 
 type terminalRequest struct {
@@ -23,27 +24,23 @@ type terminalRequest struct {
 	Force       bool   `json:"force"`
 }
 
-var errTerminalActionsUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't do that to a single terminal. Update cmux."}
+var errTerminalActionsUnsupported = unsupported("do that to a single terminal")
 
 var errLastTerminal = &requestError{Code: "last_terminal", Message: "This is the workspace's only terminal. Close the workspace instead."}
 
-func parseTerminalRequest(kind string, raw json.RawMessage) (terminalRequest, error) {
+func (s *Server) terminalRequest(ctx context.Context, kind string, raw json.RawMessage, act func(context.Context, terminalRequest) error) error {
 	var request terminalRequest
 	if err := json.Unmarshal(raw, &request); err != nil || request.WorkspaceID == "" || request.SurfaceID == "" {
-		return request, &requestError{Code: "invalid_params", Message: kind + " needs workspace_id and surface_id."}
+		return invalid(kind + " needs workspace_id and surface_id.")
 	}
-	return request, nil
+	return act(ctx, request)
 }
 
 func (s *Server) terminalAction(method string, call func() error) error {
-	if !s.methods.supports(method) {
-		return errTerminalActionsUnsupported
+	err := guard(s, method, errTerminalActionsUnsupported, call)
+	if !errors.Is(err, errTerminalActionsUnsupported) {
+		s.workspaces.refresh()
 	}
-	err := call()
-	if s.methods.observe(method, err) {
-		return errTerminalActionsUnsupported
-	}
-	s.workspaces.refresh()
 	return err
 }
 
@@ -51,7 +48,7 @@ func (s *Server) closeTerminal(ctx context.Context, request terminalRequest) err
 	err := s.terminalAction(cmux.MethodCloseTerminal, func() error {
 		return s.cmux.CloseTerminal(ctx, request.WorkspaceID, request.SurfaceID, request.Force)
 	})
-	if cmux.ErrorCode(err) == lastSurfaceErrorCode {
+	if cmux.IsLastSurface(err) {
 		return errLastTerminal
 	}
 	return err
@@ -60,7 +57,7 @@ func (s *Server) closeTerminal(ctx context.Context, request terminalRequest) err
 func (s *Server) renameTerminal(ctx context.Context, request terminalRequest) error {
 	title := strings.TrimSpace(request.Title)
 	if len(title) > maxTerminalTitleBytes {
-		return &requestError{Code: "invalid_params", Message: "A terminal name can be up to 256 bytes."}
+		return invalid(fmt.Sprintf("A terminal name can be up to %d bytes.", maxTerminalTitleBytes))
 	}
 	return s.terminalAction(cmux.MethodRenameTerminal, func() error {
 		return s.cmux.RenameTerminal(ctx, request.WorkspaceID, request.SurfaceID, title)
@@ -82,11 +79,13 @@ func loginShell() string {
 
 func (s *session) watchInputState(ctx context.Context, current *attachment) {
 	var last *cmux.InputState
-	for s.server.methods.supports(cmux.MethodInputState) {
+	for {
 		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
-		state, err := s.server.cmux.InputState(callCtx, current.workspaceID, current.surfaceID)
+		state, err := guarded(s.server, cmux.MethodInputState, errMethodMissing, func() (cmux.InputState, error) {
+			return s.server.cmux.InputState(callCtx, current.workspaceID, current.surfaceID)
+		})
 		cancel()
-		if ctx.Err() != nil || s.server.methods.observe(cmux.MethodInputState, err) {
+		if ctx.Err() != nil || errors.Is(err, errMethodMissing) {
 			return
 		}
 		if err == nil && (last == nil || *last != state) {

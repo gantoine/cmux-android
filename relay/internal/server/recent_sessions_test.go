@@ -1,10 +1,8 @@
 package server
 
 import (
-	"context"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket/wsjson"
 
@@ -30,13 +28,7 @@ func TestRecentSessionsMarkWhichAreOpenAndHideBareCommandTitles(t *testing.T) {
 		{Agent: "claude", SessionID: "s-open", Title: "fix the relay\nand more", Cwd: "/src/muxer", Modified: "2026-10-16T20:00:00Z"},
 		{Agent: "codex", SessionID: "s-old", Title: "/clear", Cwd: "/src/api", GitBranch: "main", Modified: "2026-10-15T09:00:00Z"},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "recent_sessions", "id": "1"})
 	result := resultFor(t, ctx, conn, "1")
@@ -80,13 +72,7 @@ func TestResumingASessionWakesItsNewTerminalAndRunsItsResumeCommand(t *testing.T
 		{Agent: "claude", SessionID: "s-old", Cwd: "/src/api", ResumeCommand: "claude --resume s-old"},
 		{Agent: "pi", SessionID: "s-pi"},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "resume_session", "id": "1", "agent": "claude", "session_id": "s-open"})
 	if data := resultFor(t, ctx, conn, "1")["data"].(map[string]any); data["already_open"] != true || data["surface_id"] != "t1" {
@@ -123,13 +109,7 @@ func TestResumePressesEnterWhenThePasteWasNotSubmitted(t *testing.T) {
 	relay := startRelay(t)
 	relay.cmux.workspaceList = agentWorkspaces()
 	relay.cmux.vaultSessions = []cmux.VaultSession{{Agent: "claude", SessionID: "s-old", ResumeCommand: "claude --resume s-old"}}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "resume_session", "id": "1", "agent": "claude", "session_id": "s-old"})
 	if result := resultFor(t, ctx, conn, "1"); result["ok"] != true {
@@ -144,13 +124,7 @@ func TestResumePressesEnterWhenThePasteWasNotSubmitted(t *testing.T) {
 func TestRecentSessionsNeedAVaultAwareCmux(t *testing.T) {
 	relay := startRelay(t)
 	relay.cmux.methods = []string{"system.identify"}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	resultFor(t, ctx, conn, "1")

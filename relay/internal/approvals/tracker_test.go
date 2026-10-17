@@ -3,7 +3,7 @@ package approvals
 import (
 	"context"
 	"encoding/json"
-	"io"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -72,7 +72,7 @@ func (f *fakeSource) emit(hook, phase, requestID, surfaceID string) {
 
 func startTracker(t *testing.T, source *fakeSource) *Tracker {
 	t.Helper()
-	tracker := NewTracker(source, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tracker := NewTracker(source, slog.New(slog.DiscardHandler))
 	source.tracker = tracker
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -154,10 +154,11 @@ func TestAnswerRepliesToCmuxAndRejectsInvalidAnswers(t *testing.T) {
 	waitFor(t, tracker, 2)
 
 	ctx := context.Background()
-	if err := tracker.Answer(ctx, "r1", Answer{Mode: "bypass"}); err == nil {
-		t.Fatal("bypass must not be offered from the phone")
+	var invalidAnswer InvalidAnswer
+	if err := tracker.Answer(ctx, "r1", Answer{Mode: "bypass"}); !errors.As(err, &invalidAnswer) {
+		t.Fatalf("bypass must not be offered from the phone, got %v", err)
 	}
-	if err := tracker.Answer(ctx, "q1", Answer{Answers: []string{"A", "B"}}); err == nil {
+	if err := tracker.Answer(ctx, "q1", Answer{Answers: []string{"A", "B"}}); !errors.As(err, &invalidAnswer) {
 		t.Fatal("a question needs exactly one answer per question")
 	}
 	if err := tracker.Answer(ctx, "r1", Answer{Mode: "once"}); err != nil {
@@ -228,7 +229,7 @@ func (s *sourceThatChangesDuringRead) FeedItems(ctx context.Context) ([]cmux.Fee
 
 func TestReconcileKeepsARequestThatArrivedWhileTheFeedWasRead(t *testing.T) {
 	source := &sourceThatChangesDuringRead{fakeSource: newFakeSource()}
-	tracker := NewTracker(source, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tracker := NewTracker(source, slog.New(slog.DiscardHandler))
 	tracker.add(Approval{ID: "answered", Kind: KindPermission})
 	source.duringRead = func() { tracker.add(Approval{ID: "new", Kind: KindPermission}) }
 

@@ -17,7 +17,6 @@ type VM struct {
 	Status       string `json:"status"`
 	Image        string `json:"image"`
 	Kind         string `json:"kind"`
-	Provider     string `json:"provider"`
 	CreatedAt    string `json:"createdAt"`
 	Capabilities struct {
 		Stats bool `json:"stats"`
@@ -25,8 +24,7 @@ type VM struct {
 }
 
 type VMLimits struct {
-	PlanID       string `json:"planId"`
-	MaxActiveVMs *int   `json:"maxActiveVms"`
+	PlanID string `json:"planId"`
 }
 
 type VMList struct {

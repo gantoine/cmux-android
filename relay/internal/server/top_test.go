@@ -1,10 +1,8 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket/wsjson"
 
@@ -37,13 +35,7 @@ func TestPhoneSeesWhatUsesTheComputer(t *testing.T) {
 	if err := json.Unmarshal([]byte(topFixture), &relay.cmux.top); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "top", "id": "2"})
@@ -78,20 +70,14 @@ func TestPhoneSeesWhatUsesTheComputer(t *testing.T) {
 	relay.cmux.topErr = &cmux.RPCError{Code: "method_not_found", Message: "Unknown method"}
 	relay.cmux.mu.Unlock()
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "top", "id": "3"})
-	if result := resultFor(t, ctx, conn, "3"); result["ok"] != false || result["error"].(map[string]any)["code"] != "unsupported" {
+	if result := resultFor(t, ctx, conn, "3"); result["ok"] != false || errorCode(result) != "unsupported" {
 		t.Fatalf("an older cmux must be reported as unsupported: %v", result)
 	}
 }
 
 func TestPhoneSeesHowBusyTheComputerIs(t *testing.T) {
 	relay := startRelay(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "host_usage", "id": "2"})

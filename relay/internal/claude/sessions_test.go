@@ -88,3 +88,25 @@ func TestSessionForSurfacePrefersTheNewestClaude(t *testing.T) {
 		t.Errorf("surface-a = %+v %v", ref, ok)
 	}
 }
+
+func TestResolverReusesOneScanForAWhile(t *testing.T) {
+	dir := t.TempDir()
+	writeSession(t, dir, "1.json", `{"pid":1,"sessionId":"first","cwd":"/a","kind":"interactive"}`)
+	earlier := time.Now().Add(-time.Hour)
+	processes := fakeProcesses{started: map[int]time.Time{1: earlier, 2: earlier}, env: map[int]string{1: "SURFACE-A", 2: "surface-b"}}
+	now := time.Now()
+	resolver := NewResolver(dir, processes, time.Minute)
+	resolver.now = func() time.Time { return now }
+
+	if ref, ok := resolver.ForSurface("surface-a"); !ok || ref.SessionID != "first" {
+		t.Fatalf("surface-a = %+v %v", ref, ok)
+	}
+	writeSession(t, dir, "2.json", `{"pid":2,"sessionId":"second","cwd":"/b","kind":"interactive"}`)
+	if _, ok := resolver.ForSurface("surface-b"); ok {
+		t.Fatal("a fresh scan must be reused until it is too old")
+	}
+	now = now.Add(time.Minute)
+	if ref, ok := resolver.ForSurface("surface-b"); !ok || ref.SessionID != "second" {
+		t.Fatalf("an old scan must be replaced: %+v %v", ref, ok)
+	}
+}

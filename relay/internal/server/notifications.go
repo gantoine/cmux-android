@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 
 	"github.com/gantoine/muxer/relay/internal/cmux"
 )
@@ -28,33 +27,16 @@ func (s *Server) markRead(ctx context.Context, request markReadRequest) error {
 	case request.NotificationID != "":
 		return s.cmux.MarkNotificationRead(ctx, request.NotificationID)
 	case request.SurfaceID != "":
-		return s.markTerminalRead(ctx, request.SurfaceID)
+		return s.cmux.MarkSurfaceNotificationsRead(ctx, request.SurfaceID)
 	default:
-		return &requestError{Code: "invalid_params", Message: "mark_notifications_read needs notification_id, surface_id or all."}
+		return invalid("mark_notifications_read needs notification_id, surface_id or all.")
 	}
-}
-
-func (s *Server) markTerminalRead(ctx context.Context, surfaceID string) error {
-	list, err := s.cmux.Notifications(ctx)
-	if err != nil {
-		return err
-	}
-	var failures []error
-	for _, notification := range list {
-		if notification.IsRead || notification.SurfaceID != surfaceID {
-			continue
-		}
-		if err := s.cmux.MarkNotificationRead(ctx, notification.ID); err != nil && cmux.ErrorCode(err) != "not_found" {
-			failures = append(failures, err)
-		}
-	}
-	return errors.Join(failures...)
 }
 
 func (s *session) markAttachedRead(ctx context.Context, surfaceID string) {
 	callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
-	if err := s.server.markTerminalRead(callCtx, surfaceID); err != nil && ctx.Err() == nil {
+	if err := s.server.cmux.MarkSurfaceNotificationsRead(callCtx, surfaceID); err != nil && ctx.Err() == nil {
 		s.server.logger.Warn("could not mark the terminal's notifications read", "error", err)
 	}
 }

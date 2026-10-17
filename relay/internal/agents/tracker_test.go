@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -30,7 +29,7 @@ func (f *fakeSource) AgentMessages(context.Context, string, int) ([]cmux.AgentMe
 var start = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 
 func newTestTracker(source *fakeSource) *Tracker {
-	tracker := NewTracker(source, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tracker := NewTracker(source, slog.New(slog.DiscardHandler))
 	tracker.now = func() time.Time { return start }
 	return tracker
 }

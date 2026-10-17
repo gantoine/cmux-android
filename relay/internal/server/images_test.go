@@ -1,12 +1,10 @@
 package server
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket/wsjson"
 
@@ -15,13 +13,7 @@ import (
 
 func TestPhoneCanSendImagesToClaude(t *testing.T) {
 	relay := startRelay(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	resultFor(t, ctx, conn, "1")
 
@@ -29,13 +21,13 @@ func TestPhoneCanSendImagesToClaude(t *testing.T) {
 	images := []map[string]string{{"data_b64": photo, "format": "jpeg"}}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_images", "id": "2", "images": images})
-	if result := resultFor(t, ctx, conn, "2"); result["error"].(map[string]any)["code"] != "not_attached" {
+	if result := resultFor(t, ctx, conn, "2"); errorCode(result) != "not_attached" {
 		t.Fatalf("images need an attached terminal: %v", result)
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1"})
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_images", "id": "3", "images": images})
-	if result := resultFor(t, ctx, conn, "3"); result["error"].(map[string]any)["code"] != "no_agent" {
+	if result := resultFor(t, ctx, conn, "3"); errorCode(result) != "no_agent" {
 		t.Fatalf("a terminal without Claude must refuse images: %v", result)
 	}
 
@@ -59,7 +51,7 @@ func TestPhoneCanSendImagesToClaude(t *testing.T) {
 		"9": {images[0], images[0], images[0], images[0], images[0]},
 	} {
 		_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_images", "id": id, "images": bad})
-		if result := resultFor(t, ctx, conn, id); result["error"].(map[string]any)["code"] != "invalid_params" {
+		if result := resultFor(t, ctx, conn, id); errorCode(result) != "invalid_params" {
 			t.Fatalf("request %s must be refused: %v", id, result)
 		}
 	}
@@ -68,7 +60,7 @@ func TestPhoneCanSendImagesToClaude(t *testing.T) {
 	relay.cmux.chatErr = &cmux.RPCError{Code: "method_not_found", Message: "Unknown method"}
 	relay.cmux.mu.Unlock()
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_images", "id": "10", "images": images})
-	if result := resultFor(t, ctx, conn, "10"); result["error"].(map[string]any)["code"] != "unsupported" {
+	if result := resultFor(t, ctx, conn, "10"); errorCode(result) != "unsupported" {
 		t.Fatalf("an older cmux must be reported as unsupported: %v", result)
 	}
 }

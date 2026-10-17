@@ -99,15 +99,10 @@ func (s *session) follow(f *feed) {
 	changes, leave := f.subscribe(s.server.ctx)
 	defer leave()
 	var sent []byte
-	for {
+	onEachChange(s.ctx, changes, func() {
 		if latest := f.current(); latest != nil && !bytes.Equal(latest, sent) {
 			sent = latest
 			s.sendEncoded(latest)
 		}
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-changes:
-		}
-	}
+	})
 }

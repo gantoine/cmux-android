@@ -42,16 +42,10 @@ type topProcess struct {
 	MemoryBytes int64   `json:"memory_bytes"`
 }
 
-var errTopUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't report CPU and memory use. Update cmux."}
+var errTopUnsupported = unsupported("report CPU and memory use")
 
 func (s *Server) top(ctx context.Context) (topSummary, error) {
-	if !s.methods.supports(cmux.MethodTop) {
-		return topSummary{}, errTopUnsupported
-	}
-	top, err := s.cmux.Top(ctx)
-	if s.methods.observe(cmux.MethodTop, err) {
-		return topSummary{}, errTopUnsupported
-	}
+	top, err := guarded(s, cmux.MethodTop, errTopUnsupported, func() (cmux.Top, error) { return s.cmux.Top(ctx) })
 	if err != nil {
 		return topSummary{}, err
 	}

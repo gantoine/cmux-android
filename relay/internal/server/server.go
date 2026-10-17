@@ -24,6 +24,36 @@ import (
 
 const ProtocolVersion = 1
 
+const claudeScanMaxAge = 2 * time.Second
+
+type Intervals struct {
+	Fast       time.Duration
+	Idle       time.Duration
+	Slow       time.Duration
+	IdleAfter  time.Duration
+	SlowAfter  time.Duration
+	Workspaces time.Duration
+	Chat       time.Duration
+	KeepAwake  time.Duration
+	Git        time.Duration
+	InputState time.Duration
+	Organizing time.Duration
+}
+
+var DefaultIntervals = Intervals{
+	Fast:       80 * time.Millisecond,
+	Idle:       250 * time.Millisecond,
+	Slow:       time.Second,
+	IdleAfter:  3 * time.Second,
+	SlowAfter:  time.Minute,
+	Workspaces: 2 * time.Second,
+	Chat:       500 * time.Millisecond,
+	KeepAwake:  30 * time.Second,
+	Git:        10 * time.Second,
+	InputState: time.Second,
+	Organizing: 5 * time.Second,
+}
+
 type Cmux interface {
 	Identify(ctx context.Context) (cmux.Identity, error)
 	Workspaces(ctx context.Context) (cmux.WorkspaceList, error)
@@ -46,7 +76,7 @@ type Cmux interface {
 	RunCommand(ctx context.Context, workspaceID, surfaceID, command string) (bool, error)
 	VaultSessions(ctx context.Context, agent string, limit int) ([]cmux.VaultSession, error)
 	VaultSearch(ctx context.Context, query string, limit int) ([]cmux.VaultSession, error)
-	Perform(ctx context.Context, method string, params map[string]any, result any) error
+	Call(ctx context.Context, method string, params any, result any) error
 	LaneStatus(ctx context.Context, workspaceID string) (cmux.LaneStatus, error)
 	Checklist(ctx context.Context, workspaceID string) (cmux.Checklist, error)
 	GroupDetails(ctx context.Context) ([]cmux.GroupDetails, error)
@@ -66,6 +96,7 @@ type Cmux interface {
 	Notifications(ctx context.Context) ([]cmux.Notification, error)
 	MarkNotificationRead(ctx context.Context, id string) error
 	MarkAllNotificationsRead(ctx context.Context) error
+	MarkSurfaceNotificationsRead(ctx context.Context, surfaceID string) error
 }
 
 type Approvals interface {
@@ -121,30 +152,11 @@ func New(cmuxAPI Cmux, store *devices.Store, hub *notify.Hub, options Options, l
 	if options.PollInterval == (Intervals{}) {
 		options.PollInterval = DefaultIntervals
 	}
-	if options.PollInterval.Chat == 0 {
-		options.PollInterval.Chat = DefaultIntervals.Chat
-	}
-	if options.PollInterval.Git == 0 {
-		options.PollInterval.Git = DefaultIntervals.Git
-	}
-	if options.PollInterval.InputState == 0 {
-		options.PollInterval.InputState = DefaultIntervals.InputState
-	}
-	if options.PollInterval.Organizing == 0 {
-		options.PollInterval.Organizing = DefaultIntervals.Organizing
-	}
-	if options.PollInterval.KeepAwake == 0 {
-		options.PollInterval.KeepAwake = DefaultIntervals.KeepAwake
-	}
 	if options.ClaudeConfigDir == "" {
 		options.ClaudeConfigDir = claude.ConfigDir()
 	}
 	if options.ClaudeSession == nil {
-		configDir := options.ClaudeConfigDir
-		options.ClaudeSession = func(surfaceID string) (claude.SessionRef, bool) {
-			processes := claude.SystemProcesses{}
-			return claude.SessionForSurface(claude.RunningSessions(configDir, processes), surfaceID, processes)
-		}
+		options.ClaudeSession = claude.NewResolver(options.ClaudeConfigDir, claude.SystemProcesses{}, claudeScanMaxAge).ForSurface
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	server := &Server{cmux: cmuxAPI, devices: store, hub: hub, options: options, logger: logger, ctx: ctx, cancel: cancel}
@@ -259,14 +271,11 @@ func (s *Server) macName(ctx context.Context) string {
 	if s.options.MacName != "" {
 		return s.options.MacName
 	}
-	if s.methods.supports(cmux.MethodHostStatus) {
-		callCtx, cancel := context.WithTimeout(ctx, hostNameTimeout)
-		name, err := s.cmux.HostName(callCtx)
-		cancel()
-		s.methods.observe(cmux.MethodHostStatus, err)
-		if err == nil && name != "" {
-			return name
-		}
+	callCtx, cancel := context.WithTimeout(ctx, hostNameTimeout)
+	defer cancel()
+	name, ok := probe(s, cmux.MethodHostStatus, func() (string, error) { return s.cmux.HostName(callCtx) })
+	if ok && name != "" {
+		return name
 	}
 	return s.options.FallbackMacName
 }

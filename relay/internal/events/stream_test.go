@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"slices"
 	"sync"
@@ -66,7 +65,7 @@ func (r *recorder) snapshot() []string {
 func TestEveryConsumerGetsEventsInOrderAndResumesWhereTheStreamDropped(t *testing.T) {
 	source := &droppingSource{}
 	first, second := &recorder{}, &recorder{}
-	stream := NewStream(source, slog.New(slog.NewTextHandler(io.Discard, nil)), []string{"notification", "agent"}, first, second)
+	stream := NewStream(source, slog.New(slog.DiscardHandler), []string{"notification", "agent"}, first, second)
 	stream.firstRetry = time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

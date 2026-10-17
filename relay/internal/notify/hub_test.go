@@ -3,7 +3,6 @@ package notify
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"testing"
 
@@ -31,7 +30,7 @@ func TestHubResolvesRedactedTextAndReplaysOnlyForReturningPhones(t *testing.T) {
 		},
 		notifications: []cmux.Notification{{ID: "n1", Title: "Claude Code", Body: "Claude is waiting for your input", WorkspaceID: "w1"}},
 	}
-	hub := NewHub(source, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	hub := NewHub(source, slog.New(slog.DiscardHandler))
 	for _, event := range source.events {
 		hub.HandleEvent(context.Background(), event)
 	}
@@ -64,7 +63,7 @@ func TestHubResolvesRedactedTextAndReplaysOnlyForReturningPhones(t *testing.T) {
 }
 
 func TestHubDismissesEveryNotificationReadOrRemovedOnTheMac(t *testing.T) {
-	hub := NewHub(&fakeSource{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	hub := NewHub(&fakeSource{}, slog.New(slog.DiscardHandler))
 	hub.HandleEvent(context.Background(), event("notification.read", `{"count":2,"notification_ids":["n1","n2"]}`, 1))
 	hub.HandleEvent(context.Background(), event("notification.removed", `{"notification_id":"n3"}`, 2))
 

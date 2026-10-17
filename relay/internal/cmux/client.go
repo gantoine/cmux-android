@@ -47,28 +47,43 @@ func IsMethodNotFound(err error) bool {
 	return ErrorCode(err) == "method_not_found"
 }
 
+func IsNotFound(err error) bool {
+	return ErrorCode(err) == "not_found"
+}
+
+func IsLastSurface(err error) bool {
+	return ErrorCode(err) == "invalid_state"
+}
+
+func IsCloudDisabled(err error) bool {
+	return ErrorCode(err) == "cloud_disabled"
+}
+
 var errNotSent = errors.New("request not sent")
 
 var readOnlyMethods = map[string]bool{
-	"system.identify":         true,
-	"system.capabilities":     true,
-	"mobile.workspace.list":   true,
-	"mobile.terminal.replay":  true,
-	"notification.list":       true,
-	"feed.list":               true,
-	"agent.message.list":      true,
-	"caffeine.status":         true,
-	"debug.terminals":         true,
-	"system.top":              true,
-	"vault.sessions":          true,
-	"vault.search":            true,
-	"workspace.status.get":    true,
-	"workspace.todo.list":     true,
-	"workspace.group.list":    true,
-	"workspace.remote.status": true,
-	"vm.list":                 true,
-	"vm.status":               true,
-	"vm.stats":                true,
+	MethodIdentify:         true,
+	MethodCapabilities:     true,
+	MethodHostStatus:       true,
+	MethodWorkspaceList:    true,
+	MethodReplay:           true,
+	MethodNotificationList: true,
+	MethodFeedList:         true,
+	MethodAgentMessageList: true,
+	MethodAgentSession:     true,
+	MethodInputState:       true,
+	MethodKeepAwake:        true,
+	MethodTerminalGit:      true,
+	MethodTop:              true,
+	MethodVaultSessions:    true,
+	MethodVaultSearch:      true,
+	MethodLaneStatus:       true,
+	MethodChecklist:        true,
+	MethodGroupList:        true,
+	MethodRemoteStatus:     true,
+	MethodVMList:           true,
+	MethodVMStatus:         true,
+	MethodVMStats:          true,
 }
 
 func isConnectionError(err error) bool {
@@ -85,8 +100,10 @@ type Client struct {
 	password   PasswordSource
 	nextID     atomic.Uint64
 
-	mu   sync.Mutex
-	idle []*conn
+	mu           sync.Mutex
+	idle         []*conn
+	passwordRead bool
+	readPassword string
 }
 
 func NewClient(socketPath string, password PasswordSource) *Client {
@@ -194,17 +211,11 @@ func (c *Client) authenticate(ctx context.Context, cn *conn) error {
 	if c.password == nil {
 		return nil
 	}
-	password, err := c.password()
-	if err != nil {
-		return err
+	err := c.login(ctx, cn, false)
+	if ErrorCode(err) == "auth_failed" {
+		err = c.login(ctx, cn, true)
 	}
-	if password == "" {
-		return nil
-	}
-	_, err = cn.roundTrip(ctx, c.nextID.Add(1), "auth.login", map[string]string{"password": password})
 	switch ErrorCode(err) {
-	case "":
-		return err
 	case "auth_unconfigured":
 		return nil
 	case "auth_failed":
@@ -212,6 +223,29 @@ func (c *Client) authenticate(ctx context.Context, cn *conn) error {
 	default:
 		return err
 	}
+}
+
+func (c *Client) login(ctx context.Context, cn *conn, reread bool) error {
+	password, err := c.socketPassword(reread)
+	if err != nil || password == "" {
+		return err
+	}
+	_, err = cn.roundTrip(ctx, c.nextID.Add(1), "auth.login", map[string]string{"password": password})
+	return err
+}
+
+func (c *Client) socketPassword(reread bool) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.passwordRead && !reread {
+		return c.readPassword, nil
+	}
+	password, err := c.password()
+	if err != nil {
+		return "", err
+	}
+	c.passwordRead, c.readPassword = true, password
+	return password, nil
 }
 
 func (c *Client) Stream(ctx context.Context, params any, handle func(json.RawMessage) error) error {

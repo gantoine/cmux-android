@@ -27,7 +27,7 @@ type vmsResponse struct {
 }
 
 var (
-	errVMsUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't list cloud VMs. Update cmux."}
+	errVMsUnsupported = unsupported("list cloud VMs")
 	errCloudDisabled  = &requestError{Code: "cloud_disabled", Message: "cmux Cloud is off on this computer."}
 )
 
@@ -39,14 +39,12 @@ func asleep(status string) bool {
 	return false
 }
 
-func (s *Server) vmError(method string, err error) error {
-	if s.methods.observe(method, err) {
-		return errVMsUnsupported
+func vmCall[T any](s *Server, method string, call func() (T, error)) (T, error) {
+	result, err := guarded(s, method, errVMsUnsupported, call)
+	if cmux.IsCloudDisabled(err) {
+		return result, errCloudDisabled
 	}
-	if cmux.ErrorCode(err) == "cloud_disabled" {
-		return errCloudDisabled
-	}
-	return err
+	return result, err
 }
 
 func viewOf(vm cmux.VM) vmView {
@@ -61,12 +59,9 @@ func viewOf(vm cmux.VM) vmView {
 }
 
 func (s *Server) vms(ctx context.Context) (vmsResponse, error) {
-	if !s.methods.supports(cmux.MethodVMList) {
-		return vmsResponse{}, errVMsUnsupported
-	}
-	list, err := s.cmux.VMs(ctx)
+	list, err := vmCall(s, cmux.MethodVMList, func() (cmux.VMList, error) { return s.cmux.VMs(ctx) })
 	if err != nil {
-		return vmsResponse{}, s.vmError(cmux.MethodVMList, err)
+		return vmsResponse{}, err
 	}
 	response := vmsResponse{VMs: make([]vmView, len(list.VMs))}
 	if list.Limits != nil {
@@ -79,15 +74,13 @@ func (s *Server) vms(ctx context.Context) (vmsResponse, error) {
 		if !withStats || !vm.Capabilities.Stats || asleep(vm.Status) {
 			continue
 		}
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
+		wait.Go(func() {
 			statsCtx, cancel := context.WithTimeout(ctx, vmStatsTimeout)
 			defer cancel()
-			if stats, err := s.cmux.VMStats(statsCtx, vm.ID); err == nil {
+			if stats, ok := probe(s, cmux.MethodVMStats, func() (cmux.VMStats, error) { return s.cmux.VMStats(statsCtx, vm.ID) }); ok {
 				response.VMs[index].Stats = &stats
 			}
-		}()
+		})
 	}
 	wait.Wait()
 	return response, nil
@@ -98,15 +91,12 @@ func (s *Server) setVMPaused(ctx context.Context, id string, paused bool) (vmVie
 	if paused {
 		method = cmux.MethodVMPause
 	}
-	if !s.methods.supports(method) {
-		return vmView{}, errVMsUnsupported
+	if _, err := vmCall(s, method, func() (struct{}, error) { return struct{}{}, s.cmux.SetVMPaused(ctx, id, paused) }); err != nil {
+		return vmView{}, err
 	}
-	if err := s.cmux.SetVMPaused(ctx, id, paused); err != nil {
-		return vmView{}, s.vmError(method, err)
-	}
-	vm, err := s.cmux.VMStatus(ctx, id)
+	vm, err := vmCall(s, cmux.MethodVMStatus, func() (cmux.VM, error) { return s.cmux.VMStatus(ctx, id) })
 	if err != nil {
-		return vmView{}, s.vmError(cmux.MethodVMStatus, err)
+		return vmView{}, err
 	}
 	return viewOf(vm), nil
 }

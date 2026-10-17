@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,49 +21,20 @@ import (
 	"github.com/gantoine/muxer/relay/internal/screen"
 )
 
-type Intervals struct {
-	Fast       time.Duration
-	Idle       time.Duration
-	Slow       time.Duration
-	IdleAfter  time.Duration
-	SlowAfter  time.Duration
-	Workspaces time.Duration
-	Chat       time.Duration
-	KeepAwake  time.Duration
-	Git        time.Duration
-	InputState time.Duration
-	Organizing time.Duration
-}
-
-var DefaultIntervals = Intervals{
-	Fast:       80 * time.Millisecond,
-	Idle:       250 * time.Millisecond,
-	Slow:       time.Second,
-	IdleAfter:  3 * time.Second,
-	SlowAfter:  time.Minute,
-	Workspaces: 2 * time.Second,
-	Chat:       500 * time.Millisecond,
-	KeepAwake:  30 * time.Second,
-	Git:        10 * time.Second,
-	InputState: time.Second,
-	Organizing: 5 * time.Second,
-}
-
 const (
-	writeTimeout          = 10 * time.Second
-	pingInterval          = 30 * time.Second
-	revocationCheck       = 10 * time.Second
-	maxConsecutiveErrors  = 10
-	maxInputBytes         = 64 * 1024
-	defaultHistoryLines   = 2000
-	maxHistoryLines       = 5000
-	maxQueuedMessages     = 64
-	callTimeout           = 15 * time.Second
-	hostNameTimeout       = 2 * time.Second
-	maxImages             = 4
-	maxImageBytes         = 5 << 20
-	maxMessageBytes       = 32 << 20
-	terminalGoneErrorCode = "not_found"
+	writeTimeout         = 10 * time.Second
+	pingInterval         = 30 * time.Second
+	revocationCheck      = 10 * time.Second
+	maxConsecutiveErrors = 10
+	maxInputBytes        = 64 * 1024
+	defaultHistoryLines  = 2000
+	maxHistoryLines      = 5000
+	maxQueuedMessages    = 64
+	callTimeout          = 15 * time.Second
+	hostNameTimeout      = 2 * time.Second
+	maxImages            = 4
+	maxImageBytes        = 5 << 20
+	maxMessageBytes      = 32 << 20
 )
 
 type requestError struct {
@@ -73,6 +43,10 @@ type requestError struct {
 }
 
 func (e *requestError) Error() string { return e.Code + ": " + e.Message }
+
+func invalid(message string) error {
+	return &requestError{Code: "invalid_params", Message: message}
+}
 
 type attachment struct {
 	workspaceID  string
@@ -257,7 +231,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			} `json:"fit"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.WorkspaceID == "" || request.SurfaceID == "" {
-			return nil, &requestError{Code: "invalid_params", Message: "attach needs workspace_id and surface_id."}
+			return nil, invalid("attach needs workspace_id and surface_id.")
 		}
 		s.attach(request.WorkspaceID, request.SurfaceID)
 		if request.Fit != nil {
@@ -291,7 +265,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		_ = json.Unmarshal(raw, &request)
 		return nil, s.withTerminal(func(current *attachment) error {
 			if request.Key == "" || len(request.Key) > 64 {
-				return &requestError{Code: "invalid_params", Message: "key needs a key name such as ctrl-c or up."}
+				return invalid("key needs a key name such as ctrl-c or up.")
 			}
 			return s.server.cmux.SendKey(ctx, current.workspaceID, current.surfaceID, request.Key)
 		})
@@ -330,9 +304,6 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			if err != nil {
 				return err
 			}
-			if replay.RenderGrid == nil {
-				return &requestError{Code: "no_render_grid", Message: "cmux returned no history for this terminal."}
-			}
 			history = screen.HistoryFrom(replay.RenderGrid)
 			return nil
 		})
@@ -364,7 +335,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			Force       bool   `json:"force"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.WorkspaceID == "" {
-			return nil, &requestError{Code: "invalid_params", Message: "close_workspace needs workspace_id."}
+			return nil, invalid("close_workspace needs workspace_id.")
 		}
 		err := s.server.cmux.CloseWorkspace(ctx, request.WorkspaceID, request.Force)
 		s.server.workspaces.refresh()
@@ -375,24 +346,17 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			Title       string `json:"title"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.WorkspaceID == "" || strings.TrimSpace(request.Title) == "" {
-			return nil, &requestError{Code: "invalid_params", Message: "rename_workspace needs workspace_id and title."}
+			return nil, invalid("rename_workspace needs workspace_id and title.")
 		}
 		err := s.server.cmux.RenameWorkspace(ctx, request.WorkspaceID, request.Title)
 		s.server.workspaces.refresh()
 		return nil, err
-	case "close_terminal", "rename_terminal", "restart_terminal":
-		request, err := parseTerminalRequest(kind, raw)
-		if err != nil {
-			return nil, err
-		}
-		switch kind {
-		case "close_terminal":
-			return nil, s.server.closeTerminal(ctx, request)
-		case "rename_terminal":
-			return nil, s.server.renameTerminal(ctx, request)
-		default:
-			return nil, s.server.restartTerminal(ctx, request)
-		}
+	case "close_terminal":
+		return nil, s.server.terminalRequest(ctx, kind, raw, s.server.closeTerminal)
+	case "rename_terminal":
+		return nil, s.server.terminalRequest(ctx, kind, raw, s.server.renameTerminal)
+	case "restart_terminal":
+		return nil, s.server.terminalRequest(ctx, kind, raw, s.server.restartTerminal)
 	case "recent_sessions":
 		request, err := parseSessionQuery(raw)
 		if err != nil {
@@ -409,7 +373,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			SessionID string `json:"session_id"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.Agent == "" || request.SessionID == "" {
-			return nil, &requestError{Code: "invalid_params", Message: "resume_session needs agent and session_id."}
+			return nil, invalid("resume_session needs agent and session_id.")
 		}
 		resumed, err := s.server.resumeSession(ctx, request.Agent, request.SessionID)
 		if err != nil {
@@ -421,7 +385,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			WorkspaceID string `json:"workspace_id"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.WorkspaceID == "" {
-			return nil, &requestError{Code: "invalid_params", Message: "create_terminal needs workspace_id."}
+			return nil, invalid("create_terminal needs workspace_id.")
 		}
 		terminalID, err := s.server.cmux.CreateTerminal(ctx, request.WorkspaceID)
 		s.server.workspaces.refresh()
@@ -432,7 +396,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			approvals.Answer
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.ApprovalID == "" {
-			return nil, &requestError{Code: "invalid_params", Message: "answer_approval needs approval_id and either mode or answers."}
+			return nil, invalid("answer_approval needs approval_id and either mode or answers.")
 		}
 		if s.server.options.Approvals == nil {
 			return nil, &requestError{Code: "unsupported", Message: "This relay can't answer agent requests."}
@@ -441,9 +405,9 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		if errors.Is(err, approvals.ErrNotPending) {
 			return nil, &requestError{Code: "not_pending", Message: "That request was already answered or timed out."}
 		}
-		var rpcErr *cmux.RPCError
-		if err != nil && !errors.As(err, &rpcErr) {
-			return nil, &requestError{Code: "invalid_params", Message: err.Error()}
+		var invalidAnswer approvals.InvalidAnswer
+		if errors.As(err, &invalidAnswer) {
+			return nil, invalid(err.Error())
 		}
 		return nil, err
 	case "notifications":
@@ -453,30 +417,15 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		_ = json.Unmarshal(raw, &request)
 		return nil, s.server.markRead(ctx, request)
 	case "keep_awake":
-		if !s.server.methods.supports(cmux.MethodKeepAwake) {
-			return nil, errKeepAwakeUnsupported
-		}
-		enabled, err := s.server.cmux.KeepAwake(ctx)
-		if err != nil {
-			return nil, s.server.keepAwakeError(cmux.MethodKeepAwake, err)
-		}
-		return map[string]bool{"enabled": enabled}, nil
+		return s.server.readKeepAwake(ctx)
 	case "set_keep_awake":
 		var request struct {
 			Enabled *bool `json:"enabled"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.Enabled == nil {
-			return nil, &requestError{Code: "invalid_params", Message: "set_keep_awake needs enabled."}
+			return nil, invalid("set_keep_awake needs enabled.")
 		}
-		if !s.server.methods.supports(cmux.MethodSetKeepAwake) {
-			return nil, errKeepAwakeUnsupported
-		}
-		enabled, err := s.server.cmux.SetKeepAwake(ctx, *request.Enabled)
-		if err != nil {
-			return nil, s.server.keepAwakeError(cmux.MethodSetKeepAwake, err)
-		}
-		s.server.keepAwake.refresh()
-		return map[string]bool{"enabled": enabled}, nil
+		return s.server.setKeepAwake(ctx, *request.Enabled)
 	case "top":
 		return s.server.top(ctx)
 	case "host_usage":
@@ -492,7 +441,7 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			Paused *bool  `json:"paused"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil || request.VMID == "" || request.Paused == nil {
-			return nil, &requestError{Code: "invalid_params", Message: "set_vm_paused needs vm_id and paused."}
+			return nil, invalid("set_vm_paused needs vm_id and paused.")
 		}
 		return s.server.setVMPaused(ctx, request.VMID, *request.Paused)
 	case "send_images":
@@ -501,30 +450,16 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 			Images []cmux.ChatImage `json:"images"`
 		}
 		if err := json.Unmarshal(raw, &request); err != nil {
-			return nil, &requestError{Code: "invalid_params", Message: "send_images needs images and optional text."}
+			return nil, invalid("send_images needs images and optional text.")
 		}
 		if err := validImages(request.Images); err != nil {
 			return nil, err
 		}
 		if len(request.Text) > maxInputBytes {
-			return nil, &requestError{Code: "invalid_params", Message: "The message can be up to 65536 bytes."}
-		}
-		if !s.server.methods.supports(cmux.MethodChatSend) {
-			return nil, errImagesUnsupported
+			return nil, invalid(fmt.Sprintf("The message can be up to %d bytes.", maxInputBytes))
 		}
 		return nil, s.withTerminal(func(current *attachment) error {
-			sessionID, _, err := s.claudeSession(ctx, current)
-			if err != nil {
-				return err
-			}
-			if sessionID == "" {
-				return &requestError{Code: "no_agent", Message: "Images can only go to Claude, and Claude isn't running in this terminal."}
-			}
-			err = s.server.cmux.SendChat(ctx, sessionID, request.Text, request.Images)
-			if s.server.methods.observe(cmux.MethodChatSend, err) {
-				return errImagesUnsupported
-			}
-			return err
+			return s.sendImages(ctx, current, request.Text, request.Images)
 		})
 	case "send_agent_message":
 		var request struct {
@@ -537,48 +472,32 @@ func (s *session) dispatch(kind string, raw json.RawMessage) (any, error) {
 		var sent cmux.AgentMessage
 		err := s.withTerminal(func(current *attachment) error {
 			var err error
-			sent, err = s.server.options.Agents.Send(ctx, current.surfaceID, s.device.Name, request.Text)
+			sent, err = guarded(s.server, cmux.MethodAgentMessageSend, errAgentMessagesUnsupported, func() (cmux.AgentMessage, error) {
+				return s.server.options.Agents.Send(ctx, current.surfaceID, s.device.Name, request.Text)
+			})
 			return err
 		})
 		if errors.Is(err, agents.ErrInvalidMessage) {
-			return nil, &requestError{Code: "invalid_params", Message: "Write a message of up to 32 KB."}
+			return nil, invalid("Write a message of up to 32 KB.")
 		}
 		if err != nil {
 			return nil, err
 		}
 		return sent, nil
 	default:
-		if result, handled, err := s.organizingRequest(ctx, kind, raw); handled {
-			return result, err
-		}
-		return nil, &requestError{Code: "unknown_type", Message: fmt.Sprintf("Unknown message type %q.", kind)}
+		return s.organizingRequest(ctx, kind, raw)
 	}
 }
 
-var imageFormats = map[string]bool{"png": true, "jpeg": true, "jpg": true, "webp": true, "gif": true}
+var errAgentMessagesUnsupported = unsupported("message agents")
 
-func validImages(images []cmux.ChatImage) error {
-	if len(images) == 0 || len(images) > maxImages {
-		return &requestError{Code: "invalid_params", Message: fmt.Sprintf("Send 1 to %d images at a time.", maxImages)}
-	}
-	for _, image := range images {
-		if !imageFormats[image.Format] {
-			return &requestError{Code: "invalid_params", Message: "Images must be PNG, JPEG, WebP or GIF."}
-		}
-		decoded, err := base64.StdEncoding.DecodeString(image.Data)
-		if err != nil || len(decoded) == 0 {
-			return &requestError{Code: "invalid_params", Message: "An image wasn't valid base64 data."}
-		}
-		if len(decoded) > maxImageBytes {
-			return &requestError{Code: "invalid_params", Message: "Each image can be up to 5 MB."}
-		}
-	}
-	return nil
+func unknownType(kind string) error {
+	return &requestError{Code: "unknown_type", Message: fmt.Sprintf("Unknown message type %q.", kind)}
 }
 
 func validText(kind, text string) error {
 	if text == "" || len(text) > maxInputBytes {
-		return &requestError{Code: "invalid_params", Message: kind + " needs 1 to 65536 bytes of text."}
+		return invalid(fmt.Sprintf("%s needs 1 to %d bytes of text.", kind, maxInputBytes))
 	}
 	return nil
 }
@@ -599,6 +518,7 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 		"protocol_version": ProtocolVersion,
 		"cmux_version":     identity.Version,
 		"device_id":        s.device.ID,
+		"unsupported":      s.server.unsupportedRequests(),
 	}
 	if s.server.hub != nil {
 		welcome["notification_seq"] = s.server.hub.LatestSeq()
@@ -611,75 +531,6 @@ func (s *session) hello(ctx context.Context, notificationsAfter int64) (any, err
 		go s.follow(s.server.keepAwake)
 	}
 	return welcome, nil
-}
-
-func (s *Server) pollWorkspaces(git *gitInfo) func(ctx context.Context) ([]byte, bool) {
-	return func(ctx context.Context) ([]byte, bool) {
-		list, err := s.cmux.Workspaces(ctx)
-		if err != nil {
-			s.logger.Warn("could not list workspaces", "error", err)
-			return nil, false
-		}
-		git.refresh(ctx, s)
-		git.apply(list.Workspaces)
-		s.organizing.refresh(ctx, s, list)
-		s.organizing.apply(&list)
-		encoded, err := json.Marshal(map[string]any{"type": "workspaces", "workspaces": list.Workspaces, "groups": list.Groups})
-		return encoded, err == nil
-	}
-}
-
-const failedGitReadsBeforeClearing = 3
-
-type gitInfo struct {
-	bySurface   map[string]cmux.TerminalGit
-	fetchedAt   time.Time
-	failedReads int
-}
-
-func (g *gitInfo) refresh(ctx context.Context, s *Server) {
-	if !s.methods.supports(cmux.MethodTerminalGit) {
-		g.bySurface = nil
-		return
-	}
-	if time.Since(g.fetchedAt) < s.options.PollInterval.Git {
-		return
-	}
-	g.fetchedAt = time.Now()
-	terminals, err := s.cmux.TerminalGit(ctx)
-	if s.methods.observe(cmux.MethodTerminalGit, err) {
-		g.bySurface = nil
-		return
-	}
-	if err != nil {
-		s.logger.Warn("could not read terminal git state", "error", err)
-		g.failedReads++
-		if g.failedReads >= failedGitReadsBeforeClearing {
-			g.bySurface = nil
-		}
-		return
-	}
-	g.failedReads = 0
-	fetched := make(map[string]cmux.TerminalGit, len(terminals))
-	for _, terminal := range terminals {
-		fetched[terminal.SurfaceID] = terminal
-	}
-	g.bySurface = fetched
-}
-
-func (g *gitInfo) apply(workspaces []cmux.Workspace) {
-	for _, workspace := range workspaces {
-		for index := range workspace.Terminals {
-			terminal := &workspace.Terminals[index]
-			git, ok := g.bySurface[terminal.ID]
-			if !ok {
-				continue
-			}
-			terminal.GitBranch = git.GitBranch
-			terminal.GitDirty = git.GitDirty
-			terminal.ListeningPorts = git.ListeningPorts
-		}
-	}
 }
 
 func (s *session) forwardNotifications(after int64) {
@@ -701,6 +552,17 @@ func (s *session) forwardNotifications(after int64) {
 	}
 }
 
+func onEachChange(ctx context.Context, changes <-chan struct{}, push func()) {
+	for {
+		push()
+		select {
+		case <-ctx.Done():
+			return
+		case <-changes:
+		}
+	}
+}
+
 func (s *session) forwardApprovals() {
 	tracker := s.server.options.Approvals
 	if tracker == nil {
@@ -708,18 +570,13 @@ func (s *session) forwardApprovals() {
 	}
 	changes, unsubscribe := tracker.Subscribe()
 	defer unsubscribe()
-	for {
+	onEachChange(s.ctx, changes, func() {
 		pending := tracker.Pending()
 		if pending == nil {
 			pending = []approvals.Approval{}
 		}
 		s.send(map[string]any{"type": "approvals", "approvals": pending})
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-changes:
-		}
-	}
+	})
 }
 
 func (s *session) forwardAgentActivity() {
@@ -729,14 +586,9 @@ func (s *session) forwardAgentActivity() {
 	}
 	changes, unsubscribe := tracker.SubscribeActivity()
 	defer unsubscribe()
-	for {
+	onEachChange(s.ctx, changes, func() {
 		s.send(map[string]any{"type": "agent_activity", "retries": tracker.Retries(), "busy": tracker.Busy()})
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-changes:
-		}
-	}
+	})
 }
 
 func (s *session) watchAgentMessages(ctx context.Context, current *attachment) {
@@ -746,50 +598,21 @@ func (s *session) watchAgentMessages(ctx context.Context, current *attachment) {
 	}
 	changes, unsubscribe := tracker.SubscribeMessages(current.surfaceID)
 	defer unsubscribe()
-	for {
+	onEachChange(ctx, changes, func() {
 		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
 		messages, err := tracker.Messages(callCtx, current.surfaceID)
 		cancel()
-		if ctx.Err() != nil {
-			return
-		}
-		if err != nil {
+		switch {
+		case ctx.Err() != nil:
+		case err != nil:
 			s.server.logger.Warn("could not list agent messages", "error", err)
-		} else {
+		default:
 			if messages == nil {
 				messages = []cmux.AgentMessage{}
 			}
 			s.send(map[string]any{"type": "agent_messages", "surface_id": current.surfaceID, "messages": messages})
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-changes:
-		}
-	}
-}
-
-func (s *Server) pollKeepAwake(ctx context.Context) ([]byte, bool) {
-	if !s.methods.supports(cmux.MethodKeepAwake) {
-		return nil, false
-	}
-	enabled, err := s.cmux.KeepAwake(ctx)
-	if s.methods.observe(cmux.MethodKeepAwake, err) || err != nil {
-		return nil, false
-	}
-	encoded, err := json.Marshal(map[string]any{"type": "keep_awake", "enabled": enabled})
-	return encoded, err == nil
-}
-
-var errImagesUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't receive images. Update cmux."}
-
-var errKeepAwakeUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't keep the computer awake. Update cmux."}
-
-func (s *Server) keepAwakeError(method string, err error) error {
-	if s.methods.observe(method, err) {
-		return errKeepAwakeUnsupported
-	}
-	return err
+	})
 }
 
 func (s *session) current() *attachment {
@@ -848,7 +671,7 @@ func (s *session) detach() {
 
 func (s *session) fit(ctx context.Context, columns, rows int) error {
 	if columns < 20 || columns > 300 || rows < 5 || rows > 120 {
-		return &requestError{Code: "invalid_params", Message: "fit needs 20-300 columns and 5-120 rows."}
+		return invalid("fit needs 20-300 columns and 5-120 rows.")
 	}
 	return s.withTerminal(func(current *attachment) error {
 		err := s.server.cmux.SetViewport(ctx, current.workspaceID, current.surfaceID, cmux.Viewport{
@@ -903,23 +726,14 @@ func (s *session) pollTerminal(ctx context.Context, current *attachment) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err == nil && replay.RenderGrid == nil {
-			err = &cmux.RPCError{Code: "no_render_grid", Message: "cmux returned no screen for this terminal."}
-		}
 		if err != nil {
 			consecutiveErrors++
-			if cmux.ErrorCode(err) == terminalGoneErrorCode || consecutiveErrors >= maxConsecutiveErrors {
+			if cmux.IsNotFound(err) || consecutiveErrors >= maxConsecutiveErrors {
 				s.send(map[string]any{"type": "detached", "surface_id": current.surfaceID, "reason": err.Error()})
 				return
 			}
 		} else {
 			consecutiveErrors = 0
-			if replay.WorkspaceID == "" {
-				replay.WorkspaceID = current.workspaceID
-			}
-			if replay.SurfaceID == "" {
-				replay.SurfaceID = current.surfaceID
-			}
 			if frame, changed := tracker.Update(replay); changed {
 				s.send(frame)
 				lastChange = time.Now()

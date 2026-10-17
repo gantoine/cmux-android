@@ -5,7 +5,6 @@ import (
 	"slices"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket/wsjson"
 
@@ -49,13 +48,7 @@ func TestPhoneSeesPendingApprovalsAndCanAnswerThem(t *testing.T) {
 		changes: make(chan struct{}, 1),
 	}
 	relay.server.options.Approvals = fake
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	pending := readUntil(t, ctx, conn, "approvals")["approvals"].([]any)
@@ -73,7 +66,7 @@ func TestPhoneSeesPendingApprovalsAndCanAnswerThem(t *testing.T) {
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "answer_approval", "id": "3", "approval_id": "r1", "mode": "once"})
 	result := resultFor(t, ctx, conn, "3")
-	if result["ok"] != false || result["error"].(map[string]any)["code"] != "not_pending" {
+	if result["ok"] != false || errorCode(result) != "not_pending" {
 		t.Fatalf("answering twice must say the request is gone: %v", result)
 	}
 	fake.mu.Lock()

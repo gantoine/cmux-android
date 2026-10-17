@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -74,18 +75,59 @@ func SessionForSurface(sessions []RunningSession, surfaceID string, processes Pr
 	if surfaceID == "" {
 		return SessionRef{}, false
 	}
+	ref, ok := sessionsBySurface(sessions, processes)[strings.ToLower(surfaceID)]
+	return ref, ok
+}
+
+type Resolver struct {
+	configDir string
+	processes ProcessInspector
+	maxAge    time.Duration
+	now       func() time.Time
+
+	mu        sync.Mutex
+	scannedAt time.Time
+	bySurface map[string]SessionRef
+}
+
+func NewResolver(configDir string, processes ProcessInspector, maxAge time.Duration) *Resolver {
+	return &Resolver{configDir: configDir, processes: processes, maxAge: maxAge, now: time.Now}
+}
+
+func (r *Resolver) ForSurface(surfaceID string) (SessionRef, bool) {
+	if surfaceID == "" {
+		return SessionRef{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.bySurface == nil || r.now().Sub(r.scannedAt) >= r.maxAge {
+		r.bySurface = sessionsBySurface(RunningSessions(r.configDir, r.processes), r.processes)
+		r.scannedAt = r.now()
+	}
+	ref, ok := r.bySurface[strings.ToLower(surfaceID)]
+	return ref, ok
+}
+
+func sessionsBySurface(sessions []RunningSession, processes ProcessInspector) map[string]SessionRef {
+	byJob := map[string]RunningSession{}
 	for _, session := range sessions {
-		if session.Kind != "interactive" || !strings.EqualFold(processes.Env(session.PID, surfaceEnv), surfaceID) {
+		if _, seen := byJob[session.JobID]; session.JobID != "" && !seen {
+			byJob[session.JobID] = session
+		}
+	}
+	bySurface := map[string]SessionRef{}
+	for _, session := range sessions {
+		if session.Kind != "interactive" {
 			continue
 		}
-		if session.ParkedJobID != "" {
-			for _, job := range sessions {
-				if job.JobID == session.ParkedJobID {
-					return SessionRef{SessionID: job.SessionID, Cwd: job.Cwd}, true
-				}
-			}
+		surfaceID := strings.ToLower(processes.Env(session.PID, surfaceEnv))
+		if _, seen := bySurface[surfaceID]; surfaceID == "" || seen {
+			continue
 		}
-		return SessionRef{SessionID: session.SessionID, Cwd: session.Cwd}, true
+		if job, ok := byJob[session.ParkedJobID]; ok && session.ParkedJobID != "" {
+			session = job
+		}
+		bySurface[surfaceID] = SessionRef{SessionID: session.SessionID, Cwd: session.Cwd}
 	}
-	return SessionRef{}, false
+	return bySurface
 }

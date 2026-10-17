@@ -342,11 +342,8 @@ func runDoctor(args []string) error {
 	identity, err := client.Identify(ctx)
 	check(err == nil, "connected to cmux "+identity.Version, fmt.Sprintf("could not talk to cmux: %v", err))
 
-	var capabilities struct {
-		AccessMode string `json:"access_mode"`
-	}
 	if err == nil {
-		_ = client.Call(ctx, "system.capabilities", nil, &capabilities)
+		capabilities, _ := client.Capabilities(ctx)
 		mode := capabilities.AccessMode
 		launchdAllowed := mode == "password" || mode == "automation" || mode == "allowAll"
 		check(launchdAllowed,

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -99,18 +100,19 @@ func TestListedMethodsDecideWhatTheRelayAsks(t *testing.T) {
 	relay.cmux.mu.Lock()
 	relay.cmux.methods = []string{"system.identify", "mobile.workspace.list"}
 	relay.cmux.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
+	welcome := resultFor(t, ctx, conn, "1")
+	unsupported := welcome["data"].(map[string]any)["unsupported"].([]any)
+	for _, kind := range []any{"keep_awake", "top", "checklist", "close_terminal", "set_vm_paused"} {
+		if !slices.Contains(unsupported, kind) {
+			t.Fatalf("the welcome must list %v as unsupported: %v", kind, unsupported)
+		}
+	}
 	readUntil(t, ctx, conn, "workspaces")
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "keep_awake", "id": "2"})
-	if result := resultFor(t, ctx, conn, "2"); result["ok"] != false || result["error"].(map[string]any)["code"] != "unsupported" {
+	if result := resultFor(t, ctx, conn, "2"); result["ok"] != false || errorCode(result) != "unsupported" {
 		t.Fatalf("an unlisted method must be reported as unsupported: %v", result)
 	}
 	relay.cmux.mu.Lock()

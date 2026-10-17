@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -111,6 +111,18 @@ func (f *fakeCmux) MarkNotificationRead(_ context.Context, id string) error {
 		}
 	}
 	return &cmux.RPCError{Code: "not_found", Message: "Notification not found"}
+}
+
+func (f *fakeCmux) MarkSurfaceNotificationsRead(_ context.Context, surfaceID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.notifications {
+		if !f.notifications[i].IsRead && f.notifications[i].SurfaceID == surfaceID {
+			f.notifications[i].IsRead = true
+			f.markedRead = append(f.markedRead, f.notifications[i].ID)
+		}
+	}
+	return nil
 }
 
 func (f *fakeCmux) MarkAllNotificationsRead(context.Context) error {
@@ -364,7 +376,7 @@ func (f *fakeCmux) wakeTerminal(workspaceID, surfaceID string) {
 	}
 }
 
-func (f *fakeCmux) Perform(_ context.Context, method string, params map[string]any, result any) error {
+func (f *fakeCmux) Call(_ context.Context, method string, params any, result any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	encoded, _ := json.Marshal(params)
@@ -473,7 +485,7 @@ func startRelay(t *testing.T) testRelay {
 		t.Fatal(err)
 	}
 	fake := &fakeCmux{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	intervals := DefaultIntervals
 	intervals.Fast = 10 * time.Millisecond
 	intervals.Chat = 10 * time.Millisecond
@@ -513,6 +525,18 @@ func (r testRelay) pair(t *testing.T) string {
 	return paired.Token
 }
 
+func (r testRelay) connect(t *testing.T) (context.Context, *websocket.Conn) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	conn, _, err := r.dial(t, ctx, r.pair(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.CloseNow() })
+	return ctx, conn
+}
+
 func (r testRelay) dial(t *testing.T, ctx context.Context, token string) (*websocket.Conn, *http.Response, error) {
 	t.Helper()
 	header := http.Header{}
@@ -537,38 +561,51 @@ func takeFromBacklog(conn *websocket.Conn, matches func(map[string]any) bool) ma
 	return nil
 }
 
-func readUntil(t *testing.T, ctx context.Context, conn *websocket.Conn, kind string) map[string]any {
+func readMatching(t *testing.T, ctx context.Context, conn *websocket.Conn, want string, matches func(map[string]any) bool) map[string]any {
 	t.Helper()
-	if message := takeFromBacklog(conn, func(message map[string]any) bool { return message["type"] == kind }); message != nil {
+	if message := takeFromBacklog(conn, matches); message != nil {
 		return message
 	}
 	for {
 		var message map[string]any
 		if err := wsjson.Read(ctx, conn, &message); err != nil {
-			t.Fatalf("waiting for %s: %v", kind, err)
+			t.Fatalf("waiting for %s: %v", want, err)
 		}
-		if message["type"] == kind {
+		if matches(message) {
 			return message
 		}
+		backlogMu.Lock()
+		backlog[conn] = append(backlog[conn], message)
+		backlogMu.Unlock()
 	}
+}
+
+func readUntil(t *testing.T, ctx context.Context, conn *websocket.Conn, kind string) map[string]any {
+	t.Helper()
+	return readMatching(t, ctx, conn, kind, func(message map[string]any) bool { return message["type"] == kind })
+}
+
+func resultFor(t *testing.T, ctx context.Context, conn *websocket.Conn, id string) map[string]any {
+	t.Helper()
+	return readMatching(t, ctx, conn, "result "+id, func(message map[string]any) bool { return message["type"] == "result" && message["id"] == id })
+}
+
+func errorCode(result map[string]any) any {
+	failure, _ := result["error"].(map[string]any)
+	return failure["code"]
 }
 
 func TestPairedPhoneCanWatchAndTypeIntoATerminal(t *testing.T) {
 	relay := startRelay(t)
-	token := relay.pair(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, _, err := relay.dial(t, ctx, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	welcome := readUntil(t, ctx, conn, "result")
 	if welcome["ok"] != true || welcome["data"].(map[string]any)["cmux_version"] != "0.65.1" {
 		t.Fatalf("unexpected welcome: %v", welcome)
+	}
+	if unsupported, ok := welcome["data"].(map[string]any)["unsupported"].([]any); !ok || !slices.Equal(unsupported, []any{"answer_approval", "send_agent_message"}) {
+		t.Fatalf("the welcome must list what this relay can't serve: %v", welcome["data"])
 	}
 	workspaces := readUntil(t, ctx, conn, "workspaces")
 	if len(workspaces["workspaces"].([]any)) != 1 {
@@ -622,7 +659,7 @@ func TestRelayRejectsUnknownTokensAndInputBeforeAttach(t *testing.T) {
 	defer conn.CloseNow()
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "input", "id": "1", "text": "rm -rf /\r"})
 	result := readUntil(t, ctx, conn, "result")
-	if result["ok"] != false || result["error"].(map[string]any)["code"] != "not_attached" {
+	if result["ok"] != false || errorCode(result) != "not_attached" {
 		t.Fatalf("input without an attached terminal must fail, got %v", result)
 	}
 	if inputs, _, _ := relay.cmux.snapshot(); len(inputs) != 0 {
@@ -632,13 +669,7 @@ func TestRelayRejectsUnknownTokensAndInputBeforeAttach(t *testing.T) {
 
 func TestHistoryReturnsScrollbackOldestFirstForTheAttachedTerminal(t *testing.T) {
 	relay := startRelay(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "history", "id": "early"})
 	if early := readUntil(t, ctx, conn, "result"); early["ok"] != false {
@@ -690,13 +721,7 @@ func TestHistoryReturnsScrollbackOldestFirstForTheAttachedTerminal(t *testing.T)
 
 func TestDetachedMessageWhenTerminalDisappears(t *testing.T) {
 	relay := startRelay(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "gone"})
 	detached := readUntil(t, ctx, conn, "detached")
 	if detached["surface_id"] != "gone" {
@@ -706,13 +731,7 @@ func TestDetachedMessageWhenTerminalDisappears(t *testing.T) {
 
 func TestClosingTheRelayGivesFittedTerminalsTheirSizeBack(t *testing.T) {
 	relay := startRelay(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "id": "1", "workspace_id": "w1", "surface_id": "t1", "fit": map[string]int{"columns": 40, "rows": 20}})
 	if result := readUntil(t, ctx, conn, "result"); result["ok"] != true {
@@ -728,14 +747,7 @@ func TestClosingTheRelayGivesFittedTerminalsTheirSizeBack(t *testing.T) {
 
 func TestChatFollowsClaudeEnteringAndLeavingATerminal(t *testing.T) {
 	relay := startRelay(t)
-	token := relay.pair(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	transcript := filepath.Join(relay.claudeDir, "projects", "-Users-me-app", "s1.jsonl")
 	if err := os.MkdirAll(filepath.Dir(transcript), 0o755); err != nil {
@@ -787,14 +799,7 @@ func TestChatFindsClaudeWhenCmuxCannotReportAgents(t *testing.T) {
 	relay := startRelay(t)
 	relay.cmux.agentErr = &cmux.RPCError{Code: "method_not_found"}
 	relay.cmux.setRunning(claude.SessionRef{SessionID: "s1", Cwd: "/Users/me/app"})
-	token := relay.pair(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1"})
 	if found := readUntil(t, ctx, conn, "chat_session"); found["session_id"] != "s1" {

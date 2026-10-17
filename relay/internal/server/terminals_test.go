@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -13,17 +12,11 @@ import (
 
 func TestPhoneCanCloseRenameAndRestartATerminal(t *testing.T) {
 	relay := startRelay(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 	t.Setenv("SHELL", "/opt/homebrew/bin/fish")
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "rename_terminal", "id": "1", "workspace_id": "w1"})
-	if result := resultFor(t, ctx, conn, "1"); result["ok"] != false || result["error"].(map[string]any)["code"] != "invalid_params" {
+	if result := resultFor(t, ctx, conn, "1"); result["ok"] != false || errorCode(result) != "invalid_params" {
 		t.Fatalf("a request without surface_id must be refused: %v", result)
 	}
 
@@ -56,16 +49,10 @@ func TestPhoneCanCloseRenameAndRestartATerminal(t *testing.T) {
 func TestClosingTheLastTerminalExplainsWhatToDoInstead(t *testing.T) {
 	relay := startRelay(t)
 	relay.cmux.closeErr = &cmux.RPCError{Code: "invalid_state", Message: "Cannot close the last surface"}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "close_terminal", "id": "1", "workspace_id": "w1", "surface_id": "t1"})
-	if result := resultFor(t, ctx, conn, "1"); result["error"].(map[string]any)["code"] != "last_terminal" {
+	if result := resultFor(t, ctx, conn, "1"); errorCode(result) != "last_terminal" {
 		t.Fatalf("the last terminal must be reported as such: %v", result)
 	}
 
@@ -73,7 +60,7 @@ func TestClosingTheLastTerminalExplainsWhatToDoInstead(t *testing.T) {
 	relay.cmux.closeErr = &cmux.RPCError{Code: "confirmation_required", Message: "Surface has a running process; retry with force=true"}
 	relay.cmux.mu.Unlock()
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "close_terminal", "id": "2", "workspace_id": "w1", "surface_id": "t1"})
-	if result := resultFor(t, ctx, conn, "2"); result["error"].(map[string]any)["code"] != "confirmation_required" {
+	if result := resultFor(t, ctx, conn, "2"); errorCode(result) != "confirmation_required" {
 		t.Fatalf("a busy terminal must ask the phone to confirm: %v", result)
 	}
 
@@ -83,7 +70,7 @@ func TestClosingTheLastTerminalExplainsWhatToDoInstead(t *testing.T) {
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "3"})
 	resultFor(t, ctx, conn, "3")
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "restart_terminal", "id": "4", "workspace_id": "w1", "surface_id": "t1"})
-	if result := resultFor(t, ctx, conn, "4"); result["error"].(map[string]any)["code"] != "unsupported" {
+	if result := resultFor(t, ctx, conn, "4"); errorCode(result) != "unsupported" {
 		t.Fatalf("an older cmux must be reported as unsupported: %v", result)
 	}
 }
@@ -92,13 +79,7 @@ func TestAttachedTerminalReportsWhetherTheAgentIsWaitingOnYou(t *testing.T) {
 	relay := startRelay(t)
 	relay.server.options.PollInterval.InputState = 10 * time.Millisecond
 	relay.cmux.inputState = cmux.InputState{SurfaceID: "t1", Agent: true, State: "empty"}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1"})
 	if state := readUntil(t, ctx, conn, "input_state"); state["surface_id"] != "t1" || state["waiting_on_human"] != false {

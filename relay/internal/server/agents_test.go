@@ -68,13 +68,7 @@ func TestPhoneSeesRetriesAndCanMessageTheAgent(t *testing.T) {
 		messaged: make(chan struct{}, 1),
 	}
 	relay.server.options.Agents = fake
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	activity := readUntil(t, ctx, conn, "agent_activity")
@@ -87,7 +81,7 @@ func TestPhoneSeesRetriesAndCanMessageTheAgent(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_agent_message", "id": "2", "text": "use staging"})
-	if result := resultFor(t, ctx, conn, "2"); result["ok"] != false || result["error"].(map[string]any)["code"] != "not_attached" {
+	if result := resultFor(t, ctx, conn, "2"); result["ok"] != false || errorCode(result) != "not_attached" {
 		t.Fatalf("messaging needs an open terminal: %v", result)
 	}
 
@@ -97,7 +91,7 @@ func TestPhoneSeesRetriesAndCanMessageTheAgent(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "send_agent_message", "id": "3", "text": ""})
-	if result := resultFor(t, ctx, conn, "3"); result["ok"] != false || result["error"].(map[string]any)["code"] != "invalid_params" {
+	if result := resultFor(t, ctx, conn, "3"); result["ok"] != false || errorCode(result) != "invalid_params" {
 		t.Fatalf("empty messages must be refused: %v", result)
 	}
 

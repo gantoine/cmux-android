@@ -102,7 +102,7 @@ func TestFindTranscriptUsesTheEncodedProjectFolder(t *testing.T) {
 
 func TestTailReturnsWholeLinesAndNoticesTruncation(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "s.jsonl")
-	tail := NewTail(file)
+	tail := NewTail(file, 0)
 	if lines, _, err := tail.Lines(); err != nil || lines != nil {
 		t.Fatalf("missing file: %q %v", lines, err)
 	}
@@ -132,5 +132,26 @@ func TestTailReturnsWholeLinesAndNoticesTruncation(t *testing.T) {
 	lines, restarted, _ := tail.Lines()
 	if !restarted || len(lines) != 1 || string(lines[0]) != "new" {
 		t.Fatalf("after truncation = %q restarted=%v", lines, restarted)
+	}
+}
+
+func TestTailStartsNearTheEndOfALongFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(file, []byte("first line\nsecond\nthird\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tail := NewTail(file, 10)
+	lines, _, err := tail.Lines()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || string(lines[0]) != "third" {
+		t.Fatalf("only whole lines inside the window must be read, got %q", lines)
+	}
+	f, _ := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0o600)
+	f.WriteString("fourth\n")
+	f.Close()
+	if lines, _, _ = tail.Lines(); len(lines) != 1 || string(lines[0]) != "fourth" {
+		t.Fatalf("later reads continue from where the first stopped, got %q", lines)
 	}
 }

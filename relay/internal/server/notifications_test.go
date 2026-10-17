@@ -1,10 +1,8 @@
 package server
 
 import (
-	"context"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket/wsjson"
 
@@ -21,13 +19,7 @@ func TestPhoneListsNotificationsAndMarksThemRead(t *testing.T) {
 		{ID: "n4", Title: "Tests", WorkspaceID: "w3", SurfaceID: "t3"},
 	}
 	relay.cmux.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "notifications", "id": "1"})
 	result := resultFor(t, ctx, conn, "1")
@@ -37,7 +29,7 @@ func TestPhoneListsNotificationsAndMarksThemRead(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "mark_notifications_read", "id": "2"})
-	if result := resultFor(t, ctx, conn, "2"); result["ok"] != false || result["error"].(map[string]any)["code"] != "invalid_params" {
+	if result := resultFor(t, ctx, conn, "2"); result["ok"] != false || errorCode(result) != "invalid_params" {
 		t.Fatalf("marking nothing in particular must be refused: %v", result)
 	}
 
@@ -55,13 +47,7 @@ func TestPhoneListsNotificationsAndMarksThemRead(t *testing.T) {
 	}
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "attach", "workspace_id": "w1", "surface_id": "t1"})
-	deadline := time.Now().Add(2 * time.Second)
-	for !slices.Contains(relay.cmux.marked(), "n1") {
-		if time.Now().After(deadline) {
-			t.Fatalf("opening a terminal must mark its notifications read, got %v", relay.cmux.marked())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitFor(t, func() bool { return slices.Contains(relay.cmux.marked(), "n1") })
 	if slices.Contains(relay.cmux.marked(), "n2") {
 		t.Fatalf("opening a terminal must leave read and other terminals' notifications alone: %v", relay.cmux.marked())
 	}

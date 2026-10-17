@@ -1,29 +1,13 @@
 package server
 
 import (
-	"context"
 	"reflect"
 	"testing"
-	"time"
 
-	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
 	"github.com/gantoine/muxer/relay/internal/cmux"
 )
-
-func organizingRelay(t *testing.T) (testRelay, context.Context, *websocket.Conn) {
-	t.Helper()
-	relay := startRelay(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	t.Cleanup(cancel)
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.CloseNow() })
-	return relay, ctx, conn
-}
 
 func TestWorkspacesCarryTheirLaneChecklistRemoteAndGroupColor(t *testing.T) {
 	relay := startRelay(t)
@@ -35,13 +19,7 @@ func TestWorkspacesCarryTheirLaneChecklistRemoteAndGroupColor(t *testing.T) {
 	relay.cmux.checklists = map[string]cmux.Checklist{"w1": {Progress: cmux.ChecklistProgress{Completed: 1, Total: 3, Next: "write tests"}}}
 	relay.cmux.remotes = map[string]cmux.RemoteState{"w2": {State: "reconnecting", Destination: "devbox"}}
 	relay.cmux.groupDetails = []cmux.GroupDetails{{ID: "g1", CustomColor: ptr("#1565C0")}}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	message := readUntil(t, ctx, conn, "workspaces")
@@ -70,7 +48,8 @@ func TestWorkspacesCarryTheirLaneChecklistRemoteAndGroupColor(t *testing.T) {
 }
 
 func TestPhoneOrganizesWorkspacesAndGroups(t *testing.T) {
-	relay, ctx, conn := organizingRelay(t)
+	relay := startRelay(t)
+	ctx, conn := relay.connect(t)
 	relay.cmux.performResults = map[string]string{
 		cmux.MethodGroupCreate: `{"group":{"id":"g9"}}`,
 	}
@@ -116,7 +95,8 @@ func TestPhoneOrganizesWorkspacesAndGroups(t *testing.T) {
 }
 
 func TestOrganizingRequestsRejectWhatCmuxWouldMisread(t *testing.T) {
-	relay, ctx, conn := organizingRelay(t)
+	relay := startRelay(t)
+	ctx, conn := relay.connect(t)
 	requests := []map[string]any{
 		{"type": "workspace_action", "workspace_id": "w1", "action": "close_others"},
 		{"type": "workspace_action", "workspace_id": "w1", "action": "set_color"},
@@ -130,7 +110,7 @@ func TestOrganizingRequestsRejectWhatCmuxWouldMisread(t *testing.T) {
 		request["id"] = string(rune('a' + index))
 		_ = wsjson.Write(ctx, conn, request)
 		result := resultFor(t, ctx, conn, request["id"].(string))
-		if result["ok"] != false || result["error"].(map[string]any)["code"] != "invalid_params" {
+		if result["ok"] != false || errorCode(result) != "invalid_params" {
 			t.Fatalf("%v must be refused: %v", request, result)
 		}
 	}
@@ -140,7 +120,8 @@ func TestOrganizingRequestsRejectWhatCmuxWouldMisread(t *testing.T) {
 }
 
 func TestChecklistEditsAnswerWithTheUpdatedChecklist(t *testing.T) {
-	relay, ctx, conn := organizingRelay(t)
+	relay := startRelay(t)
+	ctx, conn := relay.connect(t)
 	relay.cmux.checklists = map[string]cmux.Checklist{"w1": {
 		Items:    []cmux.ChecklistItem{{ID: "i1", Text: "write tests", State: "completed", Origin: "agent"}},
 		Progress: cmux.ChecklistProgress{Completed: 1, Total: 1},
@@ -175,7 +156,8 @@ func TestChecklistEditsAnswerWithTheUpdatedChecklist(t *testing.T) {
 }
 
 func TestNewWorkspaceInAGroupOpensItsTerminal(t *testing.T) {
-	relay, ctx, conn := organizingRelay(t)
+	relay := startRelay(t)
+	ctx, conn := relay.connect(t)
 	relay.cmux.performResults = map[string]string{cmux.MethodGroupNewSpace: `{"workspace_id":"w5"}`}
 	relay.cmux.workspaceList = &cmux.WorkspaceList{Workspaces: []cmux.Workspace{{ID: "w5", Terminals: []cmux.Terminal{{ID: "t5"}}}}}
 
@@ -187,7 +169,8 @@ func TestNewWorkspaceInAGroupOpensItsTerminal(t *testing.T) {
 }
 
 func TestOrganizingNeedsACmuxThatHasIt(t *testing.T) {
-	relay, ctx, conn := organizingRelay(t)
+	relay := startRelay(t)
+	ctx, conn := relay.connect(t)
 	relay.cmux.mu.Lock()
 	relay.cmux.methods = []string{"system.identify"}
 	relay.cmux.mu.Unlock()

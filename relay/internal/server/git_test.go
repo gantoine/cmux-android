@@ -3,10 +3,8 @@ package server
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket/wsjson"
 
@@ -20,13 +18,7 @@ func TestEachTerminalCarriesItsOwnGitState(t *testing.T) {
 		{SurfaceID: "t1", GitBranch: &branch, GitDirty: &dirty, ListeningPorts: []int{3000, 5173}},
 		{SurfaceID: "elsewhere", GitBranch: &branch},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	workspaces := readUntil(t, ctx, conn, "workspaces")["workspaces"].([]any)
@@ -44,7 +36,7 @@ func TestEachTerminalCarriesItsOwnGitState(t *testing.T) {
 }
 
 func gitServer(fake *fakeCmux, intervals Intervals) *Server {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	return &Server{cmux: fake, options: Options{PollInterval: intervals}, logger: logger}
 }
 

@@ -36,16 +36,19 @@ The phone opens `GET /v1/ws` with `Authorization: Bearer <token>` and exchanges 
 
 | From phone | Purpose |
 | --- | --- |
-| `hello {notifications_after}` | Start the session. The answer carries the computer name and cmux version. |
+| `hello {notifications_after}` | Start the session. The answer carries the computer name, the cmux version and `unsupported`, the request types this relay understands but can't serve with this cmux (always a list, empty when everything works). Those requests answer with the error code `unsupported`. |
 | `attach {workspace_id, surface_id, fit?}` / `detach` / `resync` | Choose the terminal to stream. Attaching also marks that terminal's notifications read on the Mac. |
 | `input {text}` / `key {key}` / `paste {text, submit}` / `scroll {lines}` | Send input to the attached terminal. |
 | `history {lines?}` | Get up to 5,000 lines above the attached terminal's screen, oldest first, with their own style table. The default is 2,000. |
 | `fit {columns, rows}` / `unfit` | Ask cmux to size the terminal for the phone. |
 | `create_workspace`, `rename_workspace`, `close_workspace`, `create_terminal` | Manage workspaces. |
+| `close_terminal {workspace_id, surface_id, force?}` / `rename_terminal {workspace_id, surface_id, title}` / `restart_terminal {workspace_id, surface_id}` | Close, rename (an empty title clears the name) or restart one terminal. Closing a workspace's only terminal fails with `last_terminal`. |
 | `refresh` | Send the workspace list now instead of at the next poll. |
 | `answer_approval {approval_id, mode?, answers?, feedback?}` | Answer an agent's permission request, question or plan. |
 | `send_agent_message {text}` | Send up to 32 KB to the agent in the attached terminal as a cmux agent message. |
 | `keep_awake` / `set_keep_awake {enabled}` | Read or change whether cmux keeps the computer awake. |
+| `host_usage` | CPU and memory use of the whole computer: `{cpu_percent, memory_used_bytes, memory_total_bytes}`. |
+| `vms` / `set_vm_paused {vm_id, paused}` | List the cmux Cloud VMs with their status and, for running ones, their stats, or pause or resume one. The answer to `set_vm_paused` is the VM's new state. Both fail with `cloud_disabled` when cmux Cloud is off. |
 | `top` | CPU and memory in cmux: totals, each coding agent, and each workspace with its five heaviest processes. The app asks every 3 seconds while its Metrics page is open. |
 | `notifications` | List the notifications in cmux's notification center, read ones included, with `is_read`. |
 | `mark_notifications_read {notification_id? \| surface_id? \| all?}` | Mark one notification, one terminal's notifications or all of them read on the Mac. |

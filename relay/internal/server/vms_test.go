@@ -1,10 +1,8 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/coder/websocket/wsjson"
 
@@ -26,13 +24,7 @@ func TestPhoneSeesAndPausesCloudVMs(t *testing.T) {
 	}
 	cpus, used, total := 4, 2048, 8192
 	relay.cmux.vmStats = map[string]cmux.VMStats{"vm_1": {ID: "vm_1", State: "running", CPUs: &cpus, MemoryUsedMB: &used, MemoryTotalMB: &total}}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	conn, _, err := relay.dial(t, ctx, relay.pair(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.CloseNow()
+	ctx, conn := relay.connect(t)
 
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "vms", "id": "2"})
@@ -74,7 +66,7 @@ func TestPhoneSeesAndPausesCloudVMs(t *testing.T) {
 	relay.cmux.mu.Unlock()
 	_ = wsjson.Write(ctx, conn, map[string]any{"type": "vms", "id": "5"})
 	result = resultFor(t, ctx, conn, "5")
-	if result["ok"] == true || result["error"].(map[string]any)["code"] != "cloud_disabled" {
+	if result["ok"] == true || errorCode(result) != "cloud_disabled" {
 		t.Fatalf("a computer with cmux Cloud off must say so: %v", result)
 	}
 }

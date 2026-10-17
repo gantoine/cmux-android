@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +30,23 @@ var lanes = map[string]bool{"todo": true, "working": true, "needs-attention": tr
 
 var checklistStates = map[string]bool{"pending": true, "in-progress": true, "completed": true}
 
-var errOrganizingUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't do that. Update cmux."}
+var errOrganizingUnsupported = unsupported("do that")
+
+func (s *Server) pollWorkspaces(git *gitInfo) func(ctx context.Context) ([]byte, bool) {
+	return func(ctx context.Context) ([]byte, bool) {
+		list, err := s.cmux.Workspaces(ctx)
+		if err != nil {
+			s.logger.Warn("could not list workspaces", "error", err)
+			return nil, false
+		}
+		git.refresh(ctx, s)
+		git.apply(list.Workspaces)
+		s.organizing.refresh(ctx, s, list)
+		s.organizing.apply(&list)
+		encoded, err := json.Marshal(map[string]any{"type": "workspaces", "workspaces": list.Workspaces, "groups": list.Groups})
+		return encoded, err == nil
+	}
+}
 
 type workspaceExtras struct {
 	mu          sync.Mutex
@@ -65,9 +82,7 @@ func (e *workspaceExtras) refresh(ctx context.Context, s *Server, list cmux.Work
 	slots := make(chan struct{}, organizingConcurrency)
 	for _, workspace := range list.Workspaces {
 		id := workspace.ID
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			slots <- struct{}{}
 			defer func() { <-slots }()
 			lane, laneOK := s.readLane(ctx, id)
@@ -84,7 +99,7 @@ func (e *workspaceExtras) refresh(ctx context.Context, s *Server, list cmux.Work
 			if remote != nil {
 				remotes[id] = *remote
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	groupColors := s.readGroupColors(ctx, list)
@@ -119,41 +134,28 @@ func (e *workspaceExtras) apply(list *cmux.WorkspaceList) {
 }
 
 func (s *Server) readLane(ctx context.Context, workspaceID string) (cmux.LaneStatus, bool) {
-	if !s.methods.supports(cmux.MethodLaneStatus) {
-		return cmux.LaneStatus{}, false
-	}
-	lane, err := s.cmux.LaneStatus(ctx, workspaceID)
-	s.methods.observe(cmux.MethodLaneStatus, err)
-	return lane, err == nil && lane.Effective != ""
+	lane, ok := probe(s, cmux.MethodLaneStatus, func() (cmux.LaneStatus, error) { return s.cmux.LaneStatus(ctx, workspaceID) })
+	return lane, ok && lane.Effective != ""
 }
 
 func (s *Server) readChecklistProgress(ctx context.Context, workspaceID string) (cmux.ChecklistProgress, bool) {
-	if !s.methods.supports(cmux.MethodChecklist) {
-		return cmux.ChecklistProgress{}, false
-	}
-	checklist, err := s.cmux.Checklist(ctx, workspaceID)
-	s.methods.observe(cmux.MethodChecklist, err)
-	return checklist.Progress, err == nil
+	checklist, ok := probe(s, cmux.MethodChecklist, func() (cmux.Checklist, error) { return s.cmux.Checklist(ctx, workspaceID) })
+	return checklist.Progress, ok
 }
 
 func (s *Server) readRemote(ctx context.Context, workspaceID string) *cmux.RemoteState {
-	if !s.methods.supports(cmux.MethodRemoteStatus) {
-		return nil
-	}
-	remote, err := s.cmux.RemoteState(ctx, workspaceID)
-	s.methods.observe(cmux.MethodRemoteStatus, err)
-	if err != nil {
-		return nil
-	}
+	remote, _ := probe(s, cmux.MethodRemoteStatus, func() (*cmux.RemoteState, error) { return s.cmux.RemoteState(ctx, workspaceID) })
 	return remote
 }
 
 func (s *Server) readGroupColors(ctx context.Context, list cmux.WorkspaceList) map[string]string {
-	if len(list.Groups) == 0 || !s.methods.supports(cmux.MethodGroupList) {
+	if len(list.Groups) == 0 {
 		return nil
 	}
-	groups, err := s.cmux.GroupDetails(ctx)
-	s.methods.observe(cmux.MethodGroupList, err)
+	groups, ok := probe(s, cmux.MethodGroupList, func() ([]cmux.GroupDetails, error) { return s.cmux.GroupDetails(ctx) })
+	if !ok {
+		return nil
+	}
 	colors := map[string]string{}
 	for _, group := range groups {
 		if group.CustomColor != nil && *group.CustomColor != "" {
@@ -164,15 +166,11 @@ func (s *Server) readGroupColors(ctx context.Context, list cmux.WorkspaceList) m
 }
 
 func (s *Server) organize(ctx context.Context, method string, params map[string]any, result any) error {
-	if !s.methods.supports(method) {
-		return errOrganizingUnsupported
+	err := guard(s, method, errOrganizingUnsupported, func() error { return s.cmux.Call(ctx, method, params, result) })
+	if !errors.Is(err, errOrganizingUnsupported) {
+		s.organizing.invalidate()
+		s.workspaces.refresh()
 	}
-	err := s.cmux.Perform(ctx, method, params, result)
-	if s.methods.observe(method, err) {
-		return errOrganizingUnsupported
-	}
-	s.organizing.invalidate()
-	s.workspaces.refresh()
 	return err
 }
 
@@ -192,26 +190,25 @@ type organizingRequest struct {
 	WorkspaceIDs []string `json:"workspace_ids"`
 }
 
-func invalid(message string) error {
-	return &requestError{Code: "invalid_params", Message: message}
-}
-
-func (s *session) organizingRequest(ctx context.Context, kind string, raw json.RawMessage) (any, bool, error) {
+func (s *session) organizingRequest(ctx context.Context, kind string, raw json.RawMessage) (any, error) {
 	var request organizingRequest
+	if _, known := requestMethods[kind]; !known {
+		return nil, unknownType(kind)
+	}
 	if err := json.Unmarshal(raw, &request); err != nil {
-		return nil, true, invalid(kind + " has malformed parameters.")
+		return nil, invalid(kind + " has malformed parameters.")
 	}
 	server := s.server
 	switch kind {
 	case "workspace_action":
 		if request.WorkspaceID == "" || !workspaceActions[request.Action] {
-			return nil, true, invalid("workspace_action needs workspace_id and one of pin, unpin, mark_read, mark_unread, set_color, clear_color, set_description or clear_description.")
+			return nil, invalid("workspace_action needs workspace_id and one of pin, unpin, mark_read, mark_unread, set_color, clear_color, set_description or clear_description.")
 		}
 		params := map[string]any{"workspace_id": request.WorkspaceID, "action": request.Action}
 		switch request.Action {
 		case "set_color":
 			if request.Color == nil || strings.TrimSpace(*request.Color) == "" {
-				return nil, true, invalid("set_color needs a color.")
+				return nil, invalid("set_color needs a color.")
 			}
 			params["color"] = strings.TrimSpace(*request.Color)
 		case "set_description":
@@ -219,30 +216,30 @@ func (s *session) organizingRequest(ctx context.Context, kind string, raw json.R
 			if description == "" {
 				params["action"] = "clear_description"
 			} else if len(description) > maxDescriptionBytes {
-				return nil, true, invalid("A description can be up to 1024 bytes.")
+				return nil, invalid("A description can be up to 1024 bytes.")
 			} else {
 				params["description"] = description
 			}
 		}
-		return nil, true, server.organize(ctx, cmux.MethodWorkspaceAction, params, nil)
+		return nil, server.organize(ctx, cmux.MethodWorkspaceAction, params, nil)
 	case "set_workspace_status":
 		if request.WorkspaceID == "" || !lanes[request.Status] {
-			return nil, true, invalid("set_workspace_status needs workspace_id and a status of todo, working, needs-attention, review, done or auto.")
+			return nil, invalid("set_workspace_status needs workspace_id and a status of todo, working, needs-attention, review, done or auto.")
 		}
-		return nil, true, server.organize(ctx, cmux.MethodSetLaneStatus, map[string]any{"workspace_id": request.WorkspaceID, "status": request.Status}, nil)
+		return nil, server.organize(ctx, cmux.MethodSetLaneStatus, map[string]any{"workspace_id": request.WorkspaceID, "status": request.Status}, nil)
 	case "checklist":
 		if request.WorkspaceID == "" {
-			return nil, true, invalid("checklist needs workspace_id.")
+			return nil, invalid("checklist needs workspace_id.")
 		}
 		checklist, err := server.checklist(ctx, request.WorkspaceID)
-		return checklist, true, err
+		return checklist, err
 	case "add_checklist_item", "edit_checklist_item":
 		text := strings.TrimSpace(request.Text)
 		if request.WorkspaceID == "" || text == "" || (kind == "edit_checklist_item" && request.ItemID == "") {
-			return nil, true, invalid(kind + " needs workspace_id, text and, to edit, item_id.")
+			return nil, invalid(kind + " needs workspace_id, text and, to edit, item_id.")
 		}
 		if len(text) > maxChecklistTextBytes {
-			return nil, true, invalid("A checklist item can be up to 1024 bytes.")
+			return nil, invalid("A checklist item can be up to 1024 bytes.")
 		}
 		method, params := cmux.MethodChecklistAdd, map[string]any{"workspace_id": request.WorkspaceID, "text": text}
 		if kind == "edit_checklist_item" {
@@ -251,23 +248,23 @@ func (s *session) organizingRequest(ctx context.Context, kind string, raw json.R
 		return server.checklistAfter(ctx, request.WorkspaceID, method, params)
 	case "set_checklist_item_state":
 		if request.WorkspaceID == "" || request.ItemID == "" || !checklistStates[request.State] {
-			return nil, true, invalid("set_checklist_item_state needs workspace_id, item_id and a state of pending, in-progress or completed.")
+			return nil, invalid("set_checklist_item_state needs workspace_id, item_id and a state of pending, in-progress or completed.")
 		}
 		return server.checklistAfter(ctx, request.WorkspaceID, cmux.MethodChecklistState, map[string]any{"workspace_id": request.WorkspaceID, "id": request.ItemID, "state": request.State})
 	case "remove_checklist_item":
 		if request.WorkspaceID == "" || request.ItemID == "" {
-			return nil, true, invalid("remove_checklist_item needs workspace_id and item_id.")
+			return nil, invalid("remove_checklist_item needs workspace_id and item_id.")
 		}
 		return server.checklistAfter(ctx, request.WorkspaceID, cmux.MethodChecklistRemove, map[string]any{"workspace_id": request.WorkspaceID, "id": request.ItemID})
 	case "clear_checklist":
 		if request.WorkspaceID == "" {
-			return nil, true, invalid("clear_checklist needs workspace_id.")
+			return nil, invalid("clear_checklist needs workspace_id.")
 		}
 		return server.checklistAfter(ctx, request.WorkspaceID, cmux.MethodChecklistClear, map[string]any{"workspace_id": request.WorkspaceID})
 	case "create_group":
 		name := strings.TrimSpace(request.Name)
 		if name == "" || len(name) > maxGroupNameBytes || len(request.WorkspaceIDs) == 0 {
-			return nil, true, invalid("create_group needs a name of up to 256 bytes and at least one workspace.")
+			return nil, invalid("create_group needs a name of up to 256 bytes and at least one workspace.")
 		}
 		var created struct {
 			Group struct {
@@ -275,77 +272,71 @@ func (s *session) organizingRequest(ctx context.Context, kind string, raw json.R
 			} `json:"group"`
 		}
 		err := server.organize(ctx, cmux.MethodGroupCreate, map[string]any{"name": name, "child_workspace_ids": request.WorkspaceIDs}, &created)
-		return map[string]string{"group_id": created.Group.ID}, true, err
+		return map[string]string{"group_id": created.Group.ID}, err
 	case "rename_group":
 		name := strings.TrimSpace(request.Name)
 		if request.GroupID == "" || name == "" || len(name) > maxGroupNameBytes {
-			return nil, true, invalid("rename_group needs group_id and a name of up to 256 bytes.")
+			return nil, invalid("rename_group needs group_id and a name of up to 256 bytes.")
 		}
-		return nil, true, server.organize(ctx, cmux.MethodGroupRename, map[string]any{"group_id": request.GroupID, "name": name}, nil)
+		return nil, server.organize(ctx, cmux.MethodGroupRename, map[string]any{"group_id": request.GroupID, "name": name}, nil)
 	case "pin_group":
 		if request.GroupID == "" {
-			return nil, true, invalid("pin_group needs group_id.")
+			return nil, invalid("pin_group needs group_id.")
 		}
 		method := cmux.MethodGroupUnpin
 		if request.Pinned {
 			method = cmux.MethodGroupPin
 		}
-		return nil, true, server.organize(ctx, method, map[string]any{"group_id": request.GroupID}, nil)
+		return nil, server.organize(ctx, method, map[string]any{"group_id": request.GroupID}, nil)
 	case "set_group_color":
 		if request.GroupID == "" {
-			return nil, true, invalid("set_group_color needs group_id.")
+			return nil, invalid("set_group_color needs group_id.")
 		}
 		var color any
 		if request.Color != nil && strings.TrimSpace(*request.Color) != "" {
 			color = strings.TrimSpace(*request.Color)
 		}
-		return nil, true, server.organize(ctx, cmux.MethodGroupSetColor, map[string]any{"group_id": request.GroupID, "color": color}, nil)
+		return nil, server.organize(ctx, cmux.MethodGroupSetColor, map[string]any{"group_id": request.GroupID, "color": color}, nil)
 	case "add_to_group", "remove_from_group":
 		if request.GroupID == "" || request.WorkspaceID == "" {
-			return nil, true, invalid(kind + " needs group_id and workspace_id.")
+			return nil, invalid(kind + " needs group_id and workspace_id.")
 		}
 		method := cmux.MethodGroupAdd
 		if kind == "remove_from_group" {
 			method = cmux.MethodGroupRemove
 		}
-		return nil, true, server.organize(ctx, method, map[string]any{"group_id": request.GroupID, "workspace_id": request.WorkspaceID}, nil)
+		return nil, server.organize(ctx, method, map[string]any{"group_id": request.GroupID, "workspace_id": request.WorkspaceID}, nil)
 	case "ungroup":
 		if request.GroupID == "" {
-			return nil, true, invalid("ungroup needs group_id.")
+			return nil, invalid("ungroup needs group_id.")
 		}
-		return nil, true, server.organize(ctx, cmux.MethodGroupUngroup, map[string]any{"group_id": request.GroupID}, nil)
+		return nil, server.organize(ctx, cmux.MethodGroupUngroup, map[string]any{"group_id": request.GroupID}, nil)
 	case "create_workspace_in_group":
 		if request.GroupID == "" {
-			return nil, true, invalid("create_workspace_in_group needs group_id.")
+			return nil, invalid("create_workspace_in_group needs group_id.")
 		}
 		created, err := server.createWorkspaceInGroup(ctx, request.GroupID, strings.TrimSpace(request.Title))
-		return created, true, err
+		return created, err
 	case "reconnect_workspace":
 		if request.WorkspaceID == "" {
-			return nil, true, invalid("reconnect_workspace needs workspace_id.")
+			return nil, invalid("reconnect_workspace needs workspace_id.")
 		}
-		return nil, true, server.organize(ctx, cmux.MethodRemoteReconnect, map[string]any{"workspace_id": request.WorkspaceID}, nil)
+		return nil, server.organize(ctx, cmux.MethodRemoteReconnect, map[string]any{"workspace_id": request.WorkspaceID}, nil)
 	}
-	return nil, false, nil
+	return nil, unknownType(kind)
 }
 
 func (s *Server) checklist(ctx context.Context, workspaceID string) (cmux.Checklist, error) {
-	if !s.methods.supports(cmux.MethodChecklist) {
-		return cmux.Checklist{}, errOrganizingUnsupported
-	}
-	checklist, err := s.cmux.Checklist(ctx, workspaceID)
-	if s.methods.observe(cmux.MethodChecklist, err) {
-		return cmux.Checklist{}, errOrganizingUnsupported
-	}
-	return checklist, err
+	return guarded(s, cmux.MethodChecklist, errOrganizingUnsupported, func() (cmux.Checklist, error) {
+		return s.cmux.Checklist(ctx, workspaceID)
+	})
 }
 
-func (s *Server) checklistAfter(ctx context.Context, workspaceID, method string, params map[string]any) (any, bool, error) {
+func (s *Server) checklistAfter(ctx context.Context, workspaceID, method string, params map[string]any) (any, error) {
 	if err := s.organize(ctx, method, params, nil); err != nil {
-		return nil, true, err
+		return nil, err
 	}
-	checklist, err := s.checklist(ctx, workspaceID)
-	return checklist, true, err
+	return s.checklist(ctx, workspaceID)
 }
 
 func (s *Server) createWorkspaceInGroup(ctx context.Context, groupID, title string) (cmux.CreatedWorkspace, error) {

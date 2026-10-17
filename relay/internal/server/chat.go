@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gantoine/muxer/relay/internal/claude"
@@ -9,8 +10,9 @@ import (
 )
 
 const (
-	agentKindClaude   = "claude"
-	maxInitialEntries = 300
+	agentKindClaude         = "claude"
+	maxInitialEntries       = 300
+	initialTranscriptWindow = 4 << 20
 )
 
 type chatWatch struct {
@@ -27,7 +29,7 @@ func (s *session) watchChat(ctx context.Context, current *attachment) {
 	announced := false
 	for {
 		callCtx, cancel := context.WithTimeout(ctx, callTimeout)
-		sessionID, cwd, err := s.claudeSession(callCtx, current)
+		sessionID, cwd, err := s.server.claudeSession(callCtx, current.workspaceID, current.surfaceID)
 		cancel()
 		if ctx.Err() != nil {
 			return
@@ -50,24 +52,25 @@ func (s *session) watchChat(ctx context.Context, current *attachment) {
 	}
 }
 
-func (s *session) claudeSession(ctx context.Context, current *attachment) (sessionID, cwd string, err error) {
-	var agent cmux.AgentSession
-	if s.server.methods.supports(cmux.MethodAgentSession) {
-		agent, err = s.server.cmux.AgentSession(ctx, current.workspaceID, current.surfaceID)
-		if s.server.methods.observe(cmux.MethodAgentSession, err) {
-			agent, err = cmux.AgentSession{}, nil
-		}
-		if err != nil {
-			return "", "", err
-		}
+func (s *Server) agentSession(ctx context.Context, workspaceID, surfaceID string) (cmux.AgentSession, error) {
+	if running, ok := s.options.ClaudeSession(surfaceID); ok && running.SessionID != "" {
+		return cmux.AgentSession{Kind: agentKindClaude, SessionID: running.SessionID, Cwd: running.Cwd}, nil
 	}
-	if agent.Kind == agentKindClaude && agent.SessionID != "" {
-		return agent.SessionID, agent.Cwd, nil
+	agent, err := guarded(s, cmux.MethodAgentSession, errMethodMissing, func() (cmux.AgentSession, error) {
+		return s.cmux.AgentSession(ctx, workspaceID, surfaceID)
+	})
+	if errors.Is(err, errMethodMissing) {
+		return cmux.AgentSession{}, nil
 	}
-	if running, ok := s.server.options.ClaudeSession(current.surfaceID); ok {
-		return running.SessionID, running.Cwd, nil
+	return agent, err
+}
+
+func (s *Server) claudeSession(ctx context.Context, workspaceID, surfaceID string) (sessionID, cwd string, err error) {
+	agent, err := s.agentSession(ctx, workspaceID, surfaceID)
+	if err != nil || agent.Kind != agentKindClaude {
+		return "", "", err
 	}
-	return "", "", nil
+	return agent.SessionID, agent.Cwd, nil
 }
 
 func (s *session) followTranscript(current *attachment, watch *chatWatch) {
@@ -80,7 +83,7 @@ func (s *session) followTranscript(current *attachment, watch *chatWatch) {
 			}
 			return
 		}
-		watch.tail = claude.NewTail(path)
+		watch.tail = claude.NewTail(path, initialTranscriptWindow)
 		watch.transcript = claude.NewTranscript()
 	}
 	lines, restarted, err := watch.tail.Lines()

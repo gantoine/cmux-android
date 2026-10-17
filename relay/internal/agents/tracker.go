@@ -93,39 +93,32 @@ func NewTracker(source Source, logger *slog.Logger) *Tracker {
 
 func (t *Tracker) StreamResumed(context.Context) {}
 
-type eventPayload struct {
-	Agent     string `json:"agent"`
-	Attempt   int    `json:"attempt"`
-	DelayMS   int64  `json:"delay_ms"`
-	SurfaceID string `json:"surface_id"`
+type retryPayload struct {
+	Agent   string `json:"agent"`
+	Attempt int    `json:"attempt"`
+	DelayMS int64  `json:"delay_ms"`
 }
 
 func (t *Tracker) HandleEvent(_ context.Context, event cmux.Event) {
-	var payload eventPayload
-	_ = json.Unmarshal(event.Payload, &payload)
-	surfaceID := payload.SurfaceID
-	if event.SurfaceID != nil && *event.SurfaceID != "" {
-		surfaceID = *event.SurfaceID
-	}
+	surfaceID := event.Surface()
 	if surfaceID == "" {
 		return
 	}
+	hook, isHook := event.Hook()
 	switch {
 	case event.Name == "agent.auto_resume.scheduled":
-		retry := Retry{
-			SurfaceID: surfaceID,
-			Agent:     payload.Agent,
-			Attempt:   payload.Attempt,
-			DueAt:     t.now().Add(time.Duration(payload.DelayMS) * time.Millisecond).UTC(),
-		}
-		if event.WorkspaceID != nil {
-			retry.WorkspaceID = *event.WorkspaceID
-		}
-		t.setRetry(retry)
+		var payload retryPayload
+		_ = json.Unmarshal(event.Payload, &payload)
+		t.setRetry(Retry{
+			SurfaceID:   surfaceID,
+			WorkspaceID: event.Workspace(),
+			Agent:       payload.Agent,
+			Attempt:     payload.Attempt,
+			DueAt:       t.now().Add(time.Duration(payload.DelayMS) * time.Millisecond).UTC(),
+		})
 	case event.Name == "agent.auto_resume.sent":
 		t.clearRetry(surfaceID)
-	case strings.HasPrefix(event.Name, "agent.hook."):
-		hook := strings.TrimPrefix(event.Name, "agent.hook.")
+	case isHook:
 		if hooksThatEndRetries[hook] {
 			t.clearRetry(surfaceID)
 		}

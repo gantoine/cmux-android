@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,7 +24,7 @@ const (
 
 var bareSlashCommand = regexp.MustCompile(`^/\S+$`)
 
-var errRecentSessionsUnsupported = &requestError{Code: "unsupported", Message: "This version of cmux can't list past agent sessions. Update cmux."}
+var errRecentSessionsUnsupported = unsupported("list past agent sessions")
 
 var errSessionNotFound = &requestError{Code: "not_found", Message: "cmux no longer has that session."}
 
@@ -62,7 +63,7 @@ func parseSessionQuery(raw json.RawMessage) (sessionQuery, error) {
 	_ = json.Unmarshal(raw, &request)
 	request.Query = strings.TrimSpace(request.Query)
 	if len(request.Query) > maxSessionQueryBytes {
-		return request, &requestError{Code: "invalid_params", Message: "A search can be up to 256 bytes."}
+		return request, invalid(fmt.Sprintf("A search can be up to %d bytes.", maxSessionQueryBytes))
 	}
 	if request.Limit <= 0 {
 		request.Limit = defaultRecentSessions
@@ -71,26 +72,15 @@ func parseSessionQuery(raw json.RawMessage) (sessionQuery, error) {
 	return request, nil
 }
 
-func (s *Server) vaultCall(method string, call func() ([]cmux.VaultSession, error)) ([]cmux.VaultSession, error) {
-	if !s.methods.supports(method) {
-		return nil, errRecentSessionsUnsupported
-	}
-	sessions, err := call()
-	if s.methods.observe(method, err) {
-		return nil, errRecentSessionsUnsupported
-	}
-	return sessions, err
-}
-
 func (s *Server) recentSessions(ctx context.Context, request sessionQuery) ([]recentSession, error) {
 	var found []cmux.VaultSession
 	var err error
 	if request.Query == "" {
-		found, err = s.vaultCall(cmux.MethodVaultSessions, func() ([]cmux.VaultSession, error) {
+		found, err = guarded(s, cmux.MethodVaultSessions, errRecentSessionsUnsupported, func() ([]cmux.VaultSession, error) {
 			return s.cmux.VaultSessions(ctx, "", request.Limit)
 		})
 	} else {
-		found, err = s.vaultCall(cmux.MethodVaultSearch, func() ([]cmux.VaultSession, error) {
+		found, err = guarded(s, cmux.MethodVaultSearch, errRecentSessionsUnsupported, func() ([]cmux.VaultSession, error) {
 			return s.cmux.VaultSearch(ctx, request.Query, request.Limit)
 		})
 	}
@@ -142,37 +132,23 @@ func (s *Server) openSessions(ctx context.Context) map[string]terminalRef {
 				continue
 			}
 			ref := terminalRef{WorkspaceID: workspace.ID, SurfaceID: terminal.ID}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				sessionID := s.terminalSession(ctx, ref)
-				if sessionID == "" {
+			wg.Go(func() {
+				agent, _ := s.agentSession(ctx, ref.WorkspaceID, ref.SurfaceID)
+				if agent.SessionID == "" {
 					return
 				}
 				mu.Lock()
-				open[sessionID] = ref
+				open[agent.SessionID] = ref
 				mu.Unlock()
-			}()
+			})
 		}
 	}
 	wg.Wait()
 	return open
 }
 
-func (s *Server) terminalSession(ctx context.Context, ref terminalRef) string {
-	if running, ok := s.options.ClaudeSession(ref.SurfaceID); ok && running.SessionID != "" {
-		return running.SessionID
-	}
-	if !s.methods.supports(cmux.MethodAgentSession) {
-		return ""
-	}
-	agent, err := s.cmux.AgentSession(ctx, ref.WorkspaceID, ref.SurfaceID)
-	s.methods.observe(cmux.MethodAgentSession, err)
-	return agent.SessionID
-}
-
 func (s *Server) findSession(ctx context.Context, agent, sessionID string) (cmux.VaultSession, error) {
-	listed, err := s.vaultCall(cmux.MethodVaultSessions, func() ([]cmux.VaultSession, error) {
+	listed, err := guarded(s, cmux.MethodVaultSessions, errRecentSessionsUnsupported, func() ([]cmux.VaultSession, error) {
 		return s.cmux.VaultSessions(ctx, agent, maxRecentSessions)
 	})
 	if err != nil {
@@ -183,13 +159,9 @@ func (s *Server) findSession(ctx context.Context, agent, sessionID string) (cmux
 			return entry, nil
 		}
 	}
-	if !s.methods.supports(cmux.MethodVaultSearch) {
-		return cmux.VaultSession{}, errSessionNotFound
-	}
-	searched, err := s.cmux.VaultSearch(ctx, sessionID, maxRecentSessions)
-	if s.methods.observe(cmux.MethodVaultSearch, err) {
-		return cmux.VaultSession{}, errSessionNotFound
-	}
+	searched, err := guarded(s, cmux.MethodVaultSearch, errSessionNotFound, func() ([]cmux.VaultSession, error) {
+		return s.cmux.VaultSearch(ctx, sessionID, maxRecentSessions)
+	})
 	if err != nil {
 		return cmux.VaultSession{}, err
 	}
