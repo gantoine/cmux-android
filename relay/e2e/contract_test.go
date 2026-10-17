@@ -61,7 +61,7 @@ func named(name, workspaceID string) func(cmux.Event) bool {
 }
 
 func TestCmuxPublishesTheWorkspaceEventsTheRelayListensFor(t *testing.T) {
-	log := subscribe(t, cmux.EventFilter{Names: server.WorkspaceEventNames})
+	log := subscribe(t, cmux.EventFilter{Categories: server.WorkspaceEventCategories})
 	client := cmuxClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()

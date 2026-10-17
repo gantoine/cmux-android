@@ -6,18 +6,23 @@ import (
 	"github.com/gantoine/muxer/relay/internal/cmux"
 )
 
-var WorkspaceEventNames = []string{
-	"workspace.created",
-	"workspace.closed",
-	"workspace.renamed",
-	"workspace.reordered",
-	"workspace.action",
-	"surface.created",
-	"surface.closed",
-	"surface.action",
+var WorkspaceEventCategories = []string{"workspace", "surface"}
+
+var workspaceEvents = map[string]bool{
+	"workspace.created":   true,
+	"workspace.closed":    true,
+	"workspace.renamed":   true,
+	"workspace.reordered": true,
+	"workspace.action":    true,
+	"surface.created":     true,
+	"surface.closed":      true,
+	"surface.action":      true,
 }
 
 func (s *Server) HandleEvent(_ context.Context, event cmux.Event) {
+	if !workspaceEvents[event.Name] {
+		return
+	}
 	if event.Name == "workspace.action" {
 		s.organizing.invalidate()
 	}

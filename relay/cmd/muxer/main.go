@@ -119,7 +119,6 @@ func runServe(args []string) error {
 	go approvalTracker.Run(ctx)
 	agentTracker := agents.NewTracker(client, logger)
 	go agentTracker.Run(ctx)
-	go events.NewStream(client, logger, cmux.EventFilter{Categories: []string{"notification", "agent"}}, hub, approvalTracker, agentTracker).Run(ctx)
 	adminErr := make(chan error, 1)
 	go func() {
 		if err := server.ServeAdmin(ctx, paths.admin, store); err != nil {
@@ -129,7 +128,8 @@ func runServe(args []string) error {
 	}()
 
 	relay := server.New(client, store, hub, server.Options{MacName: macName, FallbackMacName: defaultMacName(), RelayVersion: version, Approvals: approvalTracker, Agents: agentTracker, HostUsage: host.Sample}, logger)
-	go events.NewStream(client, logger, cmux.EventFilter{Names: server.WorkspaceEventNames}, relay).Run(ctx)
+	categories := append([]string{"notification", "agent"}, server.WorkspaceEventCategories...)
+	go events.NewStream(client, logger, cmux.EventFilter{Categories: categories}, hub, approvalTracker, agentTracker, relay).Run(ctx)
 	httpServer := &http.Server{
 		Addr:              listen,
 		Handler:           relay.Handler(),

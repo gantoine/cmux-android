@@ -41,3 +41,31 @@ func TestMacWorkspaceEventsRefreshThePhoneWithoutWaitingForThePoll(t *testing.T)
 		t.Fatalf("workspace.action must also refresh pins, colors and lanes, got %v", second)
 	}
 }
+
+func TestOtherMacEventsOnTheSharedStreamLeaveTheWorkspaceListAlone(t *testing.T) {
+	relay := startRelay(t)
+	relay.server.workspaces.interval = time.Hour
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := relay.dial(t, ctx, relay.pair(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	_ = wsjson.Write(ctx, conn, map[string]any{"type": "hello", "id": "1"})
+	readUntil(t, ctx, conn, "workspaces")
+	reads := func() int {
+		relay.cmux.mu.Lock()
+		defer relay.cmux.mu.Unlock()
+		return relay.cmux.workspaceReads
+	}
+	before := reads()
+
+	for _, name := range []string{"surface.focused", "surface.selected", "notification.created", "agent.hook.Stop"} {
+		relay.server.HandleEvent(ctx, cmux.Event{Type: "event", Name: name})
+	}
+	time.Sleep(300 * time.Millisecond)
+	if after := reads(); after != before {
+		t.Fatalf("events that don't change the list must not refetch it, got %d extra reads", after-before)
+	}
+}
