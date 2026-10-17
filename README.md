@@ -30,23 +30,6 @@ It works with any cmux plan, and you don't need to sign in to cmux. Everything r
   </picture>
 </p>
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-hold-light.png">
-    <img src="assets/screenshot-hold.png" width="22%" alt="The long-press menu for a workspace: open, new terminal, status, checklist, pin">
-  </picture>
-  &nbsp;
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-metrics-light.png">
-    <img src="assets/screenshot-metrics.png" width="22%" alt="CPU and memory use per agent and per workspace">
-  </picture>
-  &nbsp;
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="assets/screenshot-sessions-light.png">
-    <img src="assets/screenshot-sessions.png" width="22%" alt="Past Claude Code and Codex sessions to find and resume">
-  </picture>
-</p>
-
 > This is an independent project. It is not made, endorsed, or supported by Manaflow or the cmux team.
 
 ## How it works
