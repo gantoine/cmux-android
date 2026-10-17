@@ -32,6 +32,7 @@ code="$(awk '/Code:/ {print $2}' "$work/pair.txt")"
 token="$(curl -fsS -X POST "http://127.0.0.1:$relay_port/v1/pair" -d "{\"code\":\"$code\",\"device_name\":\"ui tests\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')"
 
 adb shell rm -rf /data/local/tmp/ui-test-failures >/dev/null 2>&1 || true
+adb shell settings put secure anr_show_background 0 >/dev/null 2>&1 || true
 status=0
 (cd "$root" && ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.relayUrl="http://10.0.2.2:$relay_port" \

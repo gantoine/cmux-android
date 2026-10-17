@@ -20,7 +20,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -145,10 +144,14 @@ class RecordedCmuxTest {
     }
 
     private fun await(selector: BySelector): UiObject2 {
-        val found = device.wait(Until.findObject(selector), TIMEOUT_MS)
+        val deadline = System.currentTimeMillis() + TIMEOUT_MS
+        var found: UiObject2? = null
+        while (found == null && System.currentTimeMillis() < deadline) {
+            device.findObject(By.textContains("isn't responding"))?.let { device.findObject(By.text("Wait"))?.click() }
+            found = device.wait(Until.findObject(selector), POLL_MS)
+        }
         if (found == null) captureScreen()
-        assertNotNull("nothing on screen matches $selector", found)
-        return found
+        return found ?: throw AssertionError("nothing on screen matches $selector")
     }
 
     private fun captureScreen() {
@@ -218,6 +221,7 @@ class RecordedCmuxTest {
     private companion object {
         const val TIMEOUT_MS = 20_000L
         const val REVEAL_WAIT_MS = 2_000L
+        const val POLL_MS = 1_000L
         const val REVEAL_SWIPES = 5
         const val SETTLE_CHECKS = 10
         const val SETTLE_INTERVAL_MS = 200L
