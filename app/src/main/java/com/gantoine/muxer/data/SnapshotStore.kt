@@ -8,9 +8,14 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.WorkspaceInfo
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -28,10 +33,14 @@ data class MacSnapshot(
 
 private val Context.snapshotDataStore by preferencesDataStore(name = "snapshots")
 
-class SnapshotStore(private val context: Context) {
+class SnapshotStore(private val context: Context, scope: CoroutineScope) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    val snapshots: Flow<Map<String, MacSnapshot>> = context.snapshotDataStore.data.map { decode(it) }
+    val snapshots: Flow<Map<String, MacSnapshot>> = context.snapshotDataStore.data
+        .map { decode(it) }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, null)
+        .filterNotNull()
 
     suspend fun current(): Map<String, MacSnapshot> = snapshots.first()
 

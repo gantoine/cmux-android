@@ -1,11 +1,13 @@
 package com.gantoine.muxer
 
+import com.gantoine.muxer.model.ApprovalReply
+import com.gantoine.muxer.model.Approvals
 import com.gantoine.muxer.net.ConnectionState
-import com.gantoine.muxer.net.RelayConnection
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.ApprovalOption
 import com.gantoine.muxer.protocol.ApprovalQuestion
-import com.gantoine.muxer.ui.Approvals
+import java.time.Instant
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,7 +21,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
-import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.After
@@ -29,8 +30,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.time.Instant
-import java.util.concurrent.CopyOnWriteArrayList
 
 class ApprovalsTest {
     private val server = MockWebServer()
@@ -52,9 +51,7 @@ class ApprovalsTest {
             val id = message["id"]?.jsonPrimitive?.content
             when (message["type"]?.jsonPrimitive?.content) {
                 "hello" -> {
-                    webSocket.send(
-                        """{"type":"result","id":"$id","ok":true,"data":{"mac_name":"Studio","relay_version":"1","protocol_version":1,"cmux_version":"0.65.1","device_id":"d1"}}""",
-                    )
+                    webSocket.send(FakeRelay.welcome(id))
                     webSocket.send(
                         """{"type":"approvals","approvals":[
                             {"id":"r1","kind":"permission","agent":"claude","workspace_id":"w1","surface_id":"t1","tool":"Bash","detail":"npm test"},
@@ -83,15 +80,7 @@ class ApprovalsTest {
     @Test
     fun receivesPendingApprovalsAndAnswersThem() = runBlocking {
         server.enqueue(MockResponse.Builder().webSocketUpgrade(fakeRelay()).build())
-        val connection = RelayConnection(
-            macId = "mac",
-            baseUrl = server.url("/").toString().trimEnd('/'),
-            token = "token",
-            client = OkHttpClient(),
-            scope = scope,
-            notificationsAfter = { 0L },
-            onNotification = { _, _ -> },
-        )
+        val connection = FakeRelay.connection(server, scope)
         connection.start()
         withTimeout(5_000) { connection.state.first { it is ConnectionState.Connected } }
 
@@ -102,9 +91,9 @@ class ApprovalsTest {
         assertEquals("npm test", pending[0].detail)
         assertTrue(pending[1].questions.single().multiSelect)
 
-        assertTrue(connection.decide("r1", Approvals.MODE_ONCE).isSuccess)
-        assertTrue(connection.answer("q1", listOf("A, B")).isSuccess)
-        assertTrue(connection.decide("p1", Approvals.PLAN_MANUAL, "Split step 1").isSuccess)
+        assertTrue(connection.reply("r1", ApprovalReply.Decision(Approvals.MODE_ONCE)).isSuccess)
+        assertTrue(connection.reply("q1", ApprovalReply.Answers(listOf("A, B"))).isSuccess)
+        assertTrue(connection.reply("p1", ApprovalReply.Decision(Approvals.PLAN_MANUAL, "Split step 1")).isSuccess)
         assertEquals(
             listOf(
                 mapOf("approval_id" to "r1", "mode" to "once"),
@@ -138,6 +127,12 @@ class ApprovalsTest {
         val plan = Approval(id = "p1", kind = "plan", agent = "claude", workspaceId = "w1", surfaceId = "t1", plan = "\n## Add approvals\n1. Relay")
         assertEquals("Claude has a plan ready", Approvals.title(plan))
         assertEquals("Add approvals", Approvals.summary(plan))
+
+        assertEquals(listOf("Allow", "Always allow", "Deny"), Approvals.decisions(permission).map { it.label })
+        assertEquals(listOf("once", "always", "deny"), Approvals.decisions(permission).map { it.mode })
+        assertEquals(listOf("Approve", "Approve, auto-edit", "Reject"), Approvals.decisions(plan).map { it.label })
+        assertEquals(listOf("Approve", "Auto-edit", "Reject"), Approvals.decisions(plan).map { it.shortLabel })
+        assertTrue(Approvals.decisions(asking).isEmpty())
 
         val created = permission.copy(createdAt = "2026-10-15T16:08:42Z")
         assertEquals(100L, Approvals.secondsLeft(created, Instant.parse("2026-10-15T16:09:02Z")))

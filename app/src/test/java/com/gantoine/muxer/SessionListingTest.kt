@@ -4,6 +4,7 @@ import com.gantoine.muxer.protocol.RecentSession
 import com.gantoine.muxer.protocol.RecentSessionsResponse
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.ui.SessionListing
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,6 +34,6 @@ class SessionListingTest {
         ).sessions
         assertTrue(SessionListing.isOpen(decoded[0]))
         assertFalse(SessionListing.isOpen(decoded[1]))
-        assertEquals(1792180800.0, SessionListing.modifiedAt(decoded[0])!!, 0.0)
+        assertEquals(Instant.parse("2026-10-16T20:00:00Z"), SessionListing.modifiedAt(decoded[0]))
     }
 }

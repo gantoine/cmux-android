@@ -1,9 +1,9 @@
 package com.gantoine.muxer
 
+import com.gantoine.muxer.model.WorkspaceListing
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspacesMessage
-import com.gantoine.muxer.ui.WorkspaceListing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

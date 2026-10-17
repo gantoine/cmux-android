@@ -1,33 +1,16 @@
 package com.gantoine.muxer.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.speech.RecognizerIntent
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.automirrored.outlined.Chat
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DriveFileRenameOutline
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import com.gantoine.muxer.terminal.StickyModifiers
-import com.gantoine.muxer.terminal.TerminalKeys
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -42,17 +25,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
@@ -64,20 +57,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -86,28 +82,30 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.MacStore
 import com.gantoine.muxer.images.ChatImages
-import com.gantoine.muxer.net.AgentReplyRoute
+import com.gantoine.muxer.model.AgentMessaging
+import com.gantoine.muxer.model.AgentStatus
+import com.gantoine.muxer.model.ApprovalReply
+import com.gantoine.muxer.model.WorkspaceListing
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.net.VisibleTerminal
 import com.gantoine.muxer.notifications.ConversationShortcuts
-import androidx.compose.ui.platform.LocalContext
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
+import com.gantoine.muxer.terminal.StickyModifiers
 import com.gantoine.muxer.terminal.TerminalBottomPadding
 import com.gantoine.muxer.terminal.TerminalCanvas
 import com.gantoine.muxer.terminal.TerminalContent
 import com.gantoine.muxer.terminal.TerminalHistory
 import com.gantoine.muxer.terminal.TerminalInputSink
 import com.gantoine.muxer.terminal.TerminalInputView
+import com.gantoine.muxer.terminal.TerminalKeys
 import com.gantoine.muxer.terminal.TerminalViewport
 import com.gantoine.muxer.terminal.fittingGrid
 import com.gantoine.muxer.terminal.rememberCellMetrics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,6 +165,8 @@ fun TerminalScreen(
         images = ChatImages.merge(images, picked)
     }
     val viewport = remember(surfaceId) { TerminalViewport() }
+    val isLive by remember(viewport) { derivedStateOf { viewport.isLive } }
+    val showSelectionBar by remember(viewport) { derivedStateOf { viewport.selection != null && !viewport.selecting } }
     var history by remember(surfaceId) { mutableStateOf<TerminalHistory?>(null) }
     var loadingHistory by remember(surfaceId) { mutableStateOf(false) }
     var inputView by remember { mutableStateOf<TerminalInputView?>(null) }
@@ -219,10 +219,7 @@ fun TerminalScreen(
     fun reply(approval: Approval, reply: ApprovalReply) {
         sendingApprovals = sendingApprovals + approval.id
         scope.launch {
-            val result = when (reply) {
-                is ApprovalReply.Decision -> connection.decide(approval.id, reply.mode, reply.feedback)
-                is ApprovalReply.Answers -> connection.answer(approval.id, reply.answers)
-            }
+            val result = connection.reply(approval.id, reply)
             sendingApprovals = sendingApprovals - approval.id
             result.onFailure { snackbar.showSnackbar(it.message ?: "Could not send your answer.") }
         }
@@ -303,30 +300,21 @@ fun TerminalScreen(
             return
         }
         scope.launch {
-            connection.sendAgentMessage(message).onFailure { error ->
-                if (AgentReplyRoute.shouldPasteInstead(error)) {
-                    paste(message, submit = true)
-                } else {
-                    if (composerText.isBlank()) composerText = message
-                    snackbar.showSnackbar(error.message ?: "The message didn't reach the agent.")
-                }
+            connection.deliverToAgent(message).onFailure { error ->
+                if (composerText.isBlank()) composerText = message
+                snackbar.showSnackbar(error.message ?: "The message didn't reach the agent.")
             }
         }
     }
 
-    fun terminalRequest(type: String, force: Boolean = false, title: String? = null, onSuccess: () -> Unit = {}) {
+    fun terminalRequest(request: suspend () -> Result<Unit>, onSuccess: () -> Unit = {}) {
         scope.launch {
-            connection.request(type, buildJsonObject {
-                put("workspace_id", workspaceId)
-                put("surface_id", surfaceId)
-                if (force) put("force", true)
-                if (title != null) put("title", title)
-            })
+            request()
                 .onSuccess { onSuccess() }
                 .onFailure { failure ->
                     closing = false
                     val confirming = terminalDialog as? TerminalDialog.Close
-                    if (failure is RelayException && failure.code == "confirmation_required" && confirming != null) {
+                    if (failure is RelayException && failure.needsConfirmation && confirming != null) {
                         terminalDialog = confirming.copy(force = true)
                     } else {
                         terminalDialog = null
@@ -339,20 +327,22 @@ fun TerminalScreen(
     val sink = remember(connection) {
         object : TerminalInputSink {
             override fun text(text: String) {
-                val input = TerminalKeys.withModifiers(text, modifiers)
-                modifiers = StickyModifiers()
-                if (!viewport.isLive) goLive()
+                val input = TerminalKeys.withModifiers(text, consumeModifiers())
                 when (input) {
                     is TerminalKeys.Input.Key -> connection.key(input.name)
-                    is TerminalKeys.Input.Text -> connection.send("input", buildJsonObject { put("text", input.text) })
+                    is TerminalKeys.Input.Text -> connection.input(input.text)
                 }
             }
 
             override fun key(name: String) {
-                val input = TerminalKeys.keyWithModifiers(name, modifiers)
+                connection.key(TerminalKeys.keyWithModifiers(name, consumeModifiers()).name)
+            }
+
+            private fun consumeModifiers(): StickyModifiers {
+                val held = modifiers
                 modifiers = StickyModifiers()
                 if (!viewport.isLive) goLive()
-                connection.key(input.name)
+                return held
             }
         }
     }
@@ -361,9 +351,7 @@ fun TerminalScreen(
         topBar = {
             CmuxTopBar(
                 title = terminal?.title?.ifBlank { null } ?: workspace?.title ?: "Terminal",
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                },
+                onBack = onBack,
                 actions = {
                     if (chat != null) {
                         IconButton(onClick = { showChat = !showChat }) {
@@ -435,26 +423,26 @@ fun TerminalScreen(
                     LaunchedEffect(current?.altScreen) {
                         if (current?.altScreen == true) goLive()
                     }
-                    if (current == null) {
+                    val content = remember(current, history) { current?.let { TerminalContent(it, history) } }
+                    if (content == null) {
                         FullWidthMessage(if (state is ConnectionState.Connected) "Loading the terminal…" else describe(state))
                     } else {
                         TerminalCanvas(
-                            content = TerminalContent(current, history),
+                            content = content,
                             viewport = viewport,
                             fontSize = fontSize,
                             onFontSizeChange = { fontSize = it },
                             onNeedHistory = ::loadHistory,
                             onReturnToLive = ::goLive,
-                            onScrollProgram = { lines -> connection.send("scroll", buildJsonObject { put("lines", lines) }) },
+                            onScrollProgram = connection::scroll,
                             onTap = { inputView?.showKeyboard() },
                             modifier = Modifier.fillMaxSize(),
                         )
-                        val selection = viewport.selection
-                        if (selection != null && !viewport.selecting) {
+                        if (showSelectionBar) {
                             SelectionBar(
                                 modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
                                 onCopy = {
-                                    val text = TerminalContent(current, history).text(selection)
+                                    val text = viewport.selection?.let(content::text).orEmpty()
                                     clipboard.setText(AnnotatedString(text))
                                     viewport.selection = null
                                     scope.launch { snackbar.showSnackbar("Copied ${text.lines().size} line(s).") }
@@ -462,7 +450,7 @@ fun TerminalScreen(
                                 onCancel = { viewport.selection = null },
                             )
                         }
-                        if (!viewport.isLive) {
+                        if (!isLive) {
                             SmallFloatingActionButton(
                                 onClick = ::goLive,
                                 modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
@@ -537,42 +525,30 @@ fun TerminalScreen(
             onDismiss = { terminalDialog = null },
         ) { (title) ->
             terminalDialog = null
-            terminalRequest("rename_terminal", title = title)
+            terminalRequest({ connection.renameTerminal(workspaceId, surfaceId, title) })
         }
-        TerminalDialog.Restart -> AlertDialog(
-            onDismissRequest = { terminalDialog = null },
-            title = { Text("Restart $terminalTitle?") },
-            text = { Text("This stops whatever is running in it and starts a new shell in the same folder on your computer.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    terminalDialog = null
-                    terminalRequest("restart_terminal", onSuccess = { goLive(); connection.resync() })
-                }) { Text("Restart") }
+        TerminalDialog.Restart -> ConfirmDialog(
+            title = "Restart $terminalTitle?",
+            text = "This stops whatever is running in it and starts a new shell in the same folder on your computer.",
+            confirm = "Restart",
+            onConfirm = {
+                terminalDialog = null
+                terminalRequest({ connection.restartTerminal(workspaceId, surfaceId) }, onSuccess = { goLive(); connection.resync() })
             },
-            dismissButton = { TextButton(onClick = { terminalDialog = null }) { Text("Cancel") } },
+            onDismiss = { terminalDialog = null },
         )
-        is TerminalDialog.Close -> AlertDialog(
-            onDismissRequest = { terminalDialog = null },
-            title = { Text("Close $terminalTitle?") },
-            text = {
-                Text(
-                    if (current.force) {
-                        "Something is still running in it. Closing stops it on your computer."
-                    } else {
-                        "This closes the terminal on your computer. The rest of the workspace stays open."
-                    },
-                )
+        is TerminalDialog.Close -> CloseConfirmDialog(
+            title = "Close $terminalTitle?",
+            body = "This closes the terminal on your computer. The rest of the workspace stays open.",
+            force = current.force,
+            onConfirm = {
+                closing = true
+                terminalRequest({ connection.closeTerminal(workspaceId, surfaceId, current.force) }, onSuccess = {
+                    terminalDialog = null
+                    onBack()
+                })
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    closing = true
-                    terminalRequest("close_terminal", force = current.force, onSuccess = {
-                        terminalDialog = null
-                        onBack()
-                    })
-                }) { Text(if (current.force) "Close anyway" else "Close") }
-            },
-            dismissButton = { TextButton(onClick = { terminalDialog = null }) { Text("Cancel") } },
+            onDismiss = { terminalDialog = null },
         )
     }
 }
@@ -709,10 +685,8 @@ private fun SelectionBar(modifier: Modifier, onCopy: () -> Unit, onCancel: () ->
 
 @Composable
 private fun KeyButton(label: String, onClick: () -> Unit) {
-    Box {
-        FilledTonalButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-            KeyLabel(label)
-        }
+    FilledTonalButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
+        KeyLabel(label)
     }
 }
 

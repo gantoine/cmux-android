@@ -17,8 +17,8 @@ import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.appWidgetBackground
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
@@ -40,9 +40,9 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.gantoine.muxer.MuxerApplication
+import com.gantoine.muxer.model.WorkspaceListing
 import com.gantoine.muxer.notifications.Notifier
 import com.gantoine.muxer.terminal.parseHexColor
-import com.gantoine.muxer.ui.WorkspaceListing
 import kotlinx.coroutines.flow.first
 
 class AgentBoardWidget : GlanceAppWidget() {

@@ -18,12 +18,12 @@ import androidx.work.WorkerParameters
 import com.gantoine.muxer.MainActivity
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.MacSnapshot
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import java.util.concurrent.TimeUnit
 
 data class WidgetInputs(val macIds: List<String>, val snapshots: Map<String, MacSnapshot>) {
     val paired: List<MacSnapshot> get() = WidgetData.paired(snapshots, macIds)
@@ -76,7 +76,7 @@ object Widgets {
     fun openApp(context: Context): Intent =
         Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    private fun anyPlaced(context: Context): Boolean {
+    fun anyPlaced(context: Context): Boolean {
         val manager = AppWidgetManager.getInstance(context) ?: return false
         return receivers.any { manager.getAppWidgetIds(ComponentName(context, it)).isNotEmpty() }
     }

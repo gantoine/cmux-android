@@ -3,8 +3,9 @@ package com.gantoine.muxer.ui
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.navigation.NavType
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -61,11 +62,7 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 navController.popBackStack(Routes.MACS, inclusive = false)
                 navController.navigate(Routes.pair())
             }
-            is LaunchTarget.Terminal -> {
-                navController.popBackStack(Routes.MACS, inclusive = false)
-                navController.navigate(Routes.workspaces(launchTarget.macId))
-                navController.navigate(Routes.terminal(launchTarget.macId, launchTarget.workspaceId, launchTarget.surfaceId))
-            }
+            is LaunchTarget.Terminal -> navController.openTerminal(launchTarget.macId, launchTarget.workspaceId, launchTarget.surfaceId)
             is LaunchTarget.Share -> {
                 val route = ShareRouting.route(
                     shortcutId = launchTarget.shortcutId,
@@ -102,8 +99,8 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
         ) { entry ->
             PairScreen(
                 app = app,
-                initialUrl = entry.arguments?.getString("url").orEmpty(),
-                initialCode = entry.arguments?.getString("code").orEmpty(),
+                initialUrl = entry.arg("url"),
+                initialCode = entry.arg("code"),
                 onBack = { navController.popBackStack() },
                 onPaired = { macId ->
                     navController.popBackStack(Routes.MACS, inclusive = false)
@@ -111,8 +108,8 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 },
             )
         }
-        composable(Routes.WORKSPACES, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
-            val macId = entry.arguments?.getString("macId").orEmpty()
+        composable(Routes.WORKSPACES, arguments = listOf(macArgument)) { entry ->
+            val macId = entry.arg("macId")
             WorkspacesScreen(
                 app = app,
                 macId = macId,
@@ -123,8 +120,8 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
             )
         }
-        composable(Routes.NOTIFICATIONS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
-            val macId = entry.arguments?.getString("macId").orEmpty()
+        composable(Routes.NOTIFICATIONS, arguments = listOf(macArgument)) { entry ->
+            val macId = entry.arg("macId")
             NotificationsScreen(
                 app = app,
                 macId = macId,
@@ -135,19 +132,19 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
         composable(
             Routes.CHECKLIST,
             arguments = listOf(
-                navArgument("macId") { type = NavType.StringType },
+                macArgument,
                 navArgument("workspaceId") { type = NavType.StringType },
             ),
         ) { entry ->
             ChecklistScreen(
                 app = app,
-                macId = entry.arguments?.getString("macId").orEmpty(),
-                workspaceId = entry.arguments?.getString("workspaceId").orEmpty(),
+                macId = entry.arg("macId"),
+                workspaceId = entry.arg("workspaceId"),
                 onBack = { navController.popBackStack() },
             )
         }
-        composable(Routes.SESSIONS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
-            val macId = entry.arguments?.getString("macId").orEmpty()
+        composable(Routes.SESSIONS, arguments = listOf(macArgument)) { entry ->
+            val macId = entry.arg("macId")
             SessionsScreen(
                 app = app,
                 macId = macId,
@@ -155,17 +152,17 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 onOpenTerminal = { workspaceId, surfaceId -> navController.navigate(Routes.terminal(macId, workspaceId, surfaceId)) },
             )
         }
-        composable(Routes.METRICS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
+        composable(Routes.METRICS, arguments = listOf(macArgument)) { entry ->
             MetricsScreen(
                 app = app,
-                macId = entry.arguments?.getString("macId").orEmpty(),
+                macId = entry.arg("macId"),
                 onBack = { navController.popBackStack() },
             )
         }
-        composable(Routes.SETTINGS, arguments = listOf(navArgument("macId") { type = NavType.StringType })) { entry ->
+        composable(Routes.SETTINGS, arguments = listOf(macArgument)) { entry ->
             ComputerSettingsScreen(
                 app = app,
-                macId = entry.arguments?.getString("macId").orEmpty(),
+                macId = entry.arg("macId"),
                 onBack = { navController.popBackStack() },
                 onOpenMetrics = { navController.navigate(Routes.metrics(it)) },
                 onOpenSessions = { navController.navigate(Routes.sessions(it)) },
@@ -175,7 +172,7 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
         composable(
             Routes.TERMINAL,
             arguments = listOf(
-                navArgument("macId") { type = NavType.StringType },
+                macArgument,
                 navArgument("workspaceId") { type = NavType.StringType },
                 navArgument("surfaceId") { type = NavType.StringType },
                 navArgument("message") { type = NavType.StringType; defaultValue = "" },
@@ -184,11 +181,11 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
         ) { entry ->
             TerminalScreen(
                 app = app,
-                macId = entry.arguments?.getString("macId").orEmpty(),
-                workspaceId = entry.arguments?.getString("workspaceId").orEmpty(),
-                surfaceId = entry.arguments?.getString("surfaceId").orEmpty(),
-                initialMessage = entry.arguments?.getString("message").orEmpty(),
-                initialImages = Routes.decodeImages(entry.arguments?.getString("images")),
+                macId = entry.arg("macId"),
+                workspaceId = entry.arg("workspaceId"),
+                surfaceId = entry.arg("surfaceId"),
+                initialMessage = entry.arg("message"),
+                initialImages = Routes.decodeImages(entry.arg("images")),
                 onBack = { navController.popBackStack() },
             )
         }
@@ -199,8 +196,8 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
                 navArgument("images") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { entry ->
-            val text = entry.arguments?.getString("text").orEmpty()
-            val images = Routes.decodeImages(entry.arguments?.getString("images"))
+            val text = entry.arg("text")
+            val images = Routes.decodeImages(entry.arg("images"))
             ShareScreen(
                 app = app,
                 onBack = { navController.popBackStack() },
@@ -210,8 +207,21 @@ fun AppNavigation(app: MuxerApplication, launchTarget: LaunchTarget?, onLaunchTa
     }
 }
 
-private fun NavHostController.openShared(target: ShareTarget, text: String, images: List<Uri>) {
+private fun NavHostController.openShared(target: ShareTarget, text: String, images: List<Uri>) =
+    openTerminal(target.macId, target.workspace.id, target.surfaceId, text, images)
+
+private fun NavHostController.openTerminal(
+    macId: String,
+    workspaceId: String,
+    surfaceId: String,
+    text: String = "",
+    images: List<Uri> = emptyList(),
+) {
     popBackStack(Routes.MACS, inclusive = false)
-    navigate(Routes.workspaces(target.macId))
-    navigate(Routes.terminal(target.macId, target.workspace.id, target.surfaceId, text, images))
+    navigate(Routes.workspaces(macId))
+    navigate(Routes.terminal(macId, workspaceId, surfaceId, text, images))
 }
+
+private val macArgument = navArgument("macId") { type = NavType.StringType }
+
+private fun NavBackStackEntry.arg(name: String): String = arguments?.getString(name).orEmpty()

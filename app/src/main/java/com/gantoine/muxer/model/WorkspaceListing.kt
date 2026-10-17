@@ -1,4 +1,4 @@
-package com.gantoine.muxer.ui
+package com.gantoine.muxer.model
 
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceGroupInfo
@@ -10,6 +10,8 @@ import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+
+val TerminalInfo.isAgent: Boolean get() = agentSource != null || agentState != null
 
 enum class WorkspaceFilter(val label: String, val lane: String? = null) {
     All("All"),
@@ -139,10 +141,7 @@ object WorkspaceListing {
         return workspaces.count { passes(it, filter) || filter == WorkspaceFilter.Pinned && it.groupId in pinnedGroups }
     }
 
-    fun agentStatus(workspaces: List<WorkspaceInfo>): AgentStatus? =
-        classify(workspaces.flatMap { it.terminals }.mapNotNull { it.agentState?.trim()?.takeIf(String::isNotEmpty) }.distinct())
-
-    fun isAgent(workspace: WorkspaceInfo): Boolean = workspace.terminals.any { it.agentSource != null || it.agentState != null }
+    fun isAgent(workspace: WorkspaceInfo): Boolean = workspace.terminals.any { it.isAgent }
 
     fun needsAttention(text: String?): Boolean =
         text?.let { candidate -> attentionWords.any { candidate.contains(it, ignoreCase = true) } } ?: false
@@ -155,15 +154,15 @@ object WorkspaceListing {
 
     fun needsYou(workspace: WorkspaceInfo): Boolean = isUnread(workspace) || agentStatus(workspace) is AgentStatus.NeedsYou
 
-    fun agentStatus(workspace: WorkspaceInfo): AgentStatus? = agentStatus(listOf(workspace))
+    fun agentStatus(workspace: WorkspaceInfo): AgentStatus? =
+        classify(workspace.terminals.mapNotNull { it.agentState?.trim()?.takeIf(String::isNotEmpty) }.distinct())
 
     fun agentStatus(terminal: TerminalInfo): AgentStatus? =
         classify(listOfNotNull(terminal.agentState?.trim()?.takeIf(String::isNotEmpty)))
 
     private fun classify(states: List<String>): AgentStatus? {
         if (states.isEmpty()) return null
-        states.firstOrNull { state -> attentionWords.any { state.contains(it, ignoreCase = true) } }
-            ?.let { return AgentStatus.NeedsYou(humanize(it)) }
+        states.firstOrNull(::needsAttention)?.let { return AgentStatus.NeedsYou(humanize(it)) }
         states.firstOrNull { state -> workingWords.any { state.contains(it, ignoreCase = true) } }
             ?.let { return AgentStatus.Working(humanize(it)) }
         if (states.any { state -> idleWords.any { state.contains(it, ignoreCase = true) } }) return AgentStatus.Idle("Idle")
@@ -193,7 +192,16 @@ object WorkspaceListing {
         locale: Locale = Locale.getDefault(),
     ): String? {
         if (epochSeconds == null || epochSeconds <= 0) return null
-        val moment = Instant.ofEpochMilli((epochSeconds * 1000).toLong()).atZone(zone)
+        return time(Instant.ofEpochMilli((epochSeconds * 1000).toLong()), now, zone, locale)
+    }
+
+    fun time(
+        instant: Instant?,
+        now: Instant = Instant.now(),
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+    ): String? {
+        val moment = instant?.atZone(zone) ?: return null
         val today = now.atZone(zone).toLocalDate()
         val day = moment.toLocalDate()
         val daysAgo = ChronoUnit.DAYS.between(day, today)

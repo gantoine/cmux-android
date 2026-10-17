@@ -4,18 +4,15 @@ import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
-import com.gantoine.muxer.widget.Widgets
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.R
+import com.gantoine.muxer.widget.Widgets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 class NotificationsTileService : TileService() {
@@ -27,9 +24,7 @@ class NotificationsTileService : TileService() {
         super.onStartListening()
         listening?.cancel()
         listening = app.scope.launch(Dispatchers.Main) {
-            combine(app.store.macs, app.connections.connectedMacIds) { macs, connected -> NotificationsTile.status(macs, connected) }
-                .distinctUntilChanged()
-                .collect(::show)
+            app.tileStatus.collect(::show)
         }
     }
 

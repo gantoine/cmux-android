@@ -1,5 +1,7 @@
 package com.gantoine.muxer.notifications
 
+import android.content.Intent
+
 enum class Sender { Agent, You, App }
 
 data class ConversationMessage(val id: String, val text: String, val sender: Sender, val time: Long)
@@ -7,6 +9,17 @@ data class ConversationMessage(val id: String, val text: String, val sender: Sen
 data class ConversationTarget(val macId: String, val workspaceId: String, val surfaceId: String) {
     val key: String get() = "$macId:$surfaceId"
 }
+
+fun Intent.putTarget(target: ConversationTarget): Intent =
+    putExtra(Notifier.EXTRA_MAC_ID, target.macId)
+        .putExtra(Notifier.EXTRA_WORKSPACE_ID, target.workspaceId)
+        .putExtra(Notifier.EXTRA_SURFACE_ID, target.surfaceId)
+
+fun Intent.conversationTarget(): ConversationTarget? = ConversationTarget(
+    macId = getStringExtra(Notifier.EXTRA_MAC_ID) ?: return null,
+    workspaceId = getStringExtra(Notifier.EXTRA_WORKSPACE_ID) ?: return null,
+    surfaceId = getStringExtra(Notifier.EXTRA_SURFACE_ID) ?: return null,
+)
 
 class ConversationHistory(private val limit: Int = DEFAULT_LIMIT) {
     private val conversations = mutableMapOf<String, List<ConversationMessage>>()

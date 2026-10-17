@@ -1,15 +1,17 @@
 package com.gantoine.muxer.widget
 
 import com.gantoine.muxer.data.MacSnapshot
-import com.gantoine.muxer.notifications.AgentNames
+import com.gantoine.muxer.model.AgentMessaging
+import com.gantoine.muxer.model.AgentNames
+import com.gantoine.muxer.model.AgentStatus
+import com.gantoine.muxer.model.Approvals
+import com.gantoine.muxer.model.WorkspaceListing
+import com.gantoine.muxer.model.isAgent
+import com.gantoine.muxer.model.parseInstant
 import com.gantoine.muxer.notifications.LiveActivities
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.WorkspaceInfo
-import com.gantoine.muxer.ui.AgentStatus
-import com.gantoine.muxer.ui.AgentMessaging
-import com.gantoine.muxer.ui.Approvals
-import com.gantoine.muxer.ui.WorkspaceListing
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -108,7 +110,7 @@ object WidgetData {
         }
 
     fun agentSurface(workspace: WorkspaceInfo): String? =
-        (workspace.terminals.firstOrNull { it.agentSource != null || it.agentState != null } ?: workspace.terminals.firstOrNull())?.id
+        (workspace.terminals.firstOrNull { it.isAgent } ?: workspace.terminals.firstOrNull())?.id
 
     fun board(snapshots: List<MacSnapshot>, showComputerNames: Boolean): List<BoardSection> =
         snapshots.map { snapshot ->
@@ -142,20 +144,8 @@ object WidgetData {
     }
 
     fun buttons(approval: Approval): List<ApprovalButton> {
-        if (approval.isPermission) {
-            return listOf(
-                ApprovalButton.Decide("Allow", Approvals.MODE_ONCE),
-                ApprovalButton.Decide("Always", Approvals.MODE_ALWAYS),
-                ApprovalButton.Decide("Deny", Approvals.MODE_DENY),
-            )
-        }
-        if (approval.isPlan) {
-            return listOf(
-                ApprovalButton.Decide("Approve", Approvals.PLAN_MANUAL),
-                ApprovalButton.Decide("Auto-edit", Approvals.PLAN_AUTO_ACCEPT),
-                ApprovalButton.Decide("Reject", Approvals.PLAN_DENY),
-            )
-        }
+        val decisions = Approvals.decisions(approval)
+        if (decisions.isNotEmpty()) return decisions.map { ApprovalButton.Decide(it.shortLabel, it.mode) }
         val question = approval.questions.singleOrNull()
         if (question == null || question.multiSelect || question.options.size !in 1..MAX_OPTION_BUTTONS) {
             return listOf(ApprovalButton.OpenTerminal())
@@ -166,7 +156,7 @@ object WidgetData {
     fun approvals(snapshots: List<MacSnapshot>): List<ApprovalItem> =
         snapshots
             .flatMap { snapshot -> snapshot.approvals.map { ApprovalItem(snapshot.macId, snapshot.macName, it, buttons(it)) } }
-            .sortedByDescending { item -> item.approval.createdAt?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.EPOCH }
+            .sortedByDescending { item -> parseInstant(item.approval.createdAt) ?: Instant.EPOCH }
 
     fun retries(snapshots: List<MacSnapshot>): List<RetryItem> =
         snapshots.flatMap { snapshot ->
@@ -177,7 +167,7 @@ object WidgetData {
         }
 
     fun retryLabel(retry: Retry, now: Instant): String {
-        val agent = AgentNames.display(retry.agent) ?: "The agent"
+        val agent = AgentNames.displayOrDefault(retry.agent)
         val seconds = AgentMessaging.secondsUntil(retry, now)
         return if (seconds == null || seconds == 0L) "$agent retries now" else "$agent retries in ${LiveActivities.countdown(seconds)}"
     }

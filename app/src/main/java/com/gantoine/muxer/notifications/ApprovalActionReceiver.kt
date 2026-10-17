@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.RemoteInput
 import com.gantoine.muxer.MuxerApplication
+import com.gantoine.muxer.model.ApprovalReply
 import kotlinx.coroutines.launch
 
 data class ApprovalTarget(val macId: String, val approvalId: String, val workspaceId: String, val surfaceId: String)
@@ -21,11 +22,13 @@ class ApprovalActionReceiver : BroadcastReceiver() {
         )
         val typed = intent.getBooleanExtra(EXTRA_TYPED, false)
         val answer = if (typed) typedAnswer(intent) ?: return else intent.getStringExtra(EXTRA_ANSWER)
-        val decision = ApprovalDecision(mode = intent.getStringExtra(EXTRA_MODE), answer = answer)
+        val reply = intent.getStringExtra(EXTRA_MODE)?.let { ApprovalReply.Decision(it) }
+            ?: answer?.let { ApprovalReply.Answers(listOf(it)) }
+            ?: return
         val pending = goAsync()
         app.scope.launch {
             try {
-                app.answerApproval(target, decision).onFailure { error ->
+                app.answerApproval(target, reply).onFailure { error ->
                     val macName = app.store.find(target.macId)?.name ?: "your computer"
                     app.notifier.showApprovalFailed(macName, target, error.message ?: "The computer did not accept it.")
                 }
@@ -58,27 +61,20 @@ class ApprovalActionReceiver : BroadcastReceiver() {
         }
 
         fun broadcastIntent(context: Context, target: ApprovalTarget, mode: String? = null, answer: String? = null): Intent =
-            Intent(context, ApprovalActionReceiver::class.java).apply {
-                action = ACTION_ANSWER
-                putExtra(Notifier.EXTRA_MAC_ID, target.macId)
-                putExtra(EXTRA_APPROVAL_ID, target.approvalId)
-                putExtra(Notifier.EXTRA_WORKSPACE_ID, target.workspaceId)
-                putExtra(Notifier.EXTRA_SURFACE_ID, target.surfaceId)
-                putExtra(EXTRA_MODE, mode)
-                putExtra(EXTRA_ANSWER, answer)
-            }
+            targetIntent(context, target, ACTION_ANSWER)
+                .putExtra(EXTRA_MODE, mode)
+                .putExtra(EXTRA_ANSWER, answer)
 
         fun typedAnswerIntent(context: Context, target: ApprovalTarget): PendingIntent {
-            val intent = Intent(context, ApprovalActionReceiver::class.java).apply {
-                action = ACTION_TYPED_ANSWER
-                putExtra(Notifier.EXTRA_MAC_ID, target.macId)
-                putExtra(EXTRA_APPROVAL_ID, target.approvalId)
-                putExtra(Notifier.EXTRA_WORKSPACE_ID, target.workspaceId)
-                putExtra(Notifier.EXTRA_SURFACE_ID, target.surfaceId)
-                putExtra(EXTRA_TYPED, true)
-            }
+            val intent = targetIntent(context, target, ACTION_TYPED_ANSWER).putExtra(EXTRA_TYPED, true)
             val requestCode = listOf(target.approvalId, ACTION_TYPED_ANSWER).hashCode()
             return PendingIntent.getBroadcast(context, requestCode, intent, Notifier.mutableFlag() or PendingIntent.FLAG_UPDATE_CURRENT)
         }
+
+        private fun targetIntent(context: Context, target: ApprovalTarget, action: String): Intent =
+            Intent(context, ApprovalActionReceiver::class.java)
+                .setAction(action)
+                .putTarget(ConversationTarget(target.macId, target.workspaceId, target.surfaceId))
+                .putExtra(EXTRA_APPROVAL_ID, target.approvalId)
     }
 }

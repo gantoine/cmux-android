@@ -2,8 +2,8 @@ package com.gantoine.muxer
 
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.PairingClient
-import com.gantoine.muxer.net.RelayConnection
 import com.gantoine.muxer.protocol.RelayNotification
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +28,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.util.concurrent.CopyOnWriteArrayList
 
 class RelayConnectionTest {
     private val server = MockWebServer()
@@ -52,9 +51,7 @@ class RelayConnectionTest {
             val id = message["id"]?.jsonPrimitive?.content
             when (message["type"]?.jsonPrimitive?.content) {
                 "hello" -> {
-                    webSocket.send(
-                        """{"type":"result","id":"$id","ok":true,"data":{"mac_name":"Studio","relay_version":"1","protocol_version":1,"cmux_version":"0.65.1","device_id":"d1","notification_seq":5}}""",
-                    )
+                    webSocket.send(FakeRelay.welcome(id, notificationSeq = 5, unsupported = listOf("vms")))
                     webSocket.send("""{"type":"workspaces","workspaces":[{"id":"w1","title":"api","has_unread":true,"unread_count":2,"terminals":[{"id":"t1","title":"zsh","agent_state":"Running"}]}]}""")
                     webSocket.send("""{"type":"notification","notification":{"seq":7,"kind":"created","id":"n1","title":"Claude Code","body":"Waiting for input"}}""")
                 }
@@ -81,19 +78,13 @@ class RelayConnectionTest {
     fun connectsAttachesAndForwardsNotifications() = runBlocking {
         server.enqueue(MockResponse.Builder().webSocketUpgrade(fakeRelay()).build())
         val notifications = CopyOnWriteArrayList<RelayNotification>()
-        val connection = RelayConnection(
-            macId = "mac",
-            baseUrl = server.url("/").toString().trimEnd('/'),
-            token = "secret-token",
-            client = client,
-            scope = scope,
-            notificationsAfter = { 3L },
-            onNotification = { _, notification -> notifications += notification },
-        )
+        val connection = FakeRelay.connection(server, scope, client = client, notificationsAfter = 3L) { _, notification -> notifications += notification }
         connection.start()
 
         val connected = withTimeout(5_000) { connection.state.first { it is ConnectionState.Connected } }
         assertEquals("0.65.1", (connected as ConnectionState.Connected).welcome.cmuxVersion)
+        assertFalse(connection.supports("vms"))
+        assertTrue(connection.supports("top"))
         assertEquals("Bearer secret-token", server.takeRequest().headers["Authorization"])
 
         val workspaces = withTimeout(5_000) { connection.workspaces.first { it != null } }!!
@@ -121,24 +112,13 @@ class RelayConnectionTest {
         override fun onMessage(webSocket: WebSocket, text: String) {
             val message = Json.parseToJsonElement(text).jsonObject
             if (message["type"]?.jsonPrimitive?.content != "hello") return
-            val id = message["id"]?.jsonPrimitive?.content
-            webSocket.send(
-                """{"type":"result","id":"$id","ok":true,"data":{"mac_name":"Studio","relay_version":"1","protocol_version":1,"cmux_version":"0.65.1","device_id":"d1","notification_seq":5}}""",
-            )
+            webSocket.send(FakeRelay.welcome(message["id"]?.jsonPrimitive?.content, notificationSeq = 5))
             webSocket.send("""{"type":"approvals","approvals":[{"id":"r1","kind":"permission","workspace_id":"w1","surface_id":"t1","tool":"Bash"}]}""")
             relaySocket.complete(webSocket)
         }
     }
 
-    private fun connection() = RelayConnection(
-        macId = "mac",
-        baseUrl = server.url("/").toString().trimEnd('/'),
-        token = "secret-token",
-        client = client,
-        scope = scope,
-        notificationsAfter = { 0L },
-        onNotification = { _, _ -> },
-    )
+    private fun connection() = FakeRelay.connection(server, scope, client = client)
 
     @Test
     fun approvalsClearWhenTheConnectionDrops() = runBlocking {
@@ -202,15 +182,7 @@ class RelayConnectionTest {
     @Test
     fun revokedPhoneStopsRetrying() = runBlocking {
         server.enqueue(MockResponse.Builder().code(401).body("""{"error":{"code":"unauthorized"}}""").build())
-        val connection = RelayConnection(
-            macId = "mac",
-            baseUrl = server.url("/").toString().trimEnd('/'),
-            token = "revoked",
-            client = client,
-            scope = scope,
-            notificationsAfter = { 0L },
-            onNotification = { _, _ -> },
-        )
+        val connection = FakeRelay.connection(server, scope, token = "revoked", client = client)
         connection.start()
         withTimeout(5_000) { connection.state.first { it == ConnectionState.Unauthorized } }
         kotlinx.coroutines.delay(1_500)

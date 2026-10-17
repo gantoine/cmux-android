@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -65,6 +64,8 @@ import com.gantoine.muxer.chat.ChatMarkdown
 import com.gantoine.muxer.chat.ChatState
 import com.gantoine.muxer.chat.InlineSpan
 import com.gantoine.muxer.chat.MarkdownBlock
+import com.gantoine.muxer.model.AgentStatus
+import com.gantoine.muxer.model.WorkspaceListing
 import com.gantoine.muxer.protocol.AgentMessage
 import com.gantoine.muxer.protocol.ChatEntry
 import com.gantoine.muxer.protocol.ChatTool

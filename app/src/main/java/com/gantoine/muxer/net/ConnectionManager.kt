@@ -13,22 +13,23 @@ import com.gantoine.muxer.protocol.Welcome
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
@@ -44,6 +45,7 @@ class ConnectionManager(
     private val dismiss: (RelayNotification) -> Unit,
     private val notifyApproval: (Mac, Approval) -> Unit,
     private val dismissApproval: (String) -> Unit,
+    private val widgetsPlaced: () -> Boolean,
 ) {
     private val connections = mutableMapOf<String, RelayConnection>()
     private val watchers = mutableMapOf<String, Job>()
@@ -65,15 +67,15 @@ class ConnectionManager(
         }
     }.distinctUntilChanged()
 
-    private val awake = MutableStateFlow(false)
-    private var awakeUntil = 0L
-    private var sleepJob: Job? = null
+    private val awake = MutableStateFlow<Set<String>>(emptySet())
+    private val awakeUntil = mutableMapOf<String, Long>()
+    private val sleepJobs = mutableMapOf<String, Job>()
     private var backgroundDetach: Job? = null
 
     fun start() {
         scope.launch {
-            combine(store.macs, appVisible, awake) { macs, visible, awake -> macs to (visible || awake) }
-                .collect { (macs, wanted) -> reconcile(macs, wanted) }
+            combine(store.macs, appVisible, awake) { macs, visible, awake -> Triple(macs, visible, awake) }
+                .collect { (macs, visible, awake) -> reconcile(macs) { mac -> visible || ALL_MACS in awake || mac.id in awake } }
         }
     }
 
@@ -93,16 +95,22 @@ class ConnectionManager(
 
     private fun allConnections(): List<RelayConnection> = synchronized(connections) { connections.values.toList() }
 
-    fun wake(durationMs: Long) {
-        synchronized(awake) {
-            awakeUntil = maxOf(awakeUntil, System.currentTimeMillis() + durationMs)
-            awake.value = true
-            sleepJob?.cancel()
-            sleepJob = scope.launch {
-                delay(awakeUntil - System.currentTimeMillis())
-                awake.value = false
+    fun wake(durationMs: Long, macId: String = ALL_MACS) {
+        synchronized(awakeUntil) {
+            val until = maxOf(awakeUntil[macId] ?: 0L, System.currentTimeMillis() + durationMs)
+            awakeUntil[macId] = until
+            awake.update { it + macId }
+            sleepJobs.remove(macId)?.cancel()
+            sleepJobs[macId] = scope.launch {
+                delay(until - System.currentTimeMillis())
+                awake.update { it - macId }
             }
         }
+    }
+
+    suspend fun wakeAndAwait(macId: String, wakeMs: Long, timeoutMs: Long = CONNECT_TIMEOUT_MS): RelayConnection? {
+        wake(wakeMs, macId)
+        return awaitConnected(macId, timeoutMs)
     }
 
     fun connection(macId: String): RelayConnection? = synchronized(connections) { connections[macId] }
@@ -115,24 +123,11 @@ class ConnectionManager(
 
     suspend fun sendAgentMessage(target: ConversationTarget, text: String): Result<Unit> {
         val shared = connection(target.macId) ?: return Result.failure(IllegalStateException("This computer is not paired anymore."))
-        val route = AgentReplyRoute.choose(
-            sharedConnected = shared.state.value is ConnectionState.Connected,
-            sharedAttachedToTarget = shared.isAttachedTo(target.surfaceId),
-        )
-        return when (route) {
-            AgentReplyRoute.Shared -> deliverAgentMessage(shared, text)
-            AgentReplyRoute.Separate -> withSeparateConnection(target.macId) { separate ->
-                val attachment = separate.attach(target.workspaceId, target.surfaceId)
-                deliverAgentMessage(separate, text).also { separate.detach(attachment) }
-            }
+        if (shared.state.value is ConnectionState.Connected && shared.isAttachedTo(target.surfaceId)) return shared.deliverToAgent(text)
+        return withSeparateConnection(target.macId) { separate ->
+            val attachment = separate.attach(target.workspaceId, target.surfaceId)
+            separate.deliverToAgent(text).also { separate.detach(attachment) }
         }
-    }
-
-    private suspend fun deliverAgentMessage(connection: RelayConnection, text: String): Result<Unit> {
-        val messaged = connection.sendAgentMessage(text)
-        val error = messaged.exceptionOrNull() ?: return Result.success(Unit)
-        if (!AgentReplyRoute.shouldPasteInstead(error)) return Result.failure(error)
-        return connection.paste(text, submit = true)
     }
 
     private suspend fun <T> withSeparateConnection(macId: String, action: suspend (RelayConnection) -> Result<T>): Result<T> {
@@ -145,7 +140,7 @@ class ConnectionManager(
             token = token,
             client = client,
             scope = scope,
-            notificationsAfter = { mac.lastNotificationSeq },
+            notificationsAfter = { store.notificationSeq(mac.id) },
             onNotification = { _, _ -> },
         )
         return try {
@@ -159,7 +154,7 @@ class ConnectionManager(
         }
     }
 
-    private fun reconcile(macs: List<Mac>, connectAll: Boolean) {
+    private fun reconcile(macs: List<Mac>, wanted: (Mac) -> Boolean) {
         synchronized(connections) {
             val ids = macs.map { it.id }.toSet()
             connections.keys.filterNot { it in ids }.forEach { macId ->
@@ -177,7 +172,7 @@ class ConnectionManager(
                         token = token,
                         client = client,
                         scope = scope,
-                        notificationsAfter = { store.find(mac.id)?.lastNotificationSeq ?: 0 },
+                        notificationsAfter = { store.notificationSeq(mac.id) },
                         onNotification = ::handleNotification,
                         onWelcome = ::handleWelcome,
                     ).also { connection ->
@@ -191,7 +186,7 @@ class ConnectionManager(
             }
             for (mac in macs) {
                 val connection = connections[mac.id] ?: continue
-                if (connectAll || mac.backgroundNotifications) connection.start() else connection.stop()
+                if (wanted(mac) || mac.backgroundNotifications) connection.start() else connection.stop()
             }
             _connectionsFlow.value = connections.toMap()
         }
@@ -249,7 +244,7 @@ class ConnectionManager(
 
     private fun repeatedWhileConnected(inputs: SnapshotInputs) = flow {
         emit(inputs)
-        while (inputs.connected) {
+        while (inputs.connected && widgetsPlaced()) {
             delay(SNAPSHOT_HEARTBEAT_MS)
             emit(inputs)
         }
@@ -292,13 +287,13 @@ class ConnectionManager(
     }
 
     private suspend fun handleWelcome(macId: String, welcome: Welcome) {
-        val mac = store.find(macId) ?: return
-        if (mac.lastNotificationSeq == 0L) store.recordNotificationSeq(macId, welcome.notificationSeq)
+        if (store.find(macId) == null) return
+        if (store.notificationSeq(macId) == 0L) store.recordNotificationSeq(macId, welcome.notificationSeq)
     }
 
     private suspend fun handleNotification(macId: String, notification: RelayNotification) {
         val mac = store.find(macId) ?: return
-        if (notification.seq <= mac.lastNotificationSeq) return
+        if (notification.seq <= store.notificationSeq(macId)) return
         store.recordNotificationSeq(macId, notification.seq)
         when (notification.kind) {
             "created" -> {
@@ -324,5 +319,7 @@ class ConnectionManager(
         const val SNAPSHOT_HEARTBEAT_MS = 60_000L
         const val SEPARATE_CONNECT_TIMEOUT_MS = 6_000L
         const val BACKGROUND_DETACH_MS = 30_000L
+        const val CONNECT_TIMEOUT_MS = 8_000L
+        const val ALL_MACS = "*"
     }
 }

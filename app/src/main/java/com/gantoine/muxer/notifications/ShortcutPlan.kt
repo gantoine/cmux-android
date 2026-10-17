@@ -1,8 +1,9 @@
 package com.gantoine.muxer.notifications
 
 import com.gantoine.muxer.data.MacSnapshot
+import com.gantoine.muxer.model.AgentNames
+import com.gantoine.muxer.model.WorkspaceListing
 import com.gantoine.muxer.protocol.WorkspaceInfo
-import com.gantoine.muxer.ui.WorkspaceListing
 
 data class WorkspaceShortcut(
     val macId: String,
@@ -70,11 +71,4 @@ object ShortcutPlan {
 
     private fun byRecency(candidates: List<Pair<WorkspaceShortcut, Double?>>): List<WorkspaceShortcut> =
         candidates.sortedByDescending { (_, lastActivity) -> lastActivity ?: Double.NEGATIVE_INFINITY }.map { it.first }
-}
-
-object AgentNames {
-    fun display(source: String?): String? {
-        val first = source?.split('-', '_', ' ', '.')?.firstOrNull { it.isNotBlank() }?.trim() ?: return null
-        return first.replaceFirstChar { it.uppercase() }
-    }
 }

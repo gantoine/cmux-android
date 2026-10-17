@@ -2,7 +2,6 @@ package com.gantoine.muxer
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,8 +9,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.IntentCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import com.gantoine.muxer.notifications.Notifier
+import com.gantoine.muxer.notifications.conversationTarget
 import com.gantoine.muxer.share.ShareRouting
 import com.gantoine.muxer.ui.AppNavigation
 import com.gantoine.muxer.ui.CmuxTheme
@@ -43,10 +44,8 @@ class MainActivity : ComponentActivity() {
         if (intent.action == ACTION_PAIR) return LaunchTarget.PairComputer
         if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) return shareTarget(intent)
         if (intent.action == Notifier.ACTION_OPEN_TERMINAL) {
-            val macId = intent.getStringExtra(Notifier.EXTRA_MAC_ID) ?: return null
-            val workspaceId = intent.getStringExtra(Notifier.EXTRA_WORKSPACE_ID) ?: return null
-            val surfaceId = intent.getStringExtra(Notifier.EXTRA_SURFACE_ID) ?: return null
-            return LaunchTarget.Terminal(macId, workspaceId, surfaceId)
+            val target = intent.conversationTarget() ?: return null
+            return LaunchTarget.Terminal(target.macId, target.workspaceId, target.surfaceId)
         }
         return null
     }
@@ -64,21 +63,9 @@ class MainActivity : ComponentActivity() {
 
     private fun sharedImages(intent: Intent): List<Uri> =
         if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-            }.orEmpty()
+            IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
         } else {
-            listOfNotNull(
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
-                },
-            )
+            listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
         }
 
     companion object {

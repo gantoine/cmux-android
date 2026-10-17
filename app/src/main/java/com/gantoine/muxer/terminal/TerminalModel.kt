@@ -21,14 +21,9 @@ data class TerminalScreen(
         maxOf(lastText, cursor?.row ?: 0)
     }
 
-    fun text(row: Int): String {
-        val builder = StringBuilder()
-        for (span in lines.getOrNull(row).orEmpty()) {
-            while (builder.length < span.column) builder.append(' ')
-            builder.append(span.text)
-        }
-        return builder.toString().trimEnd()
-    }
+    override fun equals(other: Any?): Boolean = this === other
+
+    override fun hashCode(): Int = System.identityHashCode(this)
 }
 
 object TerminalModel {
@@ -48,7 +43,7 @@ object TerminalModel {
                 lines = List(frame.rows) { emptyList() },
             )
         } else {
-            previous.copy(styles = previous.styles + frame.styles.associateBy { it.id })
+            if (frame.styles.isEmpty()) previous else previous.copy(styles = previous.styles + frame.styles.associateBy { it.id })
         }
 
         val lines = base.lines.toMutableList()

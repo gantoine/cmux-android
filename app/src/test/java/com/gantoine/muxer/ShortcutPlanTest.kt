@@ -1,24 +1,12 @@
 package com.gantoine.muxer
 
-import com.gantoine.muxer.data.MacSnapshot
-import com.gantoine.muxer.notifications.AgentNames
+import com.gantoine.muxer.model.AgentNames
 import com.gantoine.muxer.notifications.ShortcutPlan
-import com.gantoine.muxer.protocol.TerminalInfo
-import com.gantoine.muxer.protocol.WorkspaceInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ShortcutPlanTest {
-    private fun workspace(id: String, lastActivity: Double?, vararg terminals: TerminalInfo, title: String = id, color: String? = "#112233") =
-        WorkspaceInfo(id = id, title = title, customColor = color, lastActivityAt = lastActivity, terminals = terminals.toList())
-
-    private fun shell(id: String) = TerminalInfo(id = id, title = "zsh")
-    private fun claude(id: String) = TerminalInfo(id = id, title = "claude", agentSource = "claude")
-
-    private fun snapshot(macId: String, vararg workspaces: WorkspaceInfo) =
-        MacSnapshot(macId = macId, macName = "$macId's Mac", connected = true, updatedAt = 0, workspaces = workspaces.toList())
-
     @Test
     fun idsNameTheComputerAndWorkspace() {
         assertEquals("ws:mac-1:w-1", ShortcutPlan.id("mac-1", "w-1"))
@@ -81,6 +69,7 @@ class ShortcutPlanTest {
         assertEquals("Codex", AgentNames.display("codex"))
         assertEquals("Claude", AgentNames.display("claude_code"))
         assertEquals("Gemini", AgentNames.display("gemini-cli"))
+        assertEquals("OpenCode", AgentNames.display("opencode"))
         assertNull(AgentNames.display(null))
         assertNull(AgentNames.display(" "))
     }

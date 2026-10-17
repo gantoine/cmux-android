@@ -1,7 +1,5 @@
 package com.gantoine.muxer.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,27 +12,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,31 +33,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gantoine.muxer.MuxerApplication
+import com.gantoine.muxer.model.AgentNames
+import com.gantoine.muxer.model.WorkspaceListing
+import com.gantoine.muxer.model.parseInstant
 import com.gantoine.muxer.net.ConnectionState
-import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.protocol.RecentSession
 import java.time.Instant
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 object SessionListing {
-    private val agentNames = mapOf(
-        "claude" to "Claude",
-        "codex" to "Codex",
-        "pi" to "Pi",
-        "amp" to "Amp",
-        "opencode" to "OpenCode",
-        "gemini" to "Gemini",
-    )
-
-    fun agentName(agent: String): String = agentNames[agent] ?: agent.replaceFirstChar { it.uppercase() }
+    fun agentName(agent: String): String = AgentNames.display(agent) ?: agent
 
     fun label(session: RecentSession): String =
         session.title.ifBlank { session.cwd?.trimEnd('/')?.substringAfterLast('/').orEmpty() }.ifBlank { "Untitled session" }
@@ -79,8 +59,7 @@ object SessionListing {
             session.gitBranch?.takeIf { it.isNotBlank() },
         ).joinToString(" · ")
 
-    fun modifiedAt(session: RecentSession): Double? =
-        runCatching { Instant.parse(session.modified).toEpochMilli() / 1000.0 }.getOrNull()
+    fun modifiedAt(session: RecentSession): Instant? = parseInstant(session.modified)
 
     fun isOpen(session: RecentSession): Boolean = !session.workspaceId.isNullOrEmpty() && !session.surfaceId.isNullOrEmpty()
 }
@@ -94,9 +73,8 @@ fun SessionsScreen(
     onBack: () -> Unit,
     onOpenTerminal: (workspaceId: String, surfaceId: String) -> Unit,
 ) {
-    val connections by app.connections.connectionsFlow.collectAsState()
-    val connection = connections[macId]
-    val state by (connection?.state ?: remember { MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
+    val connection = rememberConnection(app, macId)
+    val state by connection.collectOr(ConnectionState.Stopped) { it.state }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
@@ -104,11 +82,10 @@ fun SessionsScreen(
     var loadFailure by remember { mutableStateOf<Throwable?>(null) }
     var confirming by remember { mutableStateOf<RecentSession?>(null) }
     var resuming by remember { mutableStateOf(false) }
-    val macs by app.store.macs.collectAsState(initial = emptyList())
-    val macName = macs.firstOrNull { it.id == macId }?.name ?: "the computer"
+    val macName = rememberMacName(app, macId, fallback = "the computer")
 
     suspend fun load() {
-        val target = connection ?: return
+        val target = connection?.takeIf { it.supports(REQUEST) } ?: return
         target.recentSessions(query)
             .onSuccess {
                 sessions = it
@@ -148,50 +125,35 @@ fun SessionsScreen(
 
     Scaffold(
         topBar = {
-            CmuxTopBar(
-                title = "Recent sessions",
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                },
-            )
+            CmuxTopBar(title = "Recent sessions", onBack = onBack)
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (resuming) LinearProgressIndicator(Modifier.fillMaxWidth())
-            val list = sessions
-            val failure = loadFailure
-            when {
-                list == null && failure is RelayException && failure.code == "unknown_type" -> EmptyState(
-                    icon = Icons.Outlined.History,
-                    title = "Update the relay",
-                    body = "$macName's relay is too old to list past sessions. Update it to see them here.",
-                )
-                list == null && failure is RelayException && failure.code == "unsupported" -> EmptyState(
-                    icon = Icons.Outlined.History,
-                    title = "Update cmux",
-                    body = failure.message ?: "This version of cmux can't list past agent sessions.",
-                )
-                list == null && failure != null -> {
+            RemoteContent(
+                value = sessions,
+                failure = loadFailure,
+                state = state,
+                requestType = REQUEST,
+                icon = Icons.Outlined.History,
+                what = "list past sessions",
+                failedTitle = "Couldn't load sessions",
+                loading = "Fetching sessions…",
+                macName = macName,
+                onRetry = {
+                    loadFailure = null
+                    scope.launch { load() }
+                },
+            ) { list ->
+                Column {
                     ConnectionBanner(state)
-                    EmptyState(
-                        icon = Icons.Outlined.History,
-                        title = "Couldn't load sessions",
-                        body = failure.message ?: "$macName didn't answer.",
-                    ) {
-                        Button(onClick = {
-                            loadFailure = null
-                            scope.launch { load() }
-                        }) { Text("Try again") }
-                    }
-                }
-                list == null -> {
-                    ConnectionBanner(state)
-                    LoadingState("Fetching sessions…")
-                }
-                else -> {
-                    ConnectionBanner(state)
-                    SessionSearchField(query, onQueryChange = { query = it })
+                    SearchField(
+                        query,
+                        onQueryChange = { query = it },
+                        label = "Search sessions",
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
                     if (list.isEmpty()) {
                         if (query.isNotBlank()) {
                             FullWidthMessage("No sessions match \"${query.trim()}\".", Modifier.padding(top = 48.dp))
@@ -220,59 +182,31 @@ fun SessionsScreen(
 
     confirming?.let { session ->
         val folder = session.cwd?.takeIf { it.isNotBlank() }?.let(WorkspaceListing::shortPath)
-        AlertDialog(
-            onDismissRequest = { confirming = null },
-            title = { Text("Resume this session?") },
-            text = {
-                Text(
-                    buildString {
-                        append("“${SessionListing.label(session)}” opens in a new workspace")
-                        if (folder != null) append(" in $folder")
-                        append(" on $macName, and ${SessionListing.agentName(session.agent)} picks up where it left off.")
-                    },
-                )
+        ConfirmDialog(
+            title = "Resume this session?",
+            text = buildString {
+                append("“${SessionListing.label(session)}” opens in a new workspace")
+                if (folder != null) append(" in $folder")
+                append(" on $macName, and ${SessionListing.agentName(session.agent)} picks up where it left off.")
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirming = null
-                    resume(session)
-                }) { Text("Resume") }
+            confirm = "Resume",
+            onConfirm = {
+                confirming = null
+                resume(session)
             },
-            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } },
+            onDismiss = { confirming = null },
         )
     }
 }
 
-@Composable
-private fun SessionSearchField(query: String, onQueryChange: (String) -> Unit) {
-    LabeledTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        singleLine = true,
-        label = "Search sessions",
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Filled.Clear, contentDescription = "Clear search") }
-            }
-        },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-    )
-}
+private const val REQUEST = "recent_sessions"
 
 @Composable
 private fun SessionRow(session: RecentSession, index: Int, count: Int, enabled: Boolean, onOpen: () -> Unit) {
     val open = SessionListing.isOpen(session)
     val time = WorkspaceListing.time(SessionListing.modifiedAt(session))
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(groupedShape(index, count))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(enabled = enabled, onClick = onOpen)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.groupedRow(groupedShape(index, count), onClick = onOpen, enabled = enabled),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

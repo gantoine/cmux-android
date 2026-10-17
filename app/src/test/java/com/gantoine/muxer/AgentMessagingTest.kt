@@ -1,17 +1,17 @@
 package com.gantoine.muxer
 
+import com.gantoine.muxer.model.AgentMessaging
+import com.gantoine.muxer.model.AgentStatus
 import com.gantoine.muxer.protocol.AgentMessage
 import com.gantoine.muxer.protocol.AgentMessagesMessage
 import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.Retry
-import com.gantoine.muxer.ui.AgentMessaging
-import com.gantoine.muxer.ui.AgentStatus
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
 
 class AgentMessagingTest {
     private fun message(id: String, state: String, createdAt: Double, reason: String? = null) =

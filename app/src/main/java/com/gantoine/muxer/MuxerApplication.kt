@@ -14,16 +14,18 @@ import com.gantoine.muxer.notifications.ConversationShortcuts
 import com.gantoine.muxer.notifications.Notifier
 import com.gantoine.muxer.tile.NotificationsTile
 import com.gantoine.muxer.tile.NotificationsTileService
+import com.gantoine.muxer.tile.TileStatus
 import com.gantoine.muxer.widget.Widgets
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
 
 class MuxerApplication : Application() {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -35,8 +37,8 @@ class MuxerApplication : Application() {
             .build()
     }
 
-    val store: MacStore by lazy { MacStore(this) }
-    val snapshots: SnapshotStore by lazy { SnapshotStore(this) }
+    val store: MacStore by lazy { MacStore(this, scope) }
+    val snapshots: SnapshotStore by lazy { SnapshotStore(this, scope) }
     val shortcuts: ConversationShortcuts by lazy { ConversationShortcuts(this) }
     val notifier: Notifier by lazy { Notifier(this, shortcuts) }
     val pairing: PairingClient by lazy { PairingClient(httpClient) }
@@ -51,7 +53,13 @@ class MuxerApplication : Application() {
             dismiss = notifier::dismiss,
             notifyApproval = notifier::showApproval,
             dismissApproval = notifier::dismissApproval,
+            widgetsPlaced = { Widgets.anyPlaced(this) },
         )
+    }
+
+    val tileStatus: Flow<TileStatus> by lazy {
+        combine(store.macs, connections.connectedMacIds) { macs, connected -> NotificationsTile.status(macs, connected) }
+            .distinctUntilChanged()
     }
 
     private val notificationPermission = MutableStateFlow(false)
@@ -61,7 +69,7 @@ class MuxerApplication : Application() {
         notifier.createChannels()
         notificationPermission.value = notifier.canNotify()
         scope.launch {
-            store.migrateGlobalBackgroundSetting()
+            store.migrate()
             connections.start()
             launch { keepQuickSettingsTileInSync() }
             launch { Widgets.keepFresh(this@MuxerApplication) }
@@ -83,9 +91,7 @@ class MuxerApplication : Application() {
     }
 
     private suspend fun keepQuickSettingsTileInSync() {
-        combine(store.macs, connections.connectedMacIds) { macs, connected -> NotificationsTile.status(macs, connected) }
-            .distinctUntilChanged()
-            .collect { NotificationsTileService.requestRefresh(this) }
+        tileStatus.collect { NotificationsTileService.requestRefresh(this) }
     }
 
     private suspend fun keepBackgroundServiceInSync() {

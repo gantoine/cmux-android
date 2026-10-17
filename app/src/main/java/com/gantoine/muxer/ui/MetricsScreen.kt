@@ -1,6 +1,5 @@
 package com.gantoine.muxer.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,30 +7,23 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,13 +32,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.net.ConnectionState
-import com.gantoine.muxer.net.RelayException
+import com.gantoine.muxer.net.isUnavailable
 import com.gantoine.muxer.protocol.TopSummary
 import com.gantoine.muxer.protocol.TopWorkspace
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import java.util.Locale
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 
 object Metrics {
     const val REFRESH_MS = 3_000L
@@ -74,12 +65,10 @@ object Metrics {
 
 @Composable
 fun MetricsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
-    val connections by app.connections.connectionsFlow.collectAsState()
-    val connection = connections[macId]
-    val state by (connection?.state ?: remember { MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
-    val macs by app.store.macs.collectAsState(initial = emptyList())
-    val macName = macs.firstOrNull { it.id == macId }?.name ?: "The computer"
-    val workspaces by (connection?.workspaces ?: remember { MutableStateFlow(null) }).collectAsState()
+    val connection = rememberConnection(app, macId)
+    val state by connection.collectOr(ConnectionState.Stopped) { it.state }
+    val macName = rememberMacName(app, macId)
+    val workspaces by connection.collectOr(null) { it.workspaces }
     var summary by remember { mutableStateOf<TopSummary?>(null) }
     var failure by remember { mutableStateOf<Throwable?>(null) }
     var attempt by remember { mutableStateOf(0) }
@@ -87,7 +76,7 @@ fun MetricsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
     val connected = state is ConnectionState.Connected
 
     LaunchedEffect(connection, connected, attempt) {
-        val target = connection ?: return@LaunchedEffect
+        val target = connection?.takeIf { it.supports(REQUEST) } ?: return@LaunchedEffect
         if (!connected) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
@@ -97,7 +86,7 @@ fun MetricsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
                         failure = null
                     }
                     .onFailure { failure = it }
-                if ((failure as? RelayException)?.code in setOf("unknown_type", "unsupported")) break
+                if (failure?.isUnavailable == true) break
                 delay(Metrics.REFRESH_MS)
             }
         }
@@ -105,50 +94,32 @@ fun MetricsScreen(app: MuxerApplication, macId: String, onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            CmuxTopBar(
-                title = "Metrics",
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                },
-            )
+            CmuxTopBar(title = "Metrics", onBack = onBack)
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            val current = summary
-            val error = failure
-            when {
-                current == null && error is RelayException && error.code == "unknown_type" -> EmptyState(
-                    icon = Icons.Outlined.Speed,
-                    title = "Update the relay",
-                    body = "$macName's relay is too old to report CPU and memory use. Update it to see them here.",
-                )
-                current == null && error is RelayException && error.code == "unsupported" -> EmptyState(
-                    icon = Icons.Outlined.Speed,
-                    title = "Update cmux",
-                    body = error.message ?: "This version of cmux can't report CPU and memory use.",
-                )
-                current == null && error != null -> Column {
-                    ConnectionBanner(state)
-                    EmptyState(
-                        icon = Icons.Outlined.Speed,
-                        title = "Couldn't load metrics",
-                        body = error.message ?: "$macName didn't answer.",
-                    ) {
-                        Button(onClick = {
-                            failure = null
-                            attempt++
-                        }) { Text("Try again") }
-                    }
-                }
-                current == null -> Column {
-                    ConnectionBanner(state)
-                    LoadingState(if (connected) "Measuring…" else "Waiting for $macName…")
-                }
-                else -> MetricsList(current, state, workspaces.orEmpty().associateBy { it.id })
+            RemoteContent(
+                value = summary,
+                failure = failure,
+                state = state,
+                requestType = REQUEST,
+                icon = Icons.Outlined.Speed,
+                what = "report CPU and memory use",
+                failedTitle = "Couldn't load metrics",
+                loading = if (connected) "Measuring…" else "Waiting for $macName…",
+                macName = macName,
+                onRetry = {
+                    failure = null
+                    attempt++
+                },
+            ) { current ->
+                MetricsList(current, state, workspaces.orEmpty().associateBy { it.id })
             }
         }
     }
 }
+
+private const val REQUEST = "top"
 
 @Composable
 private fun MetricsList(summary: TopSummary, state: ConnectionState, workspaces: Map<String, WorkspaceInfo>) {
@@ -161,12 +132,7 @@ private fun MetricsList(summary: TopSummary, state: ConnectionState, workspaces:
         item(key = "totals") {
             SectionLabel("cmux")
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clip(groupedShape(0, 1))
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                Modifier.groupedRow(groupedShape(0, 1)),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(Metrics.usage(summary.cpuPercent, summary.memoryBytes), style = MaterialTheme.typography.titleMedium)
@@ -242,14 +208,7 @@ private fun UsageRow(
     leading: (@Composable () -> Unit)? = null,
     extra: @Composable () -> Unit = {},
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(groupedShape(index, count))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
+    Row(Modifier.groupedRow(groupedShape(index, count))) {
         if (leading != null) {
             leading()
             Spacer(Modifier.width(12.dp))

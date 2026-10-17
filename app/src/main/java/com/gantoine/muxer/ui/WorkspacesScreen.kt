@@ -3,9 +3,7 @@ package com.gantoine.muxer.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,36 +22,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.CallSplit
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.automirrored.filled.Notes
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.MarkEmailRead
-import androidx.compose.material.icons.filled.MarkEmailUnread
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.FolderOff
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,10 +52,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,43 +64,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.core.content.pm.ShortcutManagerCompat
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.pm.ShortcutManagerCompat
 import com.gantoine.muxer.MuxerApplication
+import com.gantoine.muxer.model.Organizing
+import com.gantoine.muxer.model.WorkspaceEntry
+import com.gantoine.muxer.model.WorkspaceFilter
+import com.gantoine.muxer.model.WorkspaceListing
+import com.gantoine.muxer.model.isAgent
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.RelayConnection
 import com.gantoine.muxer.net.RelayException
-import com.gantoine.muxer.protocol.CreatedWorkspace
-import com.gantoine.muxer.protocol.RelayJson
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceGroupInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.terminal.parseHexColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 
 private sealed interface WorkspaceLine {
     val key: String
@@ -160,24 +134,6 @@ private fun cards(entries: List<WorkspaceEntry>, collapsed: (WorkspaceGroupInfo)
     return cards
 }
 
-private sealed interface WorkspaceDialog {
-    data object Create : WorkspaceDialog
-    data class Actions(val workspace: WorkspaceInfo, val group: WorkspaceGroupInfo? = null) : WorkspaceDialog
-    data class Rename(val workspace: WorkspaceInfo) : WorkspaceDialog
-    data class Close(val workspace: WorkspaceInfo, val force: Boolean) : WorkspaceDialog
-    data class PickTerminal(val workspace: WorkspaceInfo) : WorkspaceDialog
-    data class Lane(val workspace: WorkspaceInfo) : WorkspaceDialog
-    data class Color(val workspace: WorkspaceInfo) : WorkspaceDialog
-    data class Describe(val workspace: WorkspaceInfo) : WorkspaceDialog
-    data class PickGroup(val workspace: WorkspaceInfo) : WorkspaceDialog
-    data class NewGroup(val workspace: WorkspaceInfo) : WorkspaceDialog
-    data class GroupActions(val group: WorkspaceGroupInfo) : WorkspaceDialog
-    data class RenameGroup(val group: WorkspaceGroupInfo) : WorkspaceDialog
-    data class GroupColor(val group: WorkspaceGroupInfo) : WorkspaceDialog
-    data class NewInGroup(val group: WorkspaceGroupInfo) : WorkspaceDialog
-    data class Ungroup(val group: WorkspaceGroupInfo) : WorkspaceDialog
-}
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WorkspacesScreen(
@@ -189,10 +145,8 @@ fun WorkspacesScreen(
     onOpenChecklist: (workspaceId: String) -> Unit,
     onOpenTerminal: (workspaceId: String, surfaceId: String) -> Unit,
 ) {
-    val connections by app.connections.connectionsFlow.collectAsState()
-    val macs by app.store.macs.collectAsState(initial = emptyList())
-    val connection = connections[macId]
-    val macName = macs.firstOrNull { it.id == macId }?.name ?: "Computer"
+    val connection = rememberConnection(app, macId)
+    val macName = rememberMacName(app, macId, fallback = "Computer")
     val snackbar = remember { SnackbarHostState() }
     var dialog by remember { mutableStateOf<WorkspaceDialog?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -202,58 +156,37 @@ fun WorkspacesScreen(
     val context = LocalContext.current
     val canPinShortcuts = remember { ShortcutManagerCompat.isRequestPinShortcutSupported(context) }
 
-    fun run(action: suspend RelayConnection.() -> Result<*>, onSuccess: () -> Unit = {}) {
+    fun run(action: suspend RelayConnection.() -> Result<*>) {
         val target = connection ?: return
         scope.launch {
-            target.action()
-                .onSuccess { onSuccess() }
-                .onFailure { failure ->
-                    val closing = dialog as? WorkspaceDialog.Close
-                    if (failure is RelayException && failure.code == "confirmation_required" && closing != null) {
-                        dialog = closing.copy(force = true)
-                    } else {
-                        snackbar.showSnackbar(failure.message ?: "That did not work.")
-                    }
+            target.action().onFailure { failure ->
+                val closing = dialog as? WorkspaceDialog.Close
+                if (failure is RelayException && failure.needsConfirmation && closing != null) {
+                    dialog = closing.copy(force = true)
+                } else {
+                    snackbar.showSnackbar(failure.message ?: "That did not work.")
                 }
+            }
         }
     }
 
     fun open(workspace: WorkspaceInfo) {
         when (workspace.terminals.size) {
-            0 -> run({
-                request("create_terminal", buildJsonObject { put("workspace_id", workspace.id) }).onSuccess { data ->
-                    data?.jsonObject?.get("surface_id")?.jsonPrimitive?.contentOrNull
-                        ?.takeIf { it.isNotEmpty() }
-                        ?.let { onOpenTerminal(workspace.id, it) }
-                }
-            })
+            0 -> run { createTerminal(workspace.id).onSuccess { if (it.isNotEmpty()) onOpenTerminal(workspace.id, it) } }
             1 -> onOpenTerminal(workspace.id, workspace.terminals.first().id)
             else -> dialog = WorkspaceDialog.PickTerminal(workspace)
         }
     }
 
-    fun workspaceAction(workspace: WorkspaceInfo, action: String, color: String? = null, description: String? = null) {
-        run({
-            request("workspace_action", buildJsonObject {
-                put("workspace_id", workspace.id)
-                put("action", action)
-                color?.let { put("color", it) }
-                description?.let { put("description", it) }
-            })
-        })
-    }
-
-    val state by (connection?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
-    val workspaces by (connection?.workspaces ?: remember { kotlinx.coroutines.flow.MutableStateFlow(null) }).collectAsState()
-    val groups by (connection?.groups ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList()) }).collectAsState()
+    val state by connection.collectOr(ConnectionState.Stopped) { it.state }
+    val workspaces by connection.collectOr(null) { it.workspaces }
+    val groups by connection.collectOr(emptyList()) { it.groups }
 
     Scaffold(
         topBar = {
             CmuxTopBar(
                 title = macName,
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                },
+                onBack = onBack,
                 actions = {
                     IconButton(onClick = onOpenNotifications) {
                         Icon(Icons.Outlined.Notifications, contentDescription = "Notifications from $macName")
@@ -373,277 +306,22 @@ fun WorkspacesScreen(
         }
     }
 
-    when (val current = dialog) {
-        null -> Unit
-        WorkspaceDialog.Create -> TextInputDialog(
-            title = "New workspace",
-            fields = listOf("Name" to "", "Folder on the computer (optional)" to ""),
-            confirm = "Create",
-            onDismiss = { dialog = null },
-        ) { (title, cwd) ->
-            dialog = null
-            run({
-                request("create_workspace", buildJsonObject {
-                    put("title", title)
-                    put("cwd", cwd)
-                }).onSuccess { data ->
-                    val created = data?.let { RelayJson.decodeFromJsonElement(CreatedWorkspace.serializer(), it) }
-                    if (created != null && created.surfaceId.isNotEmpty()) onOpenTerminal(created.workspaceId, created.surfaceId)
-                }
-            })
-        }
-        is WorkspaceDialog.Actions -> ActionSheet(
-            onDismiss = { dialog = null },
-            header = { WorkspaceHeader(current.workspace, current.group) },
-        ) {
-            SheetAction(Icons.AutoMirrored.Filled.OpenInNew, "Open") { dialog = null; open(current.workspace) }
-            SheetAction(Icons.Filled.Add, "New terminal") {
-                dialog = null
-                run({ request("create_terminal", buildJsonObject { put("workspace_id", current.workspace.id) }) })
+    WorkspaceDialogs(
+        dialog = dialog,
+        groups = groups,
+        canPinShortcuts = canPinShortcuts,
+        onDialog = { dialog = it },
+        run = ::run,
+        onOpen = ::open,
+        onOpenCreated = { created -> if (created.surfaceId.isNotEmpty()) onOpenTerminal(created.workspaceId, created.surfaceId) },
+        onOpenTerminal = onOpenTerminal,
+        onOpenChecklist = onOpenChecklist,
+        onPinShortcut = { workspace ->
+            if (!app.shortcuts.requestPin(macId, macName, workspace)) {
+                scope.launch { snackbar.showSnackbar("Your home screen can't add this shortcut.") }
             }
-            if (canPinShortcuts && current.workspace.terminals.isNotEmpty()) {
-                SheetAction(Icons.AutoMirrored.Filled.AddToHomeScreen, "Add to Home screen") {
-                    dialog = null
-                    if (!app.shortcuts.requestPin(macId, macName, current.workspace)) {
-                        scope.launch { snackbar.showSnackbar("Your home screen can't add this shortcut.") }
-                    }
-                }
-            }
-            OrganizeActions(
-                workspace = current.workspace,
-                groups = groups,
-                onChecklist = {
-                    dialog = null
-                    onOpenChecklist(current.workspace.id)
-                },
-                onDialog = { dialog = it },
-                onAction = { action -> dialog = null; workspaceAction(current.workspace, action) },
-                onRemoveFromGroup = { group ->
-                    dialog = null
-                    run({
-                        request("remove_from_group", buildJsonObject {
-                            put("group_id", group.id)
-                            put("workspace_id", current.workspace.id)
-                        })
-                    })
-                },
-                onReconnect = {
-                    dialog = null
-                    run({ request("reconnect_workspace", buildJsonObject { put("workspace_id", current.workspace.id) }) })
-                },
-            )
-            if (current.group == null) {
-                SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename") { dialog = WorkspaceDialog.Rename(current.workspace) }
-                SheetAction(Icons.Filled.Close, "Close workspace", destructive = true) {
-                    dialog = WorkspaceDialog.Close(current.workspace, force = false)
-                }
-            }
-        }
-        is WorkspaceDialog.Lane -> LanePickerSheet(current.workspace.status, onDismiss = { dialog = null }) { lane ->
-            dialog = null
-            run({
-                request("set_workspace_status", buildJsonObject {
-                    put("workspace_id", current.workspace.id)
-                    put("status", lane)
-                })
-            })
-        }
-        is WorkspaceDialog.Color -> ColorPickerSheet("Workspace color", current.workspace.customColor, onDismiss = { dialog = null }) { hex ->
-            dialog = null
-            workspaceAction(current.workspace, if (hex == null) "clear_color" else "set_color", color = hex)
-        }
-        is WorkspaceDialog.Describe -> TextInputDialog(
-            title = "Description",
-            fields = listOf("Description" to current.workspace.description.orEmpty()),
-            confirm = "Save",
-            onDismiss = { dialog = null },
-        ) { (description) ->
-            dialog = null
-            workspaceAction(current.workspace, "set_description", description = description)
-        }
-        is WorkspaceDialog.PickGroup -> GroupPickerSheet(
-            groups = groups,
-            onDismiss = { dialog = null },
-            onPick = { group ->
-                dialog = null
-                run({
-                    request("add_to_group", buildJsonObject {
-                        put("group_id", group.id)
-                        put("workspace_id", current.workspace.id)
-                    })
-                })
-            },
-            onNew = { dialog = WorkspaceDialog.NewGroup(current.workspace) },
-        )
-        is WorkspaceDialog.NewGroup -> TextInputDialog(
-            title = "New group",
-            fields = listOf("Name" to ""),
-            confirm = "Create",
-            onDismiss = { dialog = null },
-        ) { (name) ->
-            dialog = null
-            run({
-                request("create_group", buildJsonObject {
-                    put("name", name)
-                    putJsonArray("workspace_ids") { add(current.workspace.id) }
-                })
-            })
-        }
-        is WorkspaceDialog.GroupActions -> ActionSheet(
-            onDismiss = { dialog = null },
-            header = { Text(current.group.name.ifBlank { "Group" }, style = MaterialTheme.typography.titleMedium) },
-        ) {
-            SheetAction(Icons.Filled.Add, "New workspace in group") { dialog = WorkspaceDialog.NewInGroup(current.group) }
-            SheetAction(Icons.Filled.PushPin, if (current.group.isPinned) "Unpin group" else "Pin group") {
-                dialog = null
-                run({
-                    request("pin_group", buildJsonObject {
-                        put("group_id", current.group.id)
-                        put("pinned", !current.group.isPinned)
-                    })
-                })
-            }
-            SheetAction(Icons.Filled.Palette, "Color") { dialog = WorkspaceDialog.GroupColor(current.group) }
-            SheetAction(Icons.Filled.DriveFileRenameOutline, "Rename group") { dialog = WorkspaceDialog.RenameGroup(current.group) }
-            SheetAction(Icons.Filled.FolderOff, "Ungroup", destructive = true) { dialog = WorkspaceDialog.Ungroup(current.group) }
-        }
-        is WorkspaceDialog.RenameGroup -> TextInputDialog(
-            title = "Rename group",
-            fields = listOf("Name" to current.group.name),
-            confirm = "Rename",
-            onDismiss = { dialog = null },
-        ) { (name) ->
-            dialog = null
-            run({
-                request("rename_group", buildJsonObject {
-                    put("group_id", current.group.id)
-                    put("name", name)
-                })
-            })
-        }
-        is WorkspaceDialog.GroupColor -> ColorPickerSheet("Group color", current.group.customColor, onDismiss = { dialog = null }) { hex ->
-            dialog = null
-            run({
-                request("set_group_color", buildJsonObject {
-                    put("group_id", current.group.id)
-                    put("color", hex)
-                })
-            })
-        }
-        is WorkspaceDialog.NewInGroup -> TextInputDialog(
-            title = "New workspace in ${current.group.name.ifBlank { "group" }}",
-            fields = listOf("Name (optional)" to ""),
-            confirm = "Create",
-            onDismiss = { dialog = null },
-        ) { (title) ->
-            dialog = null
-            run({
-                request("create_workspace_in_group", buildJsonObject {
-                    put("group_id", current.group.id)
-                    put("title", title)
-                }).onSuccess { data ->
-                    val created = data?.let { RelayJson.decodeFromJsonElement(CreatedWorkspace.serializer(), it) }
-                    if (created != null && created.surfaceId.isNotEmpty()) onOpenTerminal(created.workspaceId, created.surfaceId)
-                }
-            })
-        }
-        is WorkspaceDialog.Ungroup -> AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text("Ungroup ${current.group.name.ifBlank { "this group" }}?") },
-            text = { Text("The workspaces stay open on your computer. Only the group goes away.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    dialog = null
-                    run({ request("ungroup", buildJsonObject { put("group_id", current.group.id) }) })
-                }) { Text("Ungroup") }
-            },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
-        )
-        is WorkspaceDialog.Rename -> TextInputDialog(
-            title = "Rename workspace",
-            fields = listOf("Name" to current.workspace.title),
-            confirm = "Rename",
-            onDismiss = { dialog = null },
-        ) { (title) ->
-            dialog = null
-            run({
-                request("rename_workspace", buildJsonObject {
-                    put("workspace_id", current.workspace.id)
-                    put("title", title)
-                })
-            })
-        }
-        is WorkspaceDialog.Close -> AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text("Close ${current.workspace.title.ifBlank { "workspace" }}?") },
-            text = {
-                Text(
-                    if (current.force) {
-                        "Something is still running in it. Closing stops it on your computer."
-                    } else {
-                        "This closes the workspace and its terminals on your computer."
-                    },
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    run({
-                        request("close_workspace", buildJsonObject {
-                            put("workspace_id", current.workspace.id)
-                            put("force", current.force)
-                        })
-                    }, onSuccess = { dialog = null })
-                }) { Text(if (current.force) "Close anyway" else "Close") }
-            },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
-        )
-        is WorkspaceDialog.PickTerminal -> ActionSheet(onDismiss = { dialog = null }) {
-            current.workspace.terminals.forEach { terminal ->
-                TerminalChoice(terminal) {
-                    dialog = null
-                    onOpenTerminal(current.workspace.id, terminal.id)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun OrganizeActions(
-    workspace: WorkspaceInfo,
-    groups: List<WorkspaceGroupInfo>,
-    onChecklist: () -> Unit,
-    onDialog: (WorkspaceDialog) -> Unit,
-    onAction: (String) -> Unit,
-    onRemoveFromGroup: (WorkspaceGroupInfo) -> Unit,
-    onReconnect: () -> Unit,
-) {
-    val lane = workspace.status?.let(Organizing::laneSummary)
-    SheetAction(Icons.Filled.Flag, lane?.let { "Status: $it" } ?: "Status") { onDialog(WorkspaceDialog.Lane(workspace)) }
-    val progress = Organizing.checklistSummary(workspace.checklist)
-    SheetAction(Icons.Filled.Checklist, progress?.let { "Checklist ($it)" } ?: "Checklist", onClick = onChecklist)
-    SheetAction(Icons.Filled.PushPin, if (workspace.isPinned) "Unpin" else "Pin") { onAction(if (workspace.isPinned) "unpin" else "pin") }
-    if (WorkspaceListing.isUnread(workspace)) {
-        SheetAction(Icons.Filled.MarkEmailRead, "Mark as read") { onAction("mark_read") }
-    } else {
-        SheetAction(Icons.Filled.MarkEmailUnread, "Mark as unread") { onAction("mark_unread") }
-    }
-    SheetAction(Icons.Filled.Palette, Organizing.colorName(workspace.customColor)?.let { "Color: $it" } ?: "Color") {
-        onDialog(WorkspaceDialog.Color(workspace))
-    }
-    SheetAction(Icons.AutoMirrored.Filled.Notes, if (workspace.description.isNullOrBlank()) "Add description" else "Edit description") {
-        onDialog(WorkspaceDialog.Describe(workspace))
-    }
-    val group = Organizing.groupOf(workspace, groups)
-    when {
-        group == null -> SheetAction(Icons.Filled.CreateNewFolder, "Add to group") { onDialog(WorkspaceDialog.PickGroup(workspace)) }
-        !Organizing.isAnchor(workspace, group) -> SheetAction(Icons.Filled.FolderOff, "Remove from ${group.name.ifBlank { "group" }}") {
-            onRemoveFromGroup(group)
-        }
-    }
-    if (Organizing.canReconnect(workspace.remote)) {
-        SheetAction(Icons.Filled.Sync, "Reconnect") { onReconnect() }
-    }
+        },
+    )
 }
 
 @Composable
@@ -673,31 +351,18 @@ private fun FilterRow(all: List<WorkspaceInfo>, groups: List<WorkspaceGroupInfo>
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun WorkspaceRow(
     workspace: WorkspaceInfo,
-    shape: androidx.compose.ui.graphics.Shape,
+    shape: Shape,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
     val unread = WorkspaceListing.isUnread(workspace)
     Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .combinedClickable(
-                onClick = onOpen,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier.groupedRow(shape, onClick = onOpen, onLongClick = onLongPress),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         WorkspaceTile(workspace, animated = true)
@@ -766,36 +431,29 @@ private fun SubtitleLine(subtitle: String, time: String?, highlightTime: Boolean
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun GroupHeaderRow(
     entry: WorkspaceEntry.Group,
     collapsed: Boolean,
     canCollapse: Boolean,
-    shape: androidx.compose.ui.graphics.Shape,
+    shape: Shape,
     onToggle: () -> Unit,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
     val count = entry.members.size
     val background = MaterialTheme.colorScheme.surfaceContainerHigh
     Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(shape)
-            .background(background)
-            .combinedClickable(
-                onClickLabel = if (canCollapse) (if (collapsed) "Show workspaces" else "Hide workspaces") else null,
-                onClick = { if (canCollapse) onToggle() },
-                onLongClickLabel = "Group actions",
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier.groupedRow(
+            shape,
+            onClick = { if (canCollapse) onToggle() },
+            onLongClick = onLongPress,
+            onClickLabel = if (canCollapse) (if (collapsed) "Show workspaces" else "Hide workspaces") else null,
+            onLongClickLabel = "Group actions",
+            color = background,
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -847,31 +505,22 @@ private fun GroupHeaderRow(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GroupTerminalsRow(
     workspace: WorkspaceInfo,
-    shape: androidx.compose.ui.graphics.Shape,
+    shape: Shape,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
     val unread = WorkspaceListing.isUnread(workspace)
     Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .combinedClickable(
-                onClick = onOpen,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier.groupedRow(
+            shape,
+            onClick = onOpen,
+            onLongClick = onLongPress,
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
@@ -963,24 +612,6 @@ private fun rememberSettledLane(lane: String?): String? {
 private const val WORKING_HOLD_MILLIS = 8_000L
 
 @Composable
-private fun WorkspaceHeader(workspace: WorkspaceInfo, group: WorkspaceGroupInfo? = null) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        WorkspaceTile(workspace, size = 44.dp, color = group?.let { MaterialTheme.colorScheme.primaryContainer })
-        Spacer(Modifier.width(16.dp))
-        Column {
-            Text(group?.let { WorkspaceListing.anchorTitle(it, workspace) } ?: workspace.title.ifBlank { "Untitled" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                workspace.currentDirectory?.let(WorkspaceListing::shortPath) ?: WorkspaceListing.subtitle(workspace),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
 private fun TerminalGitLine(terminal: TerminalInfo) {
     val branch = WorkspaceListing.gitSummary(terminal)
     val ports = WorkspaceListing.portsSummary(terminal)
@@ -1020,20 +651,10 @@ private fun SearchDock(query: String, onQueryChange: (String) -> Unit, onCreate:
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            LabeledTextField(
-                value = query,
-                onValueChange = onQueryChange,
+            SearchField(
+                query = query,
+                onQueryChange = onQueryChange,
                 label = "Search workspaces",
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { onQueryChange("") }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "Clear search")
-                        }
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.background,
                     unfocusedContainerColor = MaterialTheme.colorScheme.background,
@@ -1063,40 +684,11 @@ internal fun TerminalChoice(terminal: TerminalInfo, onClick: () -> Unit) {
         },
         leadingContent = {
             Icon(
-                if (terminal.agentState != null || terminal.agentSource != null) Icons.Filled.AutoAwesome else Icons.Filled.Terminal,
+                if (terminal.isAgent) Icons.Filled.AutoAwesome else Icons.Filled.Terminal,
                 contentDescription = null,
             )
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.combinedClickable(onClick = onClick),
-    )
-}
-
-@Composable
-internal fun TextInputDialog(
-    title: String,
-    fields: List<Pair<String, String>>,
-    confirm: String,
-    onDismiss: () -> Unit,
-    onConfirm: (List<String>) -> Unit,
-) {
-    var values by remember { mutableStateOf(fields.map { it.second }) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                fields.forEachIndexed { index, (label, _) ->
-                    LabeledTextField(
-                        value = values[index],
-                        onValueChange = { changed -> values = values.toMutableList().also { it[index] = changed } },
-                        label = label,
-                        singleLine = true,
-                    )
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { onConfirm(values.map { it.trim() }) }) { Text(confirm) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

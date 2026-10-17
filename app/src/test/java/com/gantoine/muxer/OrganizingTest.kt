@@ -1,5 +1,8 @@
 package com.gantoine.muxer
 
+import com.gantoine.muxer.model.Organizing
+import com.gantoine.muxer.model.WorkspaceFilter
+import com.gantoine.muxer.model.WorkspaceListing
 import com.gantoine.muxer.protocol.ChecklistProgress
 import com.gantoine.muxer.protocol.LaneStatus
 import com.gantoine.muxer.protocol.RelayJson
@@ -7,9 +10,6 @@ import com.gantoine.muxer.protocol.RemoteState
 import com.gantoine.muxer.protocol.WorkspaceGroupInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.protocol.WorkspacesMessage
-import com.gantoine.muxer.ui.Organizing
-import com.gantoine.muxer.ui.WorkspaceFilter
-import com.gantoine.muxer.ui.WorkspaceListing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

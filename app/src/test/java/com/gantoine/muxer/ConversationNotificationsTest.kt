@@ -1,10 +1,10 @@
 package com.gantoine.muxer
 
-import com.gantoine.muxer.net.AgentReplyRoute
 import com.gantoine.muxer.net.RelayException
+import com.gantoine.muxer.net.isUnavailable
 import com.gantoine.muxer.notifications.ConversationHistory
-import com.gantoine.muxer.notifications.ConversationText
 import com.gantoine.muxer.notifications.ConversationMessage
+import com.gantoine.muxer.notifications.ConversationText
 import com.gantoine.muxer.notifications.NotificationActions
 import com.gantoine.muxer.notifications.NotificationFilter
 import com.gantoine.muxer.notifications.Notifier
@@ -96,18 +96,12 @@ class ConversationNotificationsTest {
     }
 
     @Test
-    fun repliesUseTheSharedConnectionOnlyWhenItShowsThatTerminal() {
-        assertEquals(AgentReplyRoute.Shared, AgentReplyRoute.choose(sharedConnected = true, sharedAttachedToTarget = true))
-        assertEquals(AgentReplyRoute.Separate, AgentReplyRoute.choose(sharedConnected = true, sharedAttachedToTarget = false))
-        assertEquals(AgentReplyRoute.Separate, AgentReplyRoute.choose(sharedConnected = false, sharedAttachedToTarget = true))
-    }
-
-    @Test
-    fun pastesOnlyWhenTheRelayCannotMessageAgents() {
-        assertTrue(AgentReplyRoute.shouldPasteInstead(RelayException("unsupported", "no")))
-        assertTrue(AgentReplyRoute.shouldPasteInstead(RelayException("unknown_type", "no")))
-        assertFalse(AgentReplyRoute.shouldPasteInstead(RelayException("not_attached", "no")))
-        assertFalse(AgentReplyRoute.shouldPasteInstead(IllegalStateException("no")))
+    fun onlyMissingFeaturesCountAsUnavailable() {
+        assertTrue(RelayException("unsupported", "no").isUnavailable)
+        assertTrue(RelayException("unknown_type", "no").isUnavailable)
+        assertFalse(RelayException("not_attached", "no").isUnavailable)
+        assertFalse(IllegalStateException("no").isUnavailable)
+        assertTrue(RelayException("confirmation_required", "no").needsConfirmation)
     }
 
     @Test

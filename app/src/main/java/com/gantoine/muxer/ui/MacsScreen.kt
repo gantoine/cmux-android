@@ -1,9 +1,6 @@
 package com.gantoine.muxer.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,37 +36,25 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.data.Mac
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.protocol.HostUsage
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 private sealed interface MacDialog {
@@ -144,9 +129,8 @@ fun MacsScreen(app: MuxerApplication, onOpenMac: (Mac) -> Unit, onOpenSettings: 
             ) {
                 if (vms != null) item(key = "computers-label") { SectionLabel("Computers", Modifier.animateItem(), top = 0.dp) }
                 itemsIndexed(list, key = { _, mac -> mac.id }) { index, mac ->
-                    val state by (connections[mac.id]?.state ?: flowOf(ConnectionState.Stopped))
-                        .collectAsState(initial = ConnectionState.Stopped)
-                    val keepAwake by (connections[mac.id]?.keepAwake ?: flowOf(null)).collectAsState(initial = null)
+                    val state by connections[mac.id].collectOr(ConnectionState.Stopped) { it.state }
+                    val keepAwake by connections[mac.id].collectOr(null) { it.keepAwake }
                     MacRow(
                         mac = mac,
                         state = state,
@@ -250,12 +234,7 @@ private fun GhostComputers(modifier: Modifier = Modifier, rows: Int = 4) {
     ) {
         repeat(rows) { index ->
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clip(groupedShape(index, rows))
-                    .background(container)
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                Modifier.groupedRow(groupedShape(index, rows), color = container, contentPadding = PaddingValues(16.dp)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.size(52.dp).background(bone, CircleShape))
@@ -269,7 +248,7 @@ private fun GhostComputers(modifier: Modifier = Modifier, rows: Int = 4) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MacRow(
     mac: Mac,
@@ -281,21 +260,8 @@ private fun MacRow(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
     Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .combinedClickable(
-                onClick = onOpen,
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-            )
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+        modifier.groupedRow(shape, onClick = onOpen, onLongClick = onLongPress, contentPadding = PaddingValues(16.dp)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MacAvatar(state)
@@ -338,23 +304,10 @@ private fun describeUsage(usage: HostUsage): String {
 
 @Composable
 private fun rememberHostUsage(app: MuxerApplication): Map<String, HostUsage> {
-    val connectedIds by app.connections.connectedMacIds.collectAsState(initial = emptySet())
-    val connections by app.connections.connectionsFlow.collectAsState()
-    val currentConnections by rememberUpdatedState(connections)
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var usage by remember { mutableStateOf(emptyMap<String, HostUsage>()) }
-    LaunchedEffect(connectedIds) {
-        usage = usage.filterKeys { it in connectedIds }
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                val samples = coroutineScope {
-                    connectedIds.mapNotNull { id -> currentConnections[id]?.let { id to it } }
-                        .map { (id, connection) -> async { id to connection.hostUsage().getOrNull() } }
-                        .awaitAll()
-                }
-                usage = samples.fold(usage) { current, (id, sample) -> if (sample != null) current + (id to sample) else current }
-                delay(HOST_USAGE_REFRESH_MS)
-            }
+    PollConnectedMacs(app, HOST_USAGE_REFRESH_MS, fetch = { it.hostUsage() }) { connected, results ->
+        usage = results.fold(usage.filterKeys { it in connected }) { current, (id, sample) ->
+            sample.getOrNull()?.let { current + (id to it) } ?: current
         }
     }
     return usage
@@ -363,26 +316,12 @@ private fun rememberHostUsage(app: MuxerApplication): Map<String, HostUsage> {
 private const val HOST_USAGE_REFRESH_MS = 5_000L
 
 @Composable
-fun MacAvatar(state: ConnectionState, size: androidx.compose.ui.unit.Dp = 52.dp) {
-    Box(Modifier.size(size)) {
-        Box(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.LaptopMac,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(size / 2),
-            )
-        }
-        Box(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .size(size * 0.3f)
-                .border(2.dp, MaterialTheme.colorScheme.surfaceContainer, CircleShape)
-                .padding(2.dp)
-                .background(statusColor(state), CircleShape),
-        )
-    }
+fun MacAvatar(state: ConnectionState, size: Dp = 52.dp) {
+    StatusAvatar(
+        Icons.Filled.LaptopMac,
+        MaterialTheme.colorScheme.secondaryContainer,
+        MaterialTheme.colorScheme.onSecondaryContainer,
+        statusColor(state),
+        size,
+    )
 }

@@ -1,25 +1,25 @@
 package com.gantoine.muxer
 
 import com.gantoine.muxer.data.MacSnapshot
+import com.gantoine.muxer.model.Approvals
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.ApprovalOption
 import com.gantoine.muxer.protocol.ApprovalQuestion
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
-import com.gantoine.muxer.ui.Approvals
 import com.gantoine.muxer.widget.ApprovalButton
 import com.gantoine.muxer.widget.BoardCounts
 import com.gantoine.muxer.widget.WidgetData
 import com.gantoine.muxer.widget.WorkspaceState
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
-import java.util.Locale
 
 class WidgetDataTest {
     private val now = Instant.parse("2026-10-15T18:00:00Z").toEpochMilli()

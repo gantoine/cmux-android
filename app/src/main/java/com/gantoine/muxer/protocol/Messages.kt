@@ -20,6 +20,7 @@ data class Welcome(
     val cmuxVersion: String,
     val deviceId: String,
     val notificationSeq: Long = 0,
+    val unsupported: List<String> = emptyList(),
 )
 
 @Serializable

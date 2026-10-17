@@ -1,9 +1,6 @@
 package com.gantoine.muxer
 
-import com.gantoine.muxer.data.MacSnapshot
 import com.gantoine.muxer.notifications.ShortcutPlan
-import com.gantoine.muxer.protocol.TerminalInfo
-import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.share.ShareRoute
 import com.gantoine.muxer.share.ShareRouting
 import org.junit.Assert.assertEquals
@@ -13,15 +10,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShareRoutingTest {
-    private fun workspace(id: String, lastActivity: Double?, vararg terminals: TerminalInfo) =
-        WorkspaceInfo(id = id, title = id, lastActivityAt = lastActivity, terminals = terminals.toList())
-
-    private fun shell(id: String) = TerminalInfo(id = id, title = "zsh")
-    private fun claude(id: String) = TerminalInfo(id = id, title = "claude", agentSource = "claude")
-
-    private fun snapshot(macId: String, vararg workspaces: WorkspaceInfo, connected: Boolean = true, name: String = "$macId's Mac") =
-        MacSnapshot(macId = macId, macName = name, connected = connected, updatedAt = 0, workspaces = workspaces.toList())
-
     @Test
     fun readsTrimmedTextFromTextShares() {
         assertEquals("https://example.com", ShareRouting.sharedText("android.intent.action.SEND", "text/plain", "  https://example.com\n"))

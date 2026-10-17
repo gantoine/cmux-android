@@ -16,11 +16,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -115,11 +115,10 @@ fun TerminalCanvas(
         LaunchedEffect(blankBelow, content.historyRows == 0) {
             if (blankBelow && content.historyRows == 0) onNeedHistory()
         }
-        val linesAbove = viewport.linesAboveLive.coerceIn(0f, scrollableAbove)
-        val top = liveTop - linesAbove
+        fun top(): Float = liveTop - viewport.linesAboveLive.coerceIn(0f, scrollableAbove)
 
         val currentLiveTop = rememberUpdatedState(scrollableAbove)
-        val currentTop = rememberUpdatedState(top)
+        val currentTop = rememberUpdatedState(::top)
         val currentContent = rememberUpdatedState(content)
         val currentMetrics = rememberUpdatedState(metrics)
         val currentFontSize = rememberUpdatedState(fontSize)
@@ -152,7 +151,7 @@ fun TerminalCanvas(
             val currentMetrics = currentMetrics.value
             val terminal = currentContent.value
             val column = ((position.x + horizontal.value) / currentMetrics.width).toInt().coerceIn(0, (terminal.columns - 1).coerceAtLeast(0))
-            val row = floor(currentTop.value + position.y / currentMetrics.height).toInt().coerceIn(0, (terminal.rowCount - 1).coerceAtLeast(0))
+            val row = floor(currentTop.value() + position.y / currentMetrics.height).toInt().coerceIn(0, (terminal.rowCount - 1).coerceAtLeast(0))
             return CellPosition(row, column)
         }
 
@@ -200,7 +199,7 @@ fun TerminalCanvas(
             val heightDp = with(density) { viewportHeight.toDp() }
             Box(Modifier.horizontalScroll(horizontal)) {
                 Canvas(Modifier.size(widthDp, heightDp)) {
-                    drawTerminal(content, top, viewport.selection, selectionColor, metrics, measurer, colors, fontSize.sp)
+                    drawTerminal(content, top(), viewport.selection, selectionColor, metrics, measurer, colors, fontSize.sp)
                 }
             }
         }

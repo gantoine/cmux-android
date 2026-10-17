@@ -18,10 +18,11 @@ import com.gantoine.muxer.BubbleActivity
 import com.gantoine.muxer.MainActivity
 import com.gantoine.muxer.R
 import com.gantoine.muxer.data.Mac
+import com.gantoine.muxer.model.AgentNames
+import com.gantoine.muxer.model.Approvals
+import com.gantoine.muxer.model.parseInstant
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.RelayNotification
-import com.gantoine.muxer.ui.Approvals
-import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 class Notifier(private val context: Context, private val shortcuts: ConversationShortcuts) {
@@ -73,7 +74,8 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
             ?: "Agent"
         val conversation = Conversation(target, mac.name, agentName, NotificationFilter.channel(notification))
         conversations[target.key] = conversation
-        if (activeNotification(conversation.notificationId) == null) history.clear(target.key) else restoreHistory(conversation)
+        val active = activeNotification(conversation.notificationId)
+        if (active == null) history.clear(target.key) else restoreHistory(conversation, active)
         val text = ConversationText.message(notification, agentName)
         history.add(target.key, ConversationMessage(notification.id, text, Sender.Agent, time(notification.createdAt)))
         postConversation(conversation, silent = false)
@@ -113,7 +115,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
     fun showReply(target: ConversationTarget, macName: String, agentName: String, text: String, failure: String?) {
         if (!canNotify()) return
         val conversation = conversations[target.key] ?: Conversation(target, macName, agentName, ALERTS_CHANNEL).also { conversations[target.key] = it }
-        restoreHistory(conversation)
+        if (history.messages(target.key).isEmpty()) activeNotification(conversation.notificationId)?.let { restoreHistory(conversation, it) }
         val now = System.currentTimeMillis()
         history.add(target.key, ConversationMessage("reply:$now", text, Sender.You, now))
         if (failure != null) {
@@ -125,7 +127,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
     private fun postConversation(conversation: Conversation, silent: Boolean) {
         val messages = history.messages(conversation.target.key)
         val last = messages.lastOrNull() ?: return
-        val agent = agentPerson(conversation.target, conversation.agentName)
+        val agent = ConversationShortcuts.agentPerson(conversation.target.macId, conversation.target.workspaceId, conversation.agentName)
         val style = NotificationCompat.MessagingStyle(you)
         messages.forEach { message -> style.addMessage(message.text, message.time, personFor(message.sender, agent)) }
         val target = conversation.target
@@ -159,7 +161,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
         ).joinToString("\n")
         val text = listOf(Approvals.title(approval), body).filter { it.isNotBlank() }.joinToString("\n")
         val style = NotificationCompat.MessagingStyle(you)
-            .addMessage(text, time(approval.createdAt), agentPerson(target, agentName))
+            .addMessage(text, time(approval.createdAt), ConversationShortcuts.agentPerson(mac.id, approval.workspaceId, agentName))
         val notificationId = approvalNotificationId(approval.id)
         val builder = NotificationCompat.Builder(context, APPROVALS_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
@@ -204,36 +206,24 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
     private fun approvalActions(macId: String, approval: Approval): List<NotificationCompat.Action> {
         val target = ApprovalTarget(macId, approval.id, approval.workspaceId, approval.surfaceId)
         fun action(label: String, intent: PendingIntent) = NotificationCompat.Action.Builder(0, label, intent).build()
-        if (approval.isPermission) {
-            return listOf(
-                action("Allow", ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ONCE)),
-                action("Always allow", ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_ALWAYS)),
-                action("Deny", ApprovalActionReceiver.intent(context, target, mode = Approvals.MODE_DENY)),
-            )
-        }
-        if (approval.isPlan) {
-            return listOf(
-                action("Approve", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_MANUAL)),
-                action("Auto-edit", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_AUTO_ACCEPT)),
-                action("Reject", ApprovalActionReceiver.intent(context, target, mode = Approvals.PLAN_DENY)),
-            )
+        val decisions = Approvals.decisions(approval)
+        if (decisions.isNotEmpty()) {
+            return decisions.map { action(it.label, ApprovalActionReceiver.intent(context, target, mode = it.mode)) }
         }
         val question = approval.questions.singleOrNull() ?: return emptyList()
         val options = NotificationActions.oneTapAnswers(question).map { label ->
             action(label, ApprovalActionReceiver.intent(context, target, answer = label))
         }
-        val typed = NotificationCompat.Action.Builder(0, "Type an answer", ApprovalActionReceiver.typedAnswerIntent(context, target))
-            .addRemoteInput(RemoteInput.Builder(ApprovalActionReceiver.KEY_TYPED_ANSWER).setLabel("Your answer").build())
-            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
-            .setShowsUserInterface(false)
-            .setAllowGeneratedReplies(false)
-            .build()
+        val typed = replyAction("Type an answer", ApprovalActionReceiver.typedAnswerIntent(context, target), ApprovalActionReceiver.KEY_TYPED_ANSWER, "Your answer")
         return if (NotificationActions.offersTypedAnswer(question)) options + typed else options
     }
 
     private fun messageAction(target: ConversationTarget, agentName: String): NotificationCompat.Action =
-        NotificationCompat.Action.Builder(0, "Message", AgentReplyReceiver.intent(context, target, agentName))
-            .addRemoteInput(RemoteInput.Builder(AgentReplyReceiver.KEY_TEXT).setLabel("Message $agentName").build())
+        replyAction("Message", AgentReplyReceiver.intent(context, target, agentName), AgentReplyReceiver.KEY_TEXT, "Message $agentName")
+
+    private fun replyAction(label: String, intent: PendingIntent, key: String, inputLabel: String): NotificationCompat.Action =
+        NotificationCompat.Action.Builder(0, label, intent)
+            .addRemoteInput(RemoteInput.Builder(key).setLabel(inputLabel).build())
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
             .setShowsUserInterface(false)
             .setAllowGeneratedReplies(false)
@@ -254,9 +244,6 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
             .build()
     }
 
-    private fun agentPerson(target: ConversationTarget, name: String): Person =
-        Person.Builder().setName(name).setKey(ShortcutPlan.agentPersonKey(target.macId, target.workspaceId)).build()
-
     private fun personFor(sender: Sender, agent: Person): Person? = when (sender) {
         Sender.Agent -> agent
         Sender.You -> null
@@ -269,9 +256,8 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
         else -> Sender.Agent
     }
 
-    private fun restoreHistory(conversation: Conversation) {
+    private fun restoreHistory(conversation: Conversation, active: StatusBarNotification) {
         if (history.messages(conversation.target.key).isNotEmpty()) return
-        val active = activeNotification(conversation.notificationId) ?: return
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(active.notification) ?: return
         history.restore(
             conversation.target.key,
@@ -289,8 +275,7 @@ class Notifier(private val context: Context, private val shortcuts: Conversation
         NotificationManagerCompat.from(context).notify(id, notification)
     }
 
-    private fun time(createdAt: String?): Long =
-        createdAt?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: System.currentTimeMillis()
+    private fun time(createdAt: String?): Long = parseInstant(createdAt)?.toEpochMilli() ?: System.currentTimeMillis()
 
     fun openTerminalIntent(macId: String, workspaceId: String?, surfaceId: String?, requestCode: Int): PendingIntent =
         PendingIntent.getActivity(

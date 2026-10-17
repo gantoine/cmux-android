@@ -1,11 +1,14 @@
 package com.gantoine.muxer.notifications
 
+import com.gantoine.muxer.model.AgentNames
+import com.gantoine.muxer.model.AgentStatus
+import com.gantoine.muxer.model.WorkspaceListing
+import com.gantoine.muxer.model.parseInstant
+import com.gantoine.muxer.model.secondsBetween
 import com.gantoine.muxer.protocol.Approval
 import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
-import com.gantoine.muxer.ui.AgentStatus
-import com.gantoine.muxer.ui.WorkspaceListing
 import java.time.Instant
 
 data class ComputerActivity(
@@ -107,7 +110,7 @@ object LiveActivities {
 
     fun retries(activity: ComputerActivity, now: Instant): List<RetryCountdown> =
         activity.retries.mapNotNull { retry ->
-            val dueAt = runCatching { Instant.parse(retry.dueAt) }.getOrNull() ?: return@mapNotNull null
+            val dueAt = parseInstant(retry.dueAt) ?: return@mapNotNull null
             if (!dueAt.isAfter(now)) return@mapNotNull null
             val workspace = WorkspaceListing.workspaceFor(activity.workspaces, retry.workspaceId, retry.surfaceId)
             val terminal = workspace?.terminals?.firstOrNull { it.id == retry.surfaceId }
@@ -171,8 +174,7 @@ object LiveActivities {
         else -> null
     }
 
-    fun secondsUntil(retry: RetryCountdown, now: Instant): Long =
-        (retry.dueAt.epochSecond - now.epochSecond).coerceAtLeast(0)
+    fun secondsUntil(retry: RetryCountdown, now: Instant): Long = secondsBetween(now, retry.dueAt)
 
     fun countdown(seconds: Long): String {
         val clamped = seconds.coerceAtLeast(0)

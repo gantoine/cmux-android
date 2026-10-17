@@ -2,6 +2,7 @@ package com.gantoine.muxer.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
@@ -35,14 +36,13 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
-import androidx.compose.runtime.collectAsState
 import com.gantoine.muxer.MuxerApplication
+import com.gantoine.muxer.model.Approvals
 import com.gantoine.muxer.notifications.ApprovalActionReceiver
 import com.gantoine.muxer.notifications.ApprovalTarget
 import com.gantoine.muxer.notifications.Notifier
-import com.gantoine.muxer.ui.Approvals
-import kotlinx.coroutines.flow.first
 import java.time.Instant
+import kotlinx.coroutines.flow.first
 
 class ApprovalsWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {

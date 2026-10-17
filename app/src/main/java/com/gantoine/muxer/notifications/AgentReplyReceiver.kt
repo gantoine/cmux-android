@@ -12,11 +12,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class AgentReplyReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = context.applicationContext as MuxerApplication
-        val target = ConversationTarget(
-            macId = intent.getStringExtra(Notifier.EXTRA_MAC_ID) ?: return,
-            workspaceId = intent.getStringExtra(Notifier.EXTRA_WORKSPACE_ID) ?: return,
-            surfaceId = intent.getStringExtra(Notifier.EXTRA_SURFACE_ID) ?: return,
-        )
+        val target = intent.conversationTarget() ?: return
         val agentName = intent.getStringExtra(EXTRA_AGENT_NAME) ?: "Agent"
         val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_TEXT)?.toString()?.trim()
         if (text.isNullOrEmpty()) return
@@ -40,13 +36,10 @@ class AgentReplyReceiver : BroadcastReceiver() {
         private const val RECEIVER_BUDGET_MS = 8_000L
 
         fun intent(context: Context, target: ConversationTarget, agentName: String): PendingIntent {
-            val intent = Intent(context, AgentReplyReceiver::class.java).apply {
-                action = ACTION_MESSAGE
-                putExtra(Notifier.EXTRA_MAC_ID, target.macId)
-                putExtra(Notifier.EXTRA_WORKSPACE_ID, target.workspaceId)
-                putExtra(Notifier.EXTRA_SURFACE_ID, target.surfaceId)
-                putExtra(EXTRA_AGENT_NAME, agentName)
-            }
+            val intent = Intent(context, AgentReplyReceiver::class.java)
+                .setAction(ACTION_MESSAGE)
+                .putTarget(target)
+                .putExtra(EXTRA_AGENT_NAME, agentName)
             return PendingIntent.getBroadcast(context, target.key.hashCode(), intent, Notifier.mutableFlag() or PendingIntent.FLAG_UPDATE_CURRENT)
         }
     }

@@ -1,20 +1,20 @@
 package com.gantoine.muxer
 
+import com.gantoine.muxer.model.AgentStatus
+import com.gantoine.muxer.model.WorkspaceEntry
+import com.gantoine.muxer.model.WorkspaceFilter
+import com.gantoine.muxer.model.WorkspaceListing
 import com.gantoine.muxer.protocol.TerminalInfo
 import com.gantoine.muxer.protocol.WorkspaceGroupInfo
 import com.gantoine.muxer.protocol.WorkspaceInfo
-import com.gantoine.muxer.ui.AgentStatus
-import com.gantoine.muxer.ui.WorkspaceEntry
-import com.gantoine.muxer.ui.WorkspaceFilter
-import com.gantoine.muxer.ui.WorkspaceListing
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
-import java.time.ZoneId
-import java.util.Locale
 
 class WorkspaceListingTest {
     private val workspace = WorkspaceInfo(
@@ -54,7 +54,7 @@ class WorkspaceListingTest {
         assertEquals("Yesterday", WorkspaceListing.time(at("2026-10-13T15:00:00Z"), now, zone, Locale.US))
         assertEquals("Sun", WorkspaceListing.time(at("2026-10-11T15:00:00Z"), now, zone, Locale.US))
         assertEquals("Sep 30", WorkspaceListing.time(at("2026-09-30T15:00:00Z"), now, zone, Locale.US))
-        assertNull(WorkspaceListing.time(null, now, zone, Locale.US))
+        assertNull(WorkspaceListing.time(null as Double?, now, zone, Locale.US))
     }
 
     @Test

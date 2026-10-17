@@ -20,61 +20,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.gantoine.muxer.notifications.AgentNames
+import com.gantoine.muxer.model.AgentMessaging
+import com.gantoine.muxer.model.AgentNames
 import com.gantoine.muxer.notifications.LiveActivities
 import com.gantoine.muxer.protocol.AgentMessage
 import com.gantoine.muxer.protocol.Retry
-import kotlinx.coroutines.delay
 import java.time.Instant
-
-object AgentMessaging {
-    val relayCannotMessage = setOf("unknown_type", "unsupported")
-
-    fun shouldMessage(status: AgentStatus?, approvalsPending: Boolean, promptOpen: Boolean = false): Boolean =
-        approvalsPending || promptOpen || WorkspaceListing.needsTerminalAnswer(status)
-
-    fun unread(messages: List<AgentMessage>): List<AgentMessage> =
-        messages.filter { it.state != AgentMessage.READ }.sortedBy { it.createdAt }
-
-    fun statusLine(message: AgentMessage, waitingOnYou: Boolean): String = when (message.state) {
-        AgentMessage.QUEUED -> if (waitingOnYou) "Claude gets this after you answer" else "Waiting for the agent to pick it up"
-        AgentMessage.DELIVERED -> "The agent has it"
-        AgentMessage.FAILED -> "Not delivered: ${failureText(message.failureReason)}"
-        else -> "Read"
-    }
-
-    private fun failureText(reason: String?): String = when (reason) {
-        "messages_disabled" -> "agent messages are turned off in cmux"
-        "recipient_disabled" -> "messages are turned off for this agent"
-        "workspace_disabled" -> "messages are turned off for this workspace"
-        null, "" -> "cmux gave no reason"
-        else -> reason.replace('_', ' ')
-    }
-
-    fun secondsUntil(retry: Retry, now: Instant): Long? =
-        runCatching { Instant.parse(retry.dueAt) }.getOrNull()?.let { (it.epochSecond - now.epochSecond).coerceAtLeast(0) }
-}
 
 @Composable
 fun RetryBanner(retry: Retry, modifier: Modifier = Modifier) {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(retry.dueAt) {
-        while (true) {
-            now = System.currentTimeMillis()
-            delay(1_000)
-        }
-    }
+    val now = rememberNow(retry.dueAt)
     val seconds = AgentMessaging.secondsUntil(retry, Instant.ofEpochMilli(now))
-    val agent = AgentNames.display(retry.agent) ?: "The agent"
+    val agent = AgentNames.displayOrDefault(retry.agent)
     val countdown = when {
         seconds == null || seconds == 0L -> "Retrying now"
         else -> "Retrying in ${LiveActivities.countdown(seconds)}"

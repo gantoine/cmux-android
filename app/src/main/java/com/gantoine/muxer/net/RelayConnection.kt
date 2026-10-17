@@ -3,6 +3,7 @@ package com.gantoine.muxer.net
 import com.gantoine.muxer.chat.ChatModel
 import com.gantoine.muxer.chat.ChatState
 import com.gantoine.muxer.images.EncodedImage
+import com.gantoine.muxer.model.ApprovalReply
 import com.gantoine.muxer.protocol.AgentActivityMessage
 import com.gantoine.muxer.protocol.AgentMessage
 import com.gantoine.muxer.protocol.AgentMessagesMessage
@@ -13,6 +14,7 @@ import com.gantoine.muxer.protocol.ChatSessionMessage
 import com.gantoine.muxer.protocol.Checklist
 import com.gantoine.muxer.protocol.CloudVm
 import com.gantoine.muxer.protocol.CloudVmsResponse
+import com.gantoine.muxer.protocol.CreatedWorkspace
 import com.gantoine.muxer.protocol.DetachedMessage
 import com.gantoine.muxer.protocol.HistoryResponse
 import com.gantoine.muxer.protocol.HostUsage
@@ -31,11 +33,13 @@ import com.gantoine.muxer.protocol.Retry
 import com.gantoine.muxer.protocol.ScreenFrame
 import com.gantoine.muxer.protocol.TopSummary
 import com.gantoine.muxer.protocol.Welcome
-import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.protocol.WorkspaceGroupInfo
+import com.gantoine.muxer.protocol.WorkspaceInfo
 import com.gantoine.muxer.protocol.WorkspacesMessage
 import com.gantoine.muxer.terminal.TerminalModel
 import com.gantoine.muxer.terminal.TerminalScreen
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -50,10 +54,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -61,26 +66,32 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.add
+import kotlinx.serialization.serializer
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 sealed interface ConnectionState {
     data object Connecting : ConnectionState
-    data class Connected(val welcome: Welcome) : ConnectionState
+    data class Connected(val welcome: Welcome) : ConnectionState {
+        fun supports(type: String): Boolean = type !in welcome.unsupported
+    }
     data class Disconnected(val reason: String) : ConnectionState
     data object Unauthorized : ConnectionState
     data object Stopped : ConnectionState
 }
 
-class RelayException(val code: String, message: String) : Exception(message)
+class RelayException(val code: String, message: String) : Exception(message) {
+    val isUnknownType: Boolean get() = code == "unknown_type"
+    val isUnsupported: Boolean get() = code == "unsupported"
+    val needsConfirmation: Boolean get() = code == "confirmation_required"
+}
 
-data class Attachment(val id: Long, val workspaceId: String, val surfaceId: String, val fit: Pair<Int, Int>?)
+val Throwable.isUnavailable: Boolean get() = this is RelayException && (isUnknownType || isUnsupported)
+
+data class Attachment(val id: Long, val workspaceId: String, val surfaceId: String, val fit: Pair<Int, Int>? = null)
 
 class RelayConnection(
     private val macId: String,
@@ -136,6 +147,8 @@ class RelayConnection(
     private var loop: Job? = null
     @Volatile private var attachment: Attachment? = null
     @Volatile private var suspended = false
+
+    fun supports(type: String): Boolean = (state.value as? ConnectionState.Connected)?.supports(type) ?: true
 
     fun start() {
         if (loop?.isActive == true) return
@@ -234,7 +247,7 @@ class RelayConnection(
         val hello = request("hello", buildJsonObject { put("notifications_after", notificationsAfter()) })
         if (socket !== webSocket) return
         hello.onSuccess { data ->
-            val welcome = data?.let { RelayJson.decodeFromJsonElement(Welcome.serializer(), it) } ?: return
+            val welcome = data?.decode<Welcome>() ?: return
             _state.value = ConnectionState.Connected(welcome)
             if (!suspended) attachment?.let { sendAttach(it) }
             onWelcome(macId, welcome)
@@ -249,26 +262,26 @@ class RelayConnection(
         when (message["type"]?.jsonPrimitive?.contentOrNull) {
             "result" -> completeRequest(message)
             "workspaces" -> {
-                val listing = RelayJson.decodeFromJsonElement(WorkspacesMessage.serializer(), message)
+                val listing = message.decode<WorkspacesMessage>()
                 _groups.value = listing.groups
                 _workspaces.value = listing.workspaces
             }
             "screen" -> {
-                val frame = RelayJson.decodeFromJsonElement(ScreenFrame.serializer(), message)
+                val frame = message.decode<ScreenFrame>()
                 if (suspended || frame.surfaceId != attachment?.surfaceId) return
                 val next = TerminalModel.apply(_screen.value, frame)
                 if (next == null) send("resync") else _screen.value = next
             }
             "chat_session" -> {
-                val session = RelayJson.decodeFromJsonElement(ChatSessionMessage.serializer(), message)
+                val session = message.decode<ChatSessionMessage>()
                 if (session.surfaceId == attachment?.surfaceId) _chat.value = ChatModel.startSession(_chat.value, session.sessionId)
             }
             "chat" -> {
-                val chat = RelayJson.decodeFromJsonElement(ChatMessage.serializer(), message)
+                val chat = message.decode<ChatMessage>()
                 if (chat.surfaceId == attachment?.surfaceId) _chat.value = ChatModel.apply(_chat.value, chat)
             }
             "detached" -> {
-                val detached = RelayJson.decodeFromJsonElement(DetachedMessage.serializer(), message)
+                val detached = message.decode<DetachedMessage>()
                 if (detached.surfaceId == attachment?.surfaceId) {
                     attachment = null
                     suspended = false
@@ -276,28 +289,22 @@ class RelayConnection(
                 }
                 _detached.tryEmit(detached)
             }
-            "approvals" -> {
-                _approvals.value = RelayJson.decodeFromJsonElement(ApprovalsMessage.serializer(), message).approvals
-            }
+            "approvals" -> _approvals.value = message.decode<ApprovalsMessage>().approvals
             "agent_activity" -> {
-                val activity = RelayJson.decodeFromJsonElement(AgentActivityMessage.serializer(), message)
+                val activity = message.decode<AgentActivityMessage>()
                 _retries.value = activity.retries
                 _busySurfaces.value = activity.busy.toSet()
             }
             "agent_messages" -> {
-                val listing = RelayJson.decodeFromJsonElement(AgentMessagesMessage.serializer(), message)
+                val listing = message.decode<AgentMessagesMessage>()
                 if (listing.surfaceId == attachment?.surfaceId) _agentMessages.value = listing.messages
             }
             "input_state" -> {
-                val state = RelayJson.decodeFromJsonElement(InputStateMessage.serializer(), message)
+                val state = message.decode<InputStateMessage>()
                 if (state.surfaceId == attachment?.surfaceId) _inputState.value = state
             }
-            "keep_awake" -> {
-                _keepAwake.value = RelayJson.decodeFromJsonElement(KeepAwakeMessage.serializer(), message).enabled
-            }
-            "notification" -> {
-                notifications.trySend(RelayJson.decodeFromJsonElement(NotificationMessage.serializer(), message).notification)
-            }
+            "keep_awake" -> _keepAwake.value = message.decode<KeepAwakeMessage>().enabled
+            "notification" -> notifications.trySend(message.decode<NotificationMessage>().notification)
         }
     }
 
@@ -307,7 +314,7 @@ class RelayConnection(
         if (message["ok"]?.jsonPrimitive?.booleanOrNull == true) {
             deferred.complete(Result.success(message["data"]))
         } else {
-            val error = message["error"]?.let { RelayJson.decodeFromJsonElement(RequestError.serializer(), it) }
+            val error = message["error"]?.decode<RequestError>()
             deferred.complete(Result.failure(RelayException(error?.code ?: "error", error?.message ?: "The computer could not do that.")))
         }
     }
@@ -344,8 +351,8 @@ class RelayConnection(
         },
     )
 
-    fun attach(workspaceId: String, surfaceId: String, fit: Pair<Int, Int>? = null): Long {
-        val next = Attachment(nextAttachmentId.incrementAndGet(), workspaceId, surfaceId, fit)
+    fun attach(workspaceId: String, surfaceId: String): Long {
+        val next = Attachment(nextAttachmentId.incrementAndGet(), workspaceId, surfaceId)
         if (attachment?.surfaceId != surfaceId) clearTerminalState()
         attachment = next
         suspended = false
@@ -374,14 +381,7 @@ class RelayConnection(
         val current = attachment ?: return
         attachment = current.copy(fit = fit)
         if (suspended) return
-        if (fit == null) {
-            send("unfit")
-        } else {
-            send("fit", buildJsonObject {
-                put("columns", fit.first)
-                put("rows", fit.second)
-            })
-        }
+        if (fit == null) send("unfit") else send("fit", fitJson(fit))
     }
 
     fun detach(attachmentId: Long) {
@@ -402,6 +402,10 @@ class RelayConnection(
 
     fun key(name: String) = send("key", buildJsonObject { put("key", name) })
 
+    fun input(text: String) = send("input", buildJsonObject { put("text", text) })
+
+    fun scroll(lines: Int) = send("scroll", buildJsonObject { put("lines", lines) })
+
     suspend fun paste(text: String, submit: Boolean): Result<Unit> =
         request("paste", buildJsonObject {
             put("text", text)
@@ -421,72 +425,65 @@ class RelayConnection(
             }
         }).map { }
 
-    suspend fun history(lines: Int = HISTORY_LINES): Result<HistoryResponse> =
-        request("history", buildJsonObject { put("lines", lines) }).mapCatching { data ->
-            data?.let { RelayJson.decodeFromJsonElement(HistoryResponse.serializer(), it) } ?: HistoryResponse()
-        }
+    suspend fun history(): Result<HistoryResponse> =
+        requestOr("history", buildJsonObject { put("lines", HISTORY_LINES) }, HistoryResponse())
 
-    suspend fun decide(approvalId: String, mode: String, feedback: String? = null): Result<Unit> =
+    suspend fun reply(approvalId: String, reply: ApprovalReply): Result<Unit> =
         request("answer_approval", buildJsonObject {
             put("approval_id", approvalId)
-            put("mode", mode)
-            if (!feedback.isNullOrBlank()) put("feedback", feedback)
-        }).map { forget(approvalId) }
-
-    suspend fun answer(approvalId: String, answers: List<String>): Result<Unit> =
-        request("answer_approval", buildJsonObject {
-            put("approval_id", approvalId)
-            putJsonArray("answers") { answers.forEach { add(it) } }
+            when (reply) {
+                is ApprovalReply.Decision -> {
+                    put("mode", reply.mode)
+                    if (!reply.feedback.isNullOrBlank()) put("feedback", reply.feedback)
+                }
+                is ApprovalReply.Answers -> putJsonArray("answers") { reply.answers.forEach { add(it) } }
+            }
         }).map { forget(approvalId) }
 
     suspend fun sendAgentMessage(text: String): Result<AgentMessage> =
-        request("send_agent_message", buildJsonObject { put("text", text) }).mapCatching { data ->
-            val sent = RelayJson.decodeFromJsonElement(AgentMessage.serializer(), data ?: error("The computer did not confirm the message."))
-            if (_agentMessages.value.none { it.id == sent.id }) _agentMessages.value = listOf(sent) + _agentMessages.value
-            sent
-        }
+        requestAs<AgentMessage>("send_agent_message", buildJsonObject { put("text", text) }, "The computer did not confirm the message.")
+            .onSuccess { sent ->
+                if (_agentMessages.value.none { it.id == sent.id }) _agentMessages.value = listOf(sent) + _agentMessages.value
+            }
+
+    suspend fun deliverToAgent(text: String): Result<Unit> {
+        if (!supports("send_agent_message")) return paste(text, submit = true)
+        val error = sendAgentMessage(text).exceptionOrNull() ?: return Result.success(Unit)
+        return if (error.isUnavailable) paste(text, submit = true) else Result.failure(error)
+    }
 
     suspend fun setKeepAwake(enabled: Boolean): Result<Boolean> =
         request("set_keep_awake", buildJsonObject { put("enabled", enabled) }).mapCatching { data ->
-            val confirmed = data?.let { RelayJson.decodeFromJsonElement(KeepAwakeMessage.serializer(), it).enabled } ?: enabled
+            val confirmed = data?.decode<KeepAwakeMessage>()?.enabled ?: enabled
             _keepAwake.value = confirmed
             confirmed
         }
 
-    suspend fun top(): Result<TopSummary> =
-        request("top").mapCatching { data ->
-            RelayJson.decodeFromJsonElement(TopSummary.serializer(), data ?: error("The computer sent no metrics."))
-        }
+    suspend fun top(): Result<TopSummary> = requestAs("top", missing = "The computer sent no metrics.")
 
-    suspend fun hostUsage(): Result<HostUsage> =
-        request("host_usage").mapCatching { data ->
-            RelayJson.decodeFromJsonElement(HostUsage.serializer(), data ?: error("The computer sent no usage."))
-        }
+    suspend fun hostUsage(): Result<HostUsage> = requestAs("host_usage", missing = "The computer sent no usage.")
 
-    suspend fun cloudVms(): Result<CloudVmsResponse> =
-        request("vms").mapCatching { data ->
-            RelayJson.decodeFromJsonElement(CloudVmsResponse.serializer(), data ?: error("The computer sent no VMs."))
-        }
+    suspend fun cloudVms(): Result<CloudVmsResponse> = requestAs("vms", missing = "The computer sent no VMs.")
 
     suspend fun setCloudVmPaused(vmId: String, paused: Boolean): Result<CloudVm> =
-        request("set_vm_paused", buildJsonObject {
-            put("vm_id", vmId)
-            put("paused", paused)
-        }).mapCatching { data ->
-            RelayJson.decodeFromJsonElement(CloudVm.serializer(), data ?: error("The computer did not say what the VM is doing."))
-        }
+        requestAs(
+            "set_vm_paused",
+            buildJsonObject {
+                put("vm_id", vmId)
+                put("paused", paused)
+            },
+            "The computer did not say what the VM is doing.",
+        )
 
     suspend fun notifications(): Result<List<MacNotification>> =
-        request("notifications").mapCatching { data ->
-            data?.let { RelayJson.decodeFromJsonElement(NotificationsResponse.serializer(), it).notifications }.orEmpty()
-        }
+        requestOr("notifications", default = NotificationsResponse()).map { it.notifications }
 
     suspend fun markNotificationsRead(notificationId: String? = null, surfaceId: String? = null, all: Boolean = false): Result<Unit> =
-        request("mark_notifications_read", buildJsonObject {
+        command("mark_notifications_read") {
             notificationId?.let { put("notification_id", it) }
             surfaceId?.let { put("surface_id", it) }
             if (all) put("all", true)
-        }).map { }
+        }
 
     suspend fun checklist(workspaceId: String): Result<Checklist> = checklistRequest("checklist", workspaceId)
 
@@ -515,25 +512,147 @@ class RelayConnection(
         workspaceId: String,
         fields: JsonObjectBuilder.() -> Unit = {},
     ): Result<Checklist> =
-        request(type, buildJsonObject {
-            put("workspace_id", workspaceId)
-            fields()
-        }).mapCatching { data ->
-            data?.let { RelayJson.decodeFromJsonElement(Checklist.serializer(), it) } ?: Checklist()
-        }
+        requestOr(
+            type,
+            buildJsonObject {
+                put("workspace_id", workspaceId)
+                fields()
+            },
+            Checklist(),
+        )
 
     suspend fun recentSessions(query: String = ""): Result<List<RecentSession>> =
-        request("recent_sessions", buildJsonObject { if (query.isNotBlank()) put("query", query.trim()) }).mapCatching { data ->
-            data?.let { RelayJson.decodeFromJsonElement(RecentSessionsResponse.serializer(), it).sessions }.orEmpty()
-        }
+        requestOr("recent_sessions", buildJsonObject { if (query.isNotBlank()) put("query", query.trim()) }, RecentSessionsResponse())
+            .map { it.sessions }
 
     suspend fun resumeSession(session: RecentSession): Result<ResumedSession> =
-        request("resume_session", buildJsonObject {
-            put("agent", session.agent)
-            put("session_id", session.sessionId)
-        }).mapCatching { data ->
-            RelayJson.decodeFromJsonElement(ResumedSession.serializer(), data ?: error("The computer did not say where the session opened."))
+        requestAs(
+            "resume_session",
+            buildJsonObject {
+                put("agent", session.agent)
+                put("session_id", session.sessionId)
+            },
+            "The computer did not say where the session opened.",
+        )
+
+    suspend fun createTerminal(workspaceId: String): Result<String> =
+        requestOr("create_terminal", buildJsonObject { put("workspace_id", workspaceId) }, CreatedWorkspace()).map { it.surfaceId }
+
+    suspend fun createWorkspace(title: String, cwd: String): Result<CreatedWorkspace> =
+        requestOr(
+            "create_workspace",
+            buildJsonObject {
+                put("title", title)
+                put("cwd", cwd)
+            },
+            CreatedWorkspace(),
+        )
+
+    suspend fun createWorkspaceInGroup(groupId: String, title: String): Result<CreatedWorkspace> =
+        requestOr(
+            "create_workspace_in_group",
+            buildJsonObject {
+                put("group_id", groupId)
+                put("title", title)
+            },
+            CreatedWorkspace(),
+        )
+
+    suspend fun workspaceAction(workspaceId: String, action: String, color: String? = null, description: String? = null): Result<Unit> =
+        command("workspace_action") {
+            put("workspace_id", workspaceId)
+            put("action", action)
+            color?.let { put("color", it) }
+            description?.let { put("description", it) }
         }
+
+    suspend fun renameWorkspace(workspaceId: String, title: String): Result<Unit> =
+        command("rename_workspace") {
+            put("workspace_id", workspaceId)
+            put("title", title)
+        }
+
+    suspend fun closeWorkspace(workspaceId: String, force: Boolean): Result<Unit> =
+        command("close_workspace") {
+            put("workspace_id", workspaceId)
+            put("force", force)
+        }
+
+    suspend fun setWorkspaceStatus(workspaceId: String, status: String): Result<Unit> =
+        command("set_workspace_status") {
+            put("workspace_id", workspaceId)
+            put("status", status)
+        }
+
+    suspend fun reconnectWorkspace(workspaceId: String): Result<Unit> = command("reconnect_workspace") { put("workspace_id", workspaceId) }
+
+    suspend fun addToGroup(groupId: String, workspaceId: String): Result<Unit> =
+        command("add_to_group") {
+            put("group_id", groupId)
+            put("workspace_id", workspaceId)
+        }
+
+    suspend fun removeFromGroup(groupId: String, workspaceId: String): Result<Unit> =
+        command("remove_from_group") {
+            put("group_id", groupId)
+            put("workspace_id", workspaceId)
+        }
+
+    suspend fun createGroup(name: String, workspaceIds: List<String>): Result<Unit> =
+        command("create_group") {
+            put("name", name)
+            putJsonArray("workspace_ids") { workspaceIds.forEach { add(it) } }
+        }
+
+    suspend fun pinGroup(groupId: String, pinned: Boolean): Result<Unit> =
+        command("pin_group") {
+            put("group_id", groupId)
+            put("pinned", pinned)
+        }
+
+    suspend fun renameGroup(groupId: String, name: String): Result<Unit> =
+        command("rename_group") {
+            put("group_id", groupId)
+            put("name", name)
+        }
+
+    suspend fun setGroupColor(groupId: String, color: String?): Result<Unit> =
+        command("set_group_color") {
+            put("group_id", groupId)
+            put("color", color)
+        }
+
+    suspend fun ungroup(groupId: String): Result<Unit> = command("ungroup") { put("group_id", groupId) }
+
+    suspend fun renameTerminal(workspaceId: String, surfaceId: String, title: String): Result<Unit> =
+        terminalCommand("rename_terminal", workspaceId, surfaceId) { put("title", title) }
+
+    suspend fun restartTerminal(workspaceId: String, surfaceId: String): Result<Unit> =
+        terminalCommand("restart_terminal", workspaceId, surfaceId)
+
+    suspend fun closeTerminal(workspaceId: String, surfaceId: String, force: Boolean): Result<Unit> =
+        terminalCommand("close_terminal", workspaceId, surfaceId) { if (force) put("force", true) }
+
+    private suspend fun terminalCommand(
+        type: String,
+        workspaceId: String,
+        surfaceId: String,
+        fields: JsonObjectBuilder.() -> Unit = {},
+    ): Result<Unit> =
+        command(type) {
+            put("workspace_id", workspaceId)
+            put("surface_id", surfaceId)
+            fields()
+        }
+
+    private suspend fun command(type: String, fields: JsonObjectBuilder.() -> Unit): Result<Unit> =
+        request(type, buildJsonObject(fields)).map { }
+
+    private suspend inline fun <reified T> requestAs(type: String, fields: JsonObject = JsonObject(emptyMap()), missing: String): Result<T> =
+        request(type, fields).mapCatching { (it ?: error(missing)).decode<T>() }
+
+    private suspend inline fun <reified T> requestOr(type: String, fields: JsonObject = JsonObject(emptyMap()), default: T): Result<T> =
+        request(type, fields).mapCatching { it?.decode<T>() ?: default }
 
     private fun forget(approvalId: String) {
         _approvals.value = _approvals.value?.filterNot { it.id == approvalId }
@@ -543,13 +662,13 @@ class RelayConnection(
         send("attach", buildJsonObject {
             put("workspace_id", target.workspaceId)
             put("surface_id", target.surfaceId)
-            target.fit?.let { (columns, rows) ->
-                put("fit", buildJsonObject {
-                    put("columns", columns)
-                    put("rows", rows)
-                })
-            }
+            target.fit?.let { put("fit", fitJson(it)) }
         })
+    }
+
+    private fun fitJson(fit: Pair<Int, Int>): JsonObject = buildJsonObject {
+        put("columns", fit.first)
+        put("rows", fit.second)
     }
 
     private companion object {
@@ -557,3 +676,5 @@ class RelayConnection(
         const val HISTORY_LINES = 2_000
     }
 }
+
+private inline fun <reified T> JsonElement.decode(): T = RelayJson.decodeFromJsonElement(serializer<T>(), this)

@@ -7,7 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.gantoine.muxer.notifications.ConversationTarget
-import com.gantoine.muxer.notifications.Notifier
+import com.gantoine.muxer.notifications.conversationTarget
+import com.gantoine.muxer.notifications.putTarget
 import com.gantoine.muxer.ui.CmuxTheme
 import com.gantoine.muxer.ui.TerminalScreen
 
@@ -16,16 +17,14 @@ class BubbleActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val app = application as MuxerApplication
-        val macId = intent.getStringExtra(Notifier.EXTRA_MAC_ID)
-        val workspaceId = intent.getStringExtra(Notifier.EXTRA_WORKSPACE_ID)
-        val surfaceId = intent.getStringExtra(Notifier.EXTRA_SURFACE_ID)
-        if (macId == null || workspaceId == null || surfaceId == null) {
+        val target = intent.conversationTarget()
+        if (target == null) {
             finish()
             return
         }
         setContent {
             CmuxTheme {
-                TerminalScreen(app, macId, workspaceId, surfaceId, onBack = ::finish)
+                TerminalScreen(app, target.macId, target.workspaceId, target.surfaceId, onBack = ::finish)
             }
         }
     }
@@ -34,11 +33,6 @@ class BubbleActivity : ComponentActivity() {
         private const val ACTION_BUBBLE = "com.gantoine.muxer.BUBBLE"
 
         fun intent(context: Context, target: ConversationTarget): Intent =
-            Intent(context, BubbleActivity::class.java).apply {
-                action = ACTION_BUBBLE
-                putExtra(Notifier.EXTRA_MAC_ID, target.macId)
-                putExtra(Notifier.EXTRA_WORKSPACE_ID, target.workspaceId)
-                putExtra(Notifier.EXTRA_SURFACE_ID, target.surfaceId)
-            }
+            Intent(context, BubbleActivity::class.java).setAction(ACTION_BUBBLE).putTarget(target)
     }
 }

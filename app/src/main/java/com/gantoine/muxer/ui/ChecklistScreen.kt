@@ -1,8 +1,5 @@
 package com.gantoine.muxer.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,7 +16,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
@@ -29,8 +25,6 @@ import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -40,10 +34,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,7 +44,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
@@ -60,10 +51,8 @@ import androidx.compose.ui.unit.dp
 import com.gantoine.muxer.MuxerApplication
 import com.gantoine.muxer.net.ConnectionState
 import com.gantoine.muxer.net.RelayConnection
-import com.gantoine.muxer.net.RelayException
 import com.gantoine.muxer.protocol.Checklist
 import com.gantoine.muxer.protocol.ChecklistItem
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 private sealed interface ChecklistDialog {
@@ -74,10 +63,10 @@ private sealed interface ChecklistDialog {
 
 @Composable
 fun ChecklistScreen(app: MuxerApplication, macId: String, workspaceId: String, onBack: () -> Unit) {
-    val connections by app.connections.connectionsFlow.collectAsState()
-    val connection = connections[macId]
-    val state by (connection?.state ?: remember { MutableStateFlow(ConnectionState.Stopped) }).collectAsState()
-    val workspaces by (connection?.workspaces ?: remember { MutableStateFlow(null) }).collectAsState()
+    val connection = rememberConnection(app, macId)
+    val state by connection.collectOr(ConnectionState.Stopped) { it.state }
+    val workspaces by connection.collectOr(null) { it.workspaces }
+    val macName = rememberMacName(app, macId)
     val workspaceTitle = workspaces?.firstOrNull { it.id == workspaceId }?.title?.ifBlank { null }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -104,23 +93,25 @@ fun ChecklistScreen(app: MuxerApplication, macId: String, workspaceId: String, o
         change({ addChecklistItem(workspaceId, text) }, onSuccess = { draft = "" })
     }
 
-    LaunchedEffect(connection, state is ConnectionState.Connected) {
-        if (state !is ConnectionState.Connected) return@LaunchedEffect
-        connection?.checklist(workspaceId)
-            ?.onSuccess {
+    suspend fun load() {
+        val target = connection?.takeIf { it.supports(REQUEST) } ?: return
+        target.checklist(workspaceId)
+            .onSuccess {
                 checklist = it
                 loadFailure = null
             }
-            ?.onFailure { loadFailure = it }
+            .onFailure { loadFailure = it }
+    }
+
+    LaunchedEffect(connection, state is ConnectionState.Connected) {
+        if (state is ConnectionState.Connected) load()
     }
 
     Scaffold(
         topBar = {
             CmuxTopBar(
                 title = workspaceTitle?.let { "$it checklist" } ?: "Checklist",
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                },
+                onBack = onBack,
                 actions = {
                     if (checklist?.items.orEmpty().isNotEmpty()) {
                         IconButton(onClick = { dialog = ChecklistDialog.Clear }) {
@@ -133,33 +124,22 @@ fun ChecklistScreen(app: MuxerApplication, macId: String, workspaceId: String, o
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
-            val list = checklist
-            val failure = loadFailure
-            when {
-                list == null && failure is RelayException && failure.code == "unknown_type" -> EmptyState(
-                    icon = Icons.Outlined.Checklist,
-                    title = "Update the relay",
-                    body = "This computer's relay is too old to show checklists. Update it to see them here.",
-                )
-                list == null && failure is RelayException && failure.code == "unsupported" -> EmptyState(
-                    icon = Icons.Outlined.Checklist,
-                    title = "Update cmux",
-                    body = failure.message ?: "This version of cmux has no workspace checklists.",
-                )
-                list == null && failure != null -> {
-                    ConnectionBanner(state)
-                    EmptyState(icon = Icons.Outlined.Checklist, title = "Couldn't load the checklist", body = failure.message ?: "The computer didn't answer.") {
-                        Button(onClick = {
-                            loadFailure = null
-                            scope.launch { connection?.checklist(workspaceId)?.onSuccess { checklist = it }?.onFailure { loadFailure = it } }
-                        }) { Text("Try again") }
-                    }
-                }
-                list == null -> {
-                    ConnectionBanner(state)
-                    LoadingState("Fetching the checklist…")
-                }
-                else -> {
+            RemoteContent(
+                value = checklist,
+                failure = loadFailure,
+                state = state,
+                requestType = REQUEST,
+                icon = Icons.Outlined.Checklist,
+                what = "show checklists",
+                failedTitle = "Couldn't load the checklist",
+                loading = "Fetching the checklist…",
+                macName = macName,
+                onRetry = {
+                    loadFailure = null
+                    scope.launch { load() }
+                },
+            ) { list ->
+                Column {
                     ConnectionBanner(state)
                     Row(
                         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
@@ -247,33 +227,32 @@ fun ChecklistScreen(app: MuxerApplication, macId: String, workspaceId: String, o
             dialog = null
             if (text.isNotBlank()) change({ editChecklistItem(workspaceId, current.item.id, text) })
         }
-        ChecklistDialog.Clear -> AlertDialog(
-            onDismissRequest = { dialog = null },
-            title = { Text("Clear the checklist?") },
-            text = { Text("This removes every item, done or not, from the workspace's checklist on your computer.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    dialog = null
-                    change({ clearChecklist(workspaceId) })
-                }) { Text("Clear") }
+        ChecklistDialog.Clear -> ConfirmDialog(
+            title = "Clear the checklist?",
+            text = "This removes every item, done or not, from the workspace's checklist on your computer.",
+            confirm = "Clear",
+            onConfirm = {
+                dialog = null
+                change({ clearChecklist(workspaceId) })
             },
-            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
+            onDismiss = { dialog = null },
         )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+private const val REQUEST = "checklist"
+
 @Composable
 private fun ChecklistRow(item: ChecklistItem, index: Int, count: Int, onToggle: () -> Unit, onLongPress: () -> Unit) {
     val done = item.state == "completed"
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(groupedShape(index, count))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .combinedClickable(onClick = onToggle, onLongClick = onLongPress, onLongClickLabel = "More for this item")
-            .padding(start = 4.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+        Modifier.groupedRow(
+            groupedShape(index, count),
+            onClick = onToggle,
+            onLongClick = onLongPress,
+            onLongClickLabel = "More for this item",
+            contentPadding = PaddingValues(start = 4.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+        ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = done, onCheckedChange = { onToggle() })
