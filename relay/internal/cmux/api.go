@@ -692,8 +692,19 @@ func (e Event) Hook() (string, bool) {
 	return cmp.Or(e.target().HookEventName, name), true
 }
 
-func (c *Client) Events(ctx context.Context, afterSeq *int64, categories []string, handle func(Event) error) error {
-	params := map[string]any{"categories": categories, "include_heartbeats": true}
+type EventFilter struct {
+	Categories []string
+	Names      []string
+}
+
+func (c *Client) Events(ctx context.Context, afterSeq *int64, filter EventFilter, handle func(Event) error) error {
+	params := map[string]any{"include_heartbeats": true}
+	if len(filter.Categories) > 0 {
+		params["categories"] = filter.Categories
+	}
+	if len(filter.Names) > 0 {
+		params["names"] = filter.Names
+	}
 	if afterSeq != nil {
 		params["after_seq"] = *afterSeq
 	}

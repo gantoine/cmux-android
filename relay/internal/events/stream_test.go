@@ -19,14 +19,14 @@ type droppingSource struct {
 	resumedAt []*int64
 }
 
-func (s *droppingSource) Events(ctx context.Context, afterSeq *int64, categories []string, handle func(cmux.Event) error) error {
+func (s *droppingSource) Events(ctx context.Context, afterSeq *int64, filter cmux.EventFilter, handle func(cmux.Event) error) error {
 	s.mu.Lock()
 	s.calls++
 	call := s.calls
 	s.resumedAt = append(s.resumedAt, afterSeq)
 	s.mu.Unlock()
-	if !slices.Equal(categories, []string{"notification", "agent"}) {
-		return fmt.Errorf("unexpected categories %v", categories)
+	if !slices.Equal(filter.Categories, []string{"notification", "agent"}) {
+		return fmt.Errorf("unexpected categories %v", filter.Categories)
 	}
 	if call == 1 {
 		_ = handle(cmux.Event{Type: "heartbeat"})
@@ -65,7 +65,7 @@ func (r *recorder) snapshot() []string {
 func TestEveryConsumerGetsEventsInOrderAndResumesWhereTheStreamDropped(t *testing.T) {
 	source := &droppingSource{}
 	first, second := &recorder{}, &recorder{}
-	stream := NewStream(source, slog.New(slog.DiscardHandler), []string{"notification", "agent"}, first, second)
+	stream := NewStream(source, slog.New(slog.DiscardHandler), cmux.EventFilter{Categories: []string{"notification", "agent"}}, first, second)
 	stream.firstRetry = time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

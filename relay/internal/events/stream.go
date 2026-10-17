@@ -11,7 +11,7 @@ import (
 const consumerQueueSize = 256
 
 type Source interface {
-	Events(ctx context.Context, afterSeq *int64, categories []string, handle func(cmux.Event) error) error
+	Events(ctx context.Context, afterSeq *int64, filter cmux.EventFilter, handle func(cmux.Event) error) error
 }
 
 type Consumer interface {
@@ -22,14 +22,14 @@ type Consumer interface {
 type Stream struct {
 	source     Source
 	logger     *slog.Logger
-	categories []string
+	filter     cmux.EventFilter
 	consumers  []Consumer
 	firstRetry time.Duration
 	maxRetry   time.Duration
 }
 
-func NewStream(source Source, logger *slog.Logger, categories []string, consumers ...Consumer) *Stream {
-	return &Stream{source: source, logger: logger, categories: categories, consumers: consumers, firstRetry: time.Second, maxRetry: 30 * time.Second}
+func NewStream(source Source, logger *slog.Logger, filter cmux.EventFilter, consumers ...Consumer) *Stream {
+	return &Stream{source: source, logger: logger, filter: filter, consumers: consumers, firstRetry: time.Second, maxRetry: 30 * time.Second}
 }
 
 type delivery struct {
@@ -58,7 +58,7 @@ func (s *Stream) Run(ctx context.Context) {
 	var afterSeq *int64
 	backoff := s.firstRetry
 	for ctx.Err() == nil {
-		err := s.source.Events(ctx, afterSeq, s.categories, func(event cmux.Event) error {
+		err := s.source.Events(ctx, afterSeq, s.filter, func(event cmux.Event) error {
 			backoff = s.firstRetry
 			if event.Type != "event" {
 				return nil
