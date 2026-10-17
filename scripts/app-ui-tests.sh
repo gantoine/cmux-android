@@ -31,6 +31,7 @@ for _ in $(seq 1 50); do grep -q 'Code:' "$work/pair.txt" && break; sleep 0.1; d
 code="$(awk '/Code:/ {print $2}' "$work/pair.txt")"
 token="$(curl -fsS -X POST "http://127.0.0.1:$relay_port/v1/pair" -d "{\"code\":\"$code\",\"device_name\":\"ui tests\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')"
 
+adb shell rm -rf /data/local/tmp/ui-test-failures >/dev/null 2>&1 || true
 status=0
 (cd "$root" && ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.relayUrl="http://10.0.2.2:$relay_port" \
@@ -40,5 +41,8 @@ status=0
 if [ "$status" -ne 0 ]; then
   echo "--- relay log ---"; cat "$work/relay.log"
   echo "--- replay log ---"; cat "$work/replay.log"
+  failures="$root/app/build/reports/androidTests/failures"
+  mkdir -p "$failures"
+  adb pull /data/local/tmp/ui-test-failures/. "$failures" >/dev/null 2>&1 || true
 fi
 exit "$status"

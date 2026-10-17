@@ -2,6 +2,7 @@ package com.gantoine.muxer
 
 import android.Manifest
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -27,6 +28,7 @@ import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.rules.TestRule
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -97,7 +99,7 @@ class RecordedCmuxTest {
     fun theChecklistComesFromCmux() {
         openMac()
         await(By.text(RecordedCmuxScenario.WORKSPACE)).longClick()
-        await(By.textStartsWith("Checklist")).click()
+        reveal(By.textStartsWith("Checklist")).click()
         await(By.text(RecordedCmuxScenario.DONE_ITEM))
         await(By.text(RecordedCmuxScenario.OPEN_ITEM))
     }
@@ -125,7 +127,7 @@ class RecordedCmuxTest {
     fun metricsDescribeTheRecordedWorkspaces() {
         openMac()
         await(By.descStartsWith("Settings for")).click()
-        await(By.text("Metrics")).click()
+        reveal(By.text("Metrics")).click()
         await(By.text(RecordedCmuxScenario.WORKSPACE))
     }
 
@@ -133,7 +135,7 @@ class RecordedCmuxTest {
     fun keepAwakeIsSentToCmux() {
         openMac()
         await(By.descStartsWith("Settings for")).click()
-        await(By.text("Keep this computer awake")).click()
+        reveal(By.text("Keep this computer awake")).click()
         awaitCall("caffeine.set") { params -> params["enabled"]?.jsonPrimitive?.content == "true" }
     }
 
@@ -144,8 +146,46 @@ class RecordedCmuxTest {
 
     private fun await(selector: BySelector): UiObject2 {
         val found = device.wait(Until.findObject(selector), TIMEOUT_MS)
+        if (found == null) captureScreen()
         assertNotNull("nothing on screen matches $selector", found)
         return found
+    }
+
+    private fun captureScreen() {
+        val name = "failure-${System.currentTimeMillis()}"
+        shell("mkdir -p $FAILURE_DIR")
+        shell("screencap -p $FAILURE_DIR/$name.png")
+        val hierarchy = ByteArrayOutputStream().also { device.dumpWindowHierarchy(it) }.toByteArray()
+        shell("cp /dev/stdin $FAILURE_DIR/$name.xml", hierarchy)
+    }
+
+    private fun shell(command: String, input: ByteArray? = null) {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val (output, stdin) = automation.executeShellCommandRw(command)
+        ParcelFileDescriptor.AutoCloseOutputStream(stdin).use { stream -> input?.let(stream::write) }
+        ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
+    }
+
+    private fun reveal(selector: BySelector): UiObject2 {
+        repeat(REVEAL_SWIPES) {
+            device.wait(Until.findObject(selector), REVEAL_WAIT_MS)?.let { return settled(selector, it) }
+            val x = device.displayWidth / 2
+            device.swipe(x, device.displayHeight * 3 / 4, x, device.displayHeight / 4, 60)
+            device.waitForIdle()
+        }
+        return await(selector)
+    }
+
+    private fun settled(selector: BySelector, found: UiObject2): UiObject2 {
+        var current = found
+        repeat(SETTLE_CHECKS) {
+            val bounds = runCatching { current.visibleBounds }.getOrNull()
+            Thread.sleep(SETTLE_INTERVAL_MS)
+            val next = device.findObject(selector) ?: return await(selector)
+            if (bounds != null && next.visibleBounds == bounds) return next
+            current = next
+        }
+        return current
     }
 
     private fun emit(event: String) {
@@ -177,5 +217,10 @@ class RecordedCmuxTest {
 
     private companion object {
         const val TIMEOUT_MS = 20_000L
+        const val REVEAL_WAIT_MS = 2_000L
+        const val REVEAL_SWIPES = 5
+        const val SETTLE_CHECKS = 10
+        const val SETTLE_INTERVAL_MS = 200L
+        const val FAILURE_DIR = "/data/local/tmp/ui-test-failures"
     }
 }
