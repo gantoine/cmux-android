@@ -683,7 +683,6 @@ private fun WorkspaceRow(
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
-    val status = WorkspaceListing.agentStatus(workspace)
     val unread = WorkspaceListing.isUnread(workspace)
     Row(
         modifier
@@ -701,7 +700,7 @@ private fun WorkspaceRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WorkspaceTile(workspace, status = status)
+        WorkspaceTile(workspace, animated = true)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -737,7 +736,6 @@ private fun WorkspaceRow(
                 WorkspaceListing.subtitle(workspace),
                 WorkspaceListing.time(workspace.lastActivityAt ?: workspace.previewAt),
                 highlightTime = unread,
-                maxLines = 2,
             )
             WorkspaceMetaLine(workspace)
         }
@@ -745,13 +743,13 @@ private fun WorkspaceRow(
 }
 
 @Composable
-private fun SubtitleLine(subtitle: String, time: String?, highlightTime: Boolean = false, maxLines: Int = 1) {
+private fun SubtitleLine(subtitle: String, time: String?, highlightTime: Boolean = false) {
     Row {
         Text(
             subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = maxLines,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).alignByBaseline(),
         )
@@ -900,16 +898,17 @@ private fun GroupTerminalsRow(
 fun WorkspaceTile(
     workspace: WorkspaceInfo,
     size: Dp = 48.dp,
-    status: AgentStatus? = null,
+    animated: Boolean = false,
     color: Color? = null,
 ) {
     val accent = color ?: parseHexColor(WorkspaceListing.color(workspace)) ?: MaterialTheme.colorScheme.primary
     val corner = size * 0.3f
-    val shown = rememberSettledStatus(status)
-    val working by animateFloatAsState(if (shown is AgentStatus.Working) 1f else 0f, tween(600), label = "working")
-    val waiting by animateFloatAsState(if (shown is AgentStatus.NeedsYou) 1f else 0f, tween(600), label = "waiting")
-    val idle by animateFloatAsState(if (shown is AgentStatus.Idle) 1f else 0f, tween(600), label = "idle")
-    val animating = working > 0f || waiting > 0f || idle > 0f
+    val lane = if (animated) Organizing.shownLane(workspace.status) else null
+    val shown = rememberSettledLane(lane?.key)
+    val working by animateFloatAsState(if (shown == "working") 1f else 0f, tween(600), label = "working")
+    val waiting by animateFloatAsState(if (shown == "needs-attention") 1f else 0f, tween(600), label = "waiting")
+    val review by animateFloatAsState(if (shown == "review") 1f else 0f, tween(600), label = "review")
+    val animating = working > 0f || waiting > 0f || review > 0f
     var seconds by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(animating) {
         if (!animating) return@LaunchedEffect
@@ -921,7 +920,7 @@ fun WorkspaceTile(
     Box(
         Modifier
             .size(size)
-            .then(if (status != null) Modifier.semantics { contentDescription = status.label } else Modifier)
+            .then(if (lane != null) Modifier.semantics { contentDescription = lane.label } else Modifier)
             .drawBehind {
                 if (waiting > 0f) motion.drawRipples(this, seconds, corner.toPx(), waiting)
                 if (working > 0f) motion.drawHalo(this, seconds, corner.toPx(), working)
@@ -932,8 +931,9 @@ fun WorkspaceTile(
                 scaleY = 1f + beat
             }
             .drawBehind {
-                drawRoundRect(if (idle > 0f) motion.idleFill(seconds, idle) else accent, cornerRadius = CornerRadius(corner.toPx()))
+                drawRoundRect(accent, cornerRadius = CornerRadius(corner.toPx()))
                 if (working > 0f) motion.drawAurora(this, seconds, corner.toPx(), working)
+                if (review > 0f) motion.drawSheen(this, seconds, corner.toPx(), review)
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -943,20 +943,19 @@ fun WorkspaceTile(
             tint = Color.White,
             modifier = Modifier.size(size / 2).graphicsLayer {
                 val breathe = if (working > 0f) motion.breathe(seconds) * working else 0f
-                val doze = if (idle > 0f) motion.doze(seconds) * idle else 0f
-                scaleX = 1f + 0.05f * breathe + 0.05f * doze
-                scaleY = 1f + 0.05f * breathe + 0.05f * doze
+                scaleX = 1f + 0.05f * breathe
+                scaleY = 1f + 0.05f * breathe
             },
         )
     }
 }
 
 @Composable
-private fun rememberSettledStatus(status: AgentStatus?): AgentStatus? {
-    var shown by remember { mutableStateOf(status) }
-    LaunchedEffect(status) {
-        if (shown is AgentStatus.Working && status !is AgentStatus.NeedsYou) delay(WORKING_HOLD_MILLIS)
-        shown = status
+private fun rememberSettledLane(lane: String?): String? {
+    var shown by remember { mutableStateOf(lane) }
+    LaunchedEffect(lane) {
+        if (shown == "working" && lane != "needs-attention") delay(WORKING_HOLD_MILLIS)
+        shown = lane
     }
     return shown
 }

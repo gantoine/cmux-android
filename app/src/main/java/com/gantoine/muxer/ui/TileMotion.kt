@@ -30,15 +30,10 @@ class TileMotion(private val accent: Color) {
         Blob(cool, speed = 0.45f, phase = 2.1f, alpha = 0.8f),
         Blob(deep, speed = 0.7f, phase = 4.8f, alpha = 0.6f),
     )
-    private val rest = lerp(accent.shiftHue(35f, saturation = 1.2f, value = 1.05f), highlight, 0.3f)
     private val offset = Random.nextFloat() * 20f
     private val clip = Path()
 
     fun breathe(seconds: Float): Float = 0.5f + 0.5f * sin((seconds + offset) * TWO_PI / BREATH_PERIOD)
-
-    fun doze(seconds: Float): Float = 0.5f + 0.5f * sin((seconds + offset) * TWO_PI / DOZE_PERIOD - PI.toFloat() / 2)
-
-    fun idleFill(seconds: Float, strength: Float): Color = lerp(accent, rest, 0.45f * doze(seconds) * strength)
 
     fun heartbeat(seconds: Float): Float {
         val beat = ((seconds + offset) % PULSE_PERIOD) / PULSE_PERIOD
@@ -96,6 +91,28 @@ class TileMotion(private val accent: Color) {
         }
     }
 
+    fun drawSheen(scope: DrawScope, elapsed: Float, corner: Float, strength: Float) = with(scope) {
+        val progress = ((elapsed + offset) % SHEEN_PERIOD) / SHEEN_SWEEP
+        if (progress >= 1f) return@with
+        val eased = progress * progress * (3f - 2f * progress)
+        val band = size.width * 0.7f
+        val travel = size.width * 1.5f + 2 * band
+        val center = -band + eased * travel
+        clip.reset()
+        clip.addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(corner)))
+        clipPath(clip) {
+            drawRect(
+                Brush.linearGradient(
+                    0f to Color.Transparent,
+                    0.5f to Color.White.copy(alpha = 0.5f * strength),
+                    1f to Color.Transparent,
+                    start = Offset(center - band / 2, -band / 4),
+                    end = Offset(center + band / 2, band / 4),
+                ),
+            )
+        }
+    }
+
     private fun DrawScope.drawRing(color: Color, spread: Float, corner: Float, width: Float) {
         drawRoundRect(
             color = color,
@@ -112,7 +129,8 @@ class TileMotion(private val accent: Color) {
         const val TWO_PI = (2 * PI).toFloat()
         const val BREATH_PERIOD = 5f
         const val PULSE_PERIOD = 2.4f
-        const val DOZE_PERIOD = 4.5f
+        const val SHEEN_PERIOD = 3.6f
+        const val SHEEN_SWEEP = 1.1f
         const val HALO_LAYERS = 14
         val HALO_REACH = 12.dp
         val RIPPLE_OFFSETS = listOf(0f, 0.14f)

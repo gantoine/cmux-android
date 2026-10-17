@@ -110,7 +110,7 @@ private fun ShareTargetRow(target: ShareTarget, shape: Shape, onClick: () -> Uni
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WorkspaceTile(target.workspace, size = 40.dp, status = WorkspaceListing.agentStatus(target.workspace))
+        WorkspaceTile(target.workspace, size = 40.dp, animated = true)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(target.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

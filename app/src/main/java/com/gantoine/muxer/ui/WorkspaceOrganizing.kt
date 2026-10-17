@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatColorReset
@@ -118,40 +117,10 @@ object Organizing {
     fun colorName(hex: String?): String? = palette.firstOrNull { it.hex.equals(hex, ignoreCase = true) }?.name
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WorkspaceMetaLine(workspace: WorkspaceInfo) {
-    val lane = Organizing.shownLane(workspace.status)
-    val checklist = Organizing.checklistSummary(workspace.checklist)
-    val remote = Organizing.remoteLabel(workspace.remote)
-    if (lane == null && checklist == null && remote == null) return
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.padding(top = 2.dp),
-    ) {
-        if (lane != null) LaneChip(lane.key, lane.label)
-        if (checklist != null) {
-            MetaItem(Icons.Filled.CheckBox, checklist, "Checklist $checklist done")
-        }
-        if (remote != null) {
-            MetaItem(Icons.Filled.CloudOff, remote, "SSH $remote", MaterialTheme.colorScheme.error)
-        }
-    }
-}
-
-@Composable
-private fun LaneChip(key: String, label: String) {
-    val color = laneColor(key)
-    Text(
-        label,
-        style = MaterialTheme.typography.labelMedium,
-        color = color,
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 1.dp),
-    )
+    val remote = Organizing.remoteLabel(workspace.remote) ?: return
+    MetaItem(Icons.Filled.CloudOff, remote, "SSH $remote", MaterialTheme.colorScheme.error, Modifier.padding(top = 2.dp))
 }
 
 @Composable
@@ -168,8 +137,9 @@ private fun MetaItem(
     text: String,
     description: String,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier: Modifier = Modifier,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = description }) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier.semantics { contentDescription = description }) {
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(4.dp))
         Text(text, style = MaterialTheme.typography.labelMedium, color = color)
