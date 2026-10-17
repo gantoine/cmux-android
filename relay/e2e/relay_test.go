@@ -52,6 +52,9 @@ func run(m *testing.M) int {
 		return 1
 	}
 	defer stopRelay()
+	watchCtx, stopWatching := context.WithCancel(context.Background())
+	defer stopWatching()
+	go watchCmux(watchCtx, os.Getenv("E2E_DIAGNOSTICS_DIR"))
 	code := m.Run()
 	if code != 0 {
 		printLog()

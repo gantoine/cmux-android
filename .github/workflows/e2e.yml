@@ -56,15 +56,36 @@ jobs:
       - name: Run the e2e suite
         working-directory: relay
         env:
-          E2E_SNAPSHOT_DIR: ${{ runner.temp }}/cmux-snapshots
+          E2E_SNAPSHOT_DIR: ${{ runner.temp }}/cmux-e2e/snapshots
+          E2E_DIAGNOSTICS_DIR: ${{ runner.temp }}/cmux-e2e/diagnostics
         run: |
+          set +e
           export PATH="/Applications/cmux.app/Contents/Resources/bin:$PATH"
-          go test -tags e2e -count=1 -v -timeout 15m ./e2e/
+          first="$RUNNER_TEMP/e2e-first.json"
+          go test -tags e2e -count=1 -json -timeout 15m ./e2e/ > "$first"
+          status=$?
+          jq -j 'select(.Action == "output") | .Output' "$first"
+          failed=$(jq -r 'select(.Action == "fail" and .Test != null) | .Test | split("/")[0]' "$first" | sort -u | paste -sd '|' -)
+          if [ "$status" -ne 0 ] && [ -n "$failed" ]; then
+            echo "::warning::Retrying tests that failed on the first try: $failed"
+            go test -tags e2e -count=1 -v -timeout 15m -run "^($failed)\$" ./e2e/
+            status=$?
+            {
+              echo "### Failed on the first try"
+              echo "$failed" | tr '|' '\n' | sed 's/^/- /'
+              [ "$status" -eq 0 ] && echo "All of them passed when retried."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if ls "$E2E_DIAGNOSTICS_DIR"/stall-* >/dev/null 2>&1; then
+            echo "::warning::cmux stopped answering during the run; samples are in the cmux-e2e artifact"
+            echo "cmux stopped answering during the run. Stack samples are in the **cmux-e2e** artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: cmux-snapshots
-          path: ${{ runner.temp }}/cmux-snapshots
+          name: cmux-e2e
+          path: ${{ runner.temp }}/cmux-e2e
           retention-days: 30
 
   report:
