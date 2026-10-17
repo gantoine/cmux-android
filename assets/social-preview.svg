@@ -15,7 +15,7 @@
   <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
     <text x="466" y="263" font-size="84" font-weight="700" fill="#C6D0F5">Muxer</text>
     <text x="470" y="329" font-size="34" fill="#A5ADCE">Watch and drive cmux from your phone.</text>
-    <text x="470" y="377" font-size="34" fill="#A5ADCE">Runs on your own network with any cmux plan.</text>
+    <text x="470" y="377" font-size="34" fill="#A5ADCE">Runs on your own network, no cloud required.</text>
     <text x="470" y="433" font-size="22" fill="#737994">Unofficial. Not affiliated with Manaflow or the cmux team.</text>
   </g>
 </svg>

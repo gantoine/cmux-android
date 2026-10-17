@@ -280,7 +280,6 @@ h3 { font-size: 18px; margin: 0 0 6px; color: var(--bright); letter-spacing: -0.
 }
 .peer .icon { width: 40px; height: 40px; color: var(--muted); stroke-width: 1.4; }
 .peer .muxer-logo { border-radius: 10px; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14); }
-.peer .cmux-logo { margin: -3px 0; }
 .device { display: inline-grid; place-items: center; }
 .device .icon { grid-area: 1 / 1; }
 .device img { grid-area: 1 / 1; border-radius: 4px; margin-top: -4px; }
