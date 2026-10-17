@@ -124,8 +124,9 @@ jobs:
           git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/gantoine/homebrew-tap.git" "$RUNNER_TEMP/tap"
           bot_id=$(GH_TOKEN="$TAP_TOKEN" gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
 
-          arm64_sha=$(shasum -a 256 "relay/dist/muxer-${VERSION}-darwin-arm64.tar.gz" | cut -d' ' -f1)
-          amd64_sha=$(shasum -a 256 "relay/dist/muxer-${VERSION}-darwin-amd64.tar.gz" | cut -d' ' -f1)
+          checksum() { awk -v file="muxer-${VERSION}-darwin-$1.tar.gz" '$2 == file { print $1 }' relay/dist/SHA256SUMS; }
+          arm64_sha=$(checksum arm64)
+          amd64_sha=$(checksum amd64)
           mkdir -p "$RUNNER_TEMP/tap/Formula"
           packaging/homebrew/render-formula.sh "$VERSION" "$arm64_sha" "$amd64_sha" > "$RUNNER_TEMP/tap/Formula/muxer.rb"
 
