@@ -30,6 +30,7 @@ You don't need to sign in to cmux. Everything runs between your phone and your o
   </picture>
 </p>
 
+> [!NOTE]
 > This is an independent project. It is not made, endorsed, or supported by Manaflow or the cmux team.
 
 ## How it works
@@ -63,7 +64,6 @@ You need cmux 0.65 or later on the computer, and a way for the phone to reach th
    <summary>Other ways to install it</summary>
 
    - **Download:** get `muxer-<version>-darwin-arm64.tar.gz` (Apple silicon) or `-darwin-amd64.tar.gz` (Intel) from the [releases page](../../releases), check it against `SHA256SUMS`, extract it, and move `muxer` into a folder on your `PATH`. The binary is not notarized by Apple. If you downloaded it with a browser, run `xattr -d com.apple.quarantine muxer` before the first run.
-   - **From source** (Go 1.26 or later): `go install github.com/gantoine/muxer/relay/cmd/muxer@latest`
 
    </details>
 
