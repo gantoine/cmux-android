@@ -60,54 +60,56 @@ func named(name, workspaceID string) func(cmux.Event) bool {
 	return func(event cmux.Event) bool { return event.Name == name && event.Workspace() == workspaceID }
 }
 
-func TestCmuxPublishesTheWorkspaceEventsTheRelayListensFor(t *testing.T) {
-	log := subscribe(t, cmux.EventFilter{Categories: server.WorkspaceEventCategories})
-	client := cmuxClient(t)
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
-	defer cancel()
+func TestCmuxPublishesTheEventsTheRelayListensFor(t *testing.T) {
+	categories := append([]string{"notification", "agent"}, server.WorkspaceEventCategories...)
+	log := subscribe(t, cmux.EventFilter{Categories: categories})
 
-	created, err := client.CreateWorkspace(ctx, uniqueName(t), t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { closeWorkspace(created.WorkspaceID) })
-	log.await(t, "workspace.created", named("workspace.created", created.WorkspaceID))
+	t.Run("workspaces", func(t *testing.T) {
+		client := cmuxClient(t)
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+		defer cancel()
+		created, err := client.CreateWorkspace(ctx, uniqueName(t), t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { closeWorkspace(created.WorkspaceID) })
+		log.await(t, "workspace.created", named("workspace.created", created.WorkspaceID))
 
-	if err := client.RenameWorkspace(ctx, created.WorkspaceID, uniqueName(t)); err != nil {
-		t.Fatal(err)
-	}
-	log.await(t, "workspace.renamed", named("workspace.renamed", created.WorkspaceID))
+		if err := client.RenameWorkspace(ctx, created.WorkspaceID, uniqueName(t)); err != nil {
+			t.Fatal(err)
+		}
+		log.await(t, "workspace.renamed", named("workspace.renamed", created.WorkspaceID))
 
-	if err := client.Call(ctx, cmux.MethodWorkspaceAction, map[string]any{"workspace_id": created.WorkspaceID, "action": "pin"}, nil); err != nil {
-		t.Fatal(err)
-	}
-	log.await(t, "workspace.action", named("workspace.action", created.WorkspaceID))
-	if err := client.Call(ctx, cmux.MethodWorkspaceAction, map[string]any{"workspace_id": created.WorkspaceID, "action": "unpin"}, nil); err != nil {
-		t.Fatal(err)
-	}
+		if err := client.Call(ctx, cmux.MethodWorkspaceAction, map[string]any{"workspace_id": created.WorkspaceID, "action": "pin"}, nil); err != nil {
+			t.Fatal(err)
+		}
+		log.await(t, "workspace.action", named("workspace.action", created.WorkspaceID))
+		if err := client.Call(ctx, cmux.MethodWorkspaceAction, map[string]any{"workspace_id": created.WorkspaceID, "action": "unpin"}, nil); err != nil {
+			t.Fatal(err)
+		}
 
-	if err := client.CloseWorkspace(ctx, created.WorkspaceID, true); err != nil {
-		t.Fatal(err)
-	}
-	log.await(t, "workspace.closed", named("workspace.closed", created.WorkspaceID))
-}
+		if err := client.CloseWorkspace(ctx, created.WorkspaceID, true); err != nil {
+			t.Fatal(err)
+		}
+		log.await(t, "workspace.closed", named("workspace.closed", created.WorkspaceID))
+	})
 
-func TestCmuxPublishesTheNotificationEventsTheRelayListensFor(t *testing.T) {
-	log := subscribe(t, cmux.EventFilter{Categories: []string{"notification"}})
-	p := connect(t)
-	ws := scratchWorkspace(t, p)
-	mentions := func(name, id string) func(cmux.Event) bool {
-		return func(event cmux.Event) bool { return event.Name == name && strings.Contains(string(event.Payload), id) }
-	}
+	t.Run("notifications", func(t *testing.T) {
+		p := connect(t)
+		ws := scratchWorkspace(t, p)
+		mentions := func(name, id string) func(cmux.Event) bool {
+			return func(event cmux.Event) bool { return event.Name == name && strings.Contains(string(event.Payload), id) }
+		}
 
-	read := notify(t, p, ws, uniqueName(t)+"-read")
-	log.await(t, "notification.created", mentions("notification.created", read))
-	p.must("mark_notifications_read", map[string]any{"notification_id": read})
-	log.await(t, "notification.read", mentions("notification.read", read))
+		read := notify(t, p, ws, uniqueName(t)+"-read")
+		log.await(t, "notification.created", mentions("notification.created", read))
+		p.must("mark_notifications_read", map[string]any{"notification_id": read})
+		log.await(t, "notification.read", mentions("notification.read", read))
 
-	cleared := notify(t, p, ws, uniqueName(t)+"-clear")
-	cmuxCLI(t, "clear-notifications", "--workspace", ws.ID, "--surface", ws.SurfaceID)
-	log.await(t, "notification.cleared", mentions("notification.cleared", cleared))
+		cleared := notify(t, p, ws, uniqueName(t)+"-clear")
+		cmuxCLI(t, "clear-notifications", "--workspace", ws.ID, "--surface", ws.SurfaceID)
+		log.await(t, "notification.cleared", mentions("notification.cleared", cleared))
+	})
 }
 
 func TestRecordCmuxResponses(t *testing.T) {
