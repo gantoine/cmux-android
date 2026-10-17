@@ -2,7 +2,7 @@ name: App UI
 
 on:
   push:
-    branches: [main, app-ui-tests]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
