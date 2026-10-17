@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gantoine/muxer/relay/internal/cmux"
+	"github.com/gantoine/muxer/relay/internal/cmuxrecord"
 )
 
 type relayProcess struct {
@@ -29,7 +30,10 @@ type relayProcess struct {
 	serve   *exec.Cmd
 }
 
-var relay relayProcess
+var (
+	relay    relayProcess
+	recorder *cmuxrecord.Recorder
+)
 
 func TestMain(m *testing.M) {
 	os.Exit(run(m))
@@ -46,7 +50,19 @@ func run(m *testing.M) int {
 		return 1
 	}
 	defer os.RemoveAll(dir)
-	if err := startRelay(dir); err != nil {
+	socketDir, err := os.MkdirTemp("/tmp", "muxer-e2e")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer os.RemoveAll(socketDir)
+	recorder, err = cmuxrecord.NewRecorder(filepath.Join(socketDir, "cmux.sock"), cmux.DefaultSocketPath())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "could not start the cmux recorder:", err)
+		return 1
+	}
+	defer recorder.Close()
+	if err := startRelay(dir, filepath.Join(socketDir, "cmux.sock")); err != nil {
 		fmt.Fprintln(os.Stderr, "could not start the relay:", err)
 		printLog()
 		return 1
@@ -71,7 +87,7 @@ func reachCmux() error {
 	return err
 }
 
-func startRelay(dir string) error {
+func startRelay(dir, cmuxSocket string) error {
 	binary := filepath.Join(dir, "muxer")
 	build := exec.Command(filepath.Join(runtime.GOROOT(), "bin", "go"), "build", "-o", binary, "../cmd/muxer")
 	if output, err := build.CombinedOutput(); err != nil {
@@ -82,7 +98,7 @@ func startRelay(dir string) error {
 		return err
 	}
 	stateDir := filepath.Join(dir, "state")
-	env := append(os.Environ(), "MUXER_STATE_DIR="+stateDir)
+	env := append(os.Environ(), "MUXER_STATE_DIR="+stateDir, "CMUX_SOCKET_PATH="+cmuxSocket)
 	relay.address = address
 	relay.logPath = filepath.Join(dir, "relay.log")
 	logFile, err := os.Create(relay.logPath)

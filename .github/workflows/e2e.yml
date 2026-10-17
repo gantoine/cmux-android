@@ -58,6 +58,7 @@ jobs:
         env:
           E2E_SNAPSHOT_DIR: ${{ runner.temp }}/cmux-e2e/snapshots
           E2E_DIAGNOSTICS_DIR: ${{ runner.temp }}/cmux-e2e/diagnostics
+          E2E_RECORDING_OUT: ${{ runner.temp }}/cmux-e2e/recording
         run: |
           set +e
           export PATH="/Applications/cmux.app/Contents/Resources/bin:$PATH"
