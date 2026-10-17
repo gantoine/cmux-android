@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Muxer: cmux on your phone</title>
-  <meta name="description" content="Watch and drive your cmux terminals from any Android device. Runs on your own network.">
+  <meta name="description" content="Watch and drive cmux from any Android device. Runs on your own network.">
   <meta name="theme-color" content="#1E1F29">
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
   <link rel="icon" href="assets/logo.png" type="image/png">
   <link rel="canonical" href="{{SITE_URL}}/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Muxer">
-  <meta property="og:description" content="Watch and drive your cmux terminals from any Android device.">
+  <meta property="og:description" content="Watch and drive cmux from any Android device.">
   <meta property="og:url" content="{{SITE_URL}}/">
   <meta property="og:image" content="{{SITE_URL}}/assets/social-preview.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -20,8 +20,8 @@
 <body>
   <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+    <symbol id="i-approve" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
-    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
     <symbol id="i-app" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 8h18"/><path d="m7 12 2.5 2.5L7 17"/><path d="M12 17h4"/></symbol>
     <symbol id="i-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M11 18h2"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
@@ -43,7 +43,7 @@
   <main id="top">
     <section class="hero">
       <img class="hero-logo" src="assets/logo.svg" alt="Muxer logo" width="96" height="96">
-      <h1>Your cmux terminals,<br><span class="shine">in your pocket.</span></h1>
+      <h1>cmux,<br><span class="shine">in your pocket.</span></h1>
       <p class="lede">Watch and drive your <a href="https://cmux.com/">cmux</a> terminals from any Android device.<br>See every workspace, open a live terminal, type into it, and get notified when a coding agent needs you.</p>
       <div class="cta">
         <a class="button primary" href="https://github.com/gantoine/muxer/releases/latest"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Download the APK</a>
@@ -65,19 +65,19 @@
       <h2>What it does</h2>
       <div class="grid">
         <article>
-          <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg></span>
-          <h3>A real terminal</h3>
-          <p>A live view of any terminal. Pinch to zoom, scroll back through 2,000 lines of history, select and copy, and type with sticky Ctrl, Option and Shift keys.</p>
+          <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-approve"/></svg></span>
+          <h3>Approve from anywhere</h3>
+          <p>Answer your agents' permission requests from a notification or a home screen widget.</p>
         </article>
         <article>
           <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg></span>
-          <h3>Claude Code as a chat</h3>
-          <p>Terminals running Claude Code show up as a conversation, with each tool call you can tap open. Type or dictate a reply, or interrupt Claude.</p>
+          <h3>Chat with your agents</h3>
+          <p>Agent sessions show up as a conversation. Reply, attach screenshots, or resume a past session.</p>
         </article>
         <article>
-          <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg></span>
-          <h3>Notifications</h3>
-          <p>cmux notifications such as "Claude is waiting for your input" reach your phone, even while the app is closed.</p>
+          <span class="badge"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg></span>
+          <h3>Terminals and workspaces</h3>
+          <p>A live terminal with sticky modifier keys. Organize workspaces and check CPU and RAM on each Mac.</p>
         </article>
       </div>
     </section>
@@ -86,7 +86,7 @@
       <h2>How it works</h2>
       <div class="flow" role="img" aria-label="The Android app talks over HTTPS and WebSocket on your private network to muxer on your computer, which talks to cmux over a Unix socket">
         <div class="peer"><span class="device"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg><img src="assets/logo.svg" alt="" width="16" height="16"></span>Android</div>
-        <div class="link"><span>HTTPS + WebSocket<br>over your private network</span></div>
+        <div class="link"><span>HTTPS + WebSocket <br>over your private network</span></div>
         <div class="peer"><img class="muxer-logo" src="assets/logo.svg" alt="" width="40" height="40">muxer</div>
         <div class="link"><span>Unix socket</span></div>
         <div class="peer"><svg class="icon" aria-hidden="true"><use href="#i-app"/></svg>cmux</div>
