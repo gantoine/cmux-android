@@ -79,7 +79,7 @@ func (h *Hub) HandleEvent(ctx context.Context, event cmux.Event) {
 			TabTitle:    notification.TabTitle,
 			CreatedAt:   notification.CreatedAt,
 		})
-	case "notification.read", "notification.removed":
+	case "notification.read", "notification.removed", "notification.cleared":
 		if payload.NotificationID != "" {
 			payload.NotificationIDs = append(payload.NotificationIDs, payload.NotificationID)
 		}

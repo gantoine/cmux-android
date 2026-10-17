@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/gantoine/muxer/relay/internal/cmux"
@@ -62,10 +63,11 @@ func TestHubResolvesRedactedTextAndReplaysOnlyForReturningPhones(t *testing.T) {
 	}
 }
 
-func TestHubDismissesEveryNotificationReadOrRemovedOnTheMac(t *testing.T) {
+func TestHubDismissesEveryNotificationReadRemovedOrClearedOnTheMac(t *testing.T) {
 	hub := NewHub(&fakeSource{}, slog.New(slog.DiscardHandler))
 	hub.HandleEvent(context.Background(), event("notification.read", `{"count":2,"notification_ids":["n1","n2"]}`, 1))
 	hub.HandleEvent(context.Background(), event("notification.removed", `{"notification_id":"n3"}`, 2))
+	hub.HandleEvent(context.Background(), event("notification.cleared", `{"count":2,"notification_ids":["n4","n5"]}`, 3))
 
 	_, history, unsubscribe := hub.Subscribe(1)
 	unsubscribe()
@@ -75,7 +77,7 @@ func TestHubDismissesEveryNotificationReadOrRemovedOnTheMac(t *testing.T) {
 			dismissed = append(dismissed, notification.ID)
 		}
 	}
-	if len(dismissed) != 3 || dismissed[0] != "n1" || dismissed[1] != "n2" || dismissed[2] != "n3" {
-		t.Fatalf("every read or removed notification must be dismissed on the phone, got %v", dismissed)
+	if strings.Join(dismissed, ",") != "n1,n2,n3,n4,n5" {
+		t.Fatalf("every read, removed or cleared notification must be dismissed on the phone, got %v", dismissed)
 	}
 }
