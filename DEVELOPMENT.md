@@ -20,6 +20,16 @@ cd relay && MUXER_STATE_DIR=/tmp/relay-dev go run ./cmd/muxer serve --listen 127
 
 On the Android emulator the computer is `http://10.0.2.2:18765`. Debug builds allow plain HTTP to that address only.
 
+### End-to-end tests against cmux
+
+`relay/e2e` builds the relay, pairs a test phone and drives every feature against a running cmux: workspaces, groups, checklists, terminal input and history, notifications, keep awake, metrics, and agent approvals. Approvals are raised through `cmux hooks feed`, so no agent runs. The tests only touch workspaces named `e2e-…` and close them afterwards.
+
+```sh
+cd relay && go test -tags e2e -count=1 ./e2e/
+```
+
+Set `E2E_SNAPSHOT_DIR` to save cmux's raw answers for comparison. The E2E workflow runs the suite every night on a macOS runner against the latest cmux and opens an issue when it fails.
+
 ## Releasing
 
 Publish a GitHub release whose tag is a semantic version such as `0.2.0` or `0.2.0-beta.1`, with no `v` prefix. The release workflow tests everything, then attaches the relay for Apple silicon and Intel Macs, the signed APK, and `SHA256SUMS` to that release. The app's version name is the tag, and its version code is `major × 1,000,000 + minor × 1,000 + patch`.

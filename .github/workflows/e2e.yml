@@ -1,0 +1,89 @@
+name: E2E
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+env:
+  CMUX_SOCKET_PASSWORD: muxer-e2e
+
+jobs:
+  cmux:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+      - name: Install the latest cmux
+        run: |
+          brew update --quiet
+          brew install --cask cmux
+          xattr -dr com.apple.quarantine /Applications/cmux.app || true
+          mkdir -p ~/.config/cmux
+          cat > ~/.config/cmux/cmux.json <<JSON
+          {
+            "app": { "sendAnonymousTelemetry": false },
+            "automation": { "socketControlMode": "password", "socketPassword": "$CMUX_SOCKET_PASSWORD" }
+          }
+          JSON
+          defaults write com.cmuxterm.app cmuxWelcomeShown -bool true
+          defaults write com.cmuxterm.app cmux.cloud.welcome.seen -bool true
+          defaults write com.cmuxterm.app cmux.computerUse.onboarding.seen -bool true
+          defaults write com.cmuxterm.app SUEnableAutomaticChecks -bool false
+      - name: Launch cmux
+        timeout-minutes: 3
+        run: |
+          open /Applications/cmux.app
+          for i in $(seq 1 90); do
+            [ -S "$HOME/.local/state/cmux/cmux.sock" ] && break
+            sleep 1
+          done
+          export PATH="/Applications/cmux.app/Contents/Resources/bin:$PATH"
+          version=$(cmux --version)
+          echo "$version"
+          echo "Tested against $version" >> "$GITHUB_STEP_SUMMARY"
+      - name: Run the e2e suite
+        working-directory: relay
+        env:
+          E2E_SNAPSHOT_DIR: ${{ runner.temp }}/cmux-snapshots
+        run: |
+          export PATH="/Applications/cmux.app/Contents/Resources/bin:$PATH"
+          go test -tags e2e -count=1 -v -timeout 15m ./e2e/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: cmux-snapshots
+          path: ${{ runner.temp }}/cmux-snapshots
+          retention-days: 30
+
+  report:
+    needs: cmux
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly e2e against cmux is failing"
+          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing: $RUN_URL"
+          else
+            gh issue create --title "$title" --body "The nightly run against the latest cmux failed: $RUN_URL"
+          fi
