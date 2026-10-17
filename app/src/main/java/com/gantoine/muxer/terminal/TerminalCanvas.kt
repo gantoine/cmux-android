@@ -33,6 +33,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -198,7 +200,7 @@ fun TerminalCanvas(
             val widthDp = with(density) { (metrics.width * screen.columns).toDp() }
             val heightDp = with(density) { viewportHeight.toDp() }
             Box(Modifier.horizontalScroll(horizontal)) {
-                Canvas(Modifier.size(widthDp, heightDp)) {
+                Canvas(Modifier.size(widthDp, heightDp).semantics { contentDescription = content.screenText }) {
                     drawTerminal(content, top(), viewport.selection, selectionColor, metrics, measurer, colors, fontSize.sp)
                 }
             }

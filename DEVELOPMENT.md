@@ -30,6 +30,18 @@ cd relay && go test -tags e2e -count=1 ./e2e/
 
 Set `E2E_SNAPSHOT_DIR` to save cmux's raw answers for comparison. The E2E workflow runs the suite every night on a macOS runner against the latest cmux and opens an issue when it fails.
 
+The suite's relay talks to cmux through a recorder. One test builds a demo scenario (the "Payments API" and "Docs site" workspaces, terminal output, a checklist, a notification and a pending approval) and records what cmux answers. It then compares the shape of those answers with `relay/e2e/testdata/recording.json` and fails when cmux removed a field or changed its type. New fields are only logged. If cmux changed on purpose, update the relay and the app, then commit the new `recording.json` from the run's `cmux-e2e` artifact. Only record in CI: a local recording contains your own workspaces and notifications.
+
+### App UI tests
+
+`app/src/androidTest` drives the whole app on an emulator against the real relay, with `cmux-replay` serving the committed recording in place of cmux. The tests look for the scenario's names, so keep `RecordedCmuxScenario` in step with `relay/e2e/app_scenario_test.go`. With an emulator running:
+
+```sh
+scripts/app-ui-tests.sh
+```
+
+The App UI workflow runs them on every push and pull request. `cmux-replay` can also be started by hand; its control port takes `POST /emit?name=<event>` to send a recorded event and `GET /calls?method=<method>` to list what the relay asked.
+
 ## Releasing
 
 Publish a GitHub release whose tag is a semantic version such as `0.2.0` or `0.2.0-beta.1`, with no `v` prefix. The release workflow tests everything, then attaches the relay for Apple silicon and Intel Macs, the signed APK, and `SHA256SUMS` to that release. The app's version name is the tag, and its version code is `major × 1,000,000 + minor × 1,000 + patch`.

@@ -35,6 +35,10 @@ class TerminalContent(val screen: TerminalScreen, history: TerminalHistory?) {
 
     fun cells(row: Int): Array<String?> = TerminalText.cells(spans(row), columns)
 
+    val screenText: String by lazy {
+        (historyRows until rowCount).joinToString("\n") { row -> TerminalText.textIn(cells(row), 0 until columns) }.trim('\n')
+    }
+
     fun text(selection: Selection): String {
         val start = selection.start
         val end = selection.end

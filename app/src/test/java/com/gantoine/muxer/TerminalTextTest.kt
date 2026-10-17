@@ -32,6 +32,12 @@ class TerminalTextTest {
     private val content = TerminalContent(screen, history)
 
     @Test
+    fun screenTextReadsTheVisibleRowsWithoutHistory() {
+        val history = TerminalHistory(emptyMap(), listOf(line(0 to "older output")))
+        assertEquals("\$ git status\nok 日本done", TerminalContent(screen, history).screenText.lines().joinToString("\n") { it.trimEnd() })
+    }
+
+    @Test
     fun copiesAcrossHistoryAndScreenWithBlankLinesAndWideCharacters() {
         val selection = Selection(anchor = CellPosition(3, 10), focus = CellPosition(0, 5))
         assertEquals("output here\n\n$ git status\nok 日本done", content.text(selection))
